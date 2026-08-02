@@ -114,6 +114,23 @@ claude mcp add --transport http x4 http://<gaming-pc>:8093/mcp
 There is no auth: bind beyond localhost only on a network you trust. The
 tools expose your savegame contents, and the plan tools accept writes.
 
+If the gaming PC is firewalled (the usual case), skip the open port
+entirely with `--connect`: x4mcp dials OUT to a state relay and serves
+through the tunnel. The relay half lives in
+[canon](https://github.com/gallowaysoftware/canon) (`internal/relay`) or
+anything speaking the same trivial protocol (WebSocket upgrade at
+`/relay/{name}`, yamux over it, plain HTTP on the streams):
+
+```sh
+x4mcp serve --connect ws://<home-server>:8091/relay/x4
+# clients then use:  http://<home-server>:8091/relay/x4/mcp
+```
+
+It reconnects with backoff forever, so a systemd user unit with
+`Restart=always` makes the gaming box a self-announcing state source:
+when the machine is on, the leg is live; when it's off, the relay tells
+clients exactly that instead of timing out.
+
 ### Save discovery
 
 By default the server finds saves under:
