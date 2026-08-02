@@ -93,7 +93,7 @@ func (a *app) gateGraph() map[string][]string {
 // on another box) can use a gaming PC's saves. There is no auth — bind
 // beyond localhost only on a network you trust, and remember the tools
 // expose your savegame contents plus the plan-write tools.
-func runServer(ctx context.Context, addr string) error {
+func runServer(ctx context.Context, addr, connect string) error {
 	a := &app{}
 	s := mcp.NewServer(&mcp.Implementation{Name: "x4mcp", Version: version}, nil)
 
@@ -228,7 +228,7 @@ func runServer(ctx context.Context, addr string) error {
 		Description: "Append a timestamped note to the journal, e.g. advice given to the player this session.",
 	}, a.addJournal)
 
-	if addr == "" {
+	if addr == "" && connect == "" {
 		return s.Run(ctx, &mcp.StdioTransport{})
 	}
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, nil)
@@ -237,6 +237,9 @@ func runServer(ctx context.Context, addr string) error {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	if connect != "" {
+		return serveConnect(ctx, mux, connect)
+	}
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           mux,

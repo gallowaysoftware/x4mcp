@@ -48,14 +48,16 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	// serve [--http host:port] — stdio unless an HTTP bind is asked for.
-	addr := ""
+	// serve [--http host:port | --connect ws://.../relay/x4] — stdio
+	// unless a network mode is asked for.
+	addr, connect := "", ""
 	if len(os.Args) > 2 {
 		fs := flag.NewFlagSet("serve", flag.ExitOnError)
 		fs.StringVar(&addr, "http", "", "serve MCP over Streamable HTTP on this host:port (e.g. 0.0.0.0:8093) instead of stdio")
+		fs.StringVar(&connect, "connect", "", "dial OUT to a state relay and serve through it (e.g. ws://hum:8091/relay/x4) — no inbound port needed")
 		fs.Parse(os.Args[2:])
 	}
-	if err := runServer(context.Background(), addr); err != nil {
+	if err := runServer(context.Background(), addr, connect); err != nil {
 		fmt.Fprintln(os.Stderr, "server error:", err)
 		os.Exit(1)
 	}
