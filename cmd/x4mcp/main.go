@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -47,7 +48,14 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	if err := runServer(context.Background()); err != nil {
+	// serve [--http host:port] — stdio unless an HTTP bind is asked for.
+	addr := ""
+	if len(os.Args) > 2 {
+		fs := flag.NewFlagSet("serve", flag.ExitOnError)
+		fs.StringVar(&addr, "http", "", "serve MCP over Streamable HTTP on this host:port (e.g. 0.0.0.0:8093) instead of stdio")
+		fs.Parse(os.Args[2:])
+	}
+	if err := runServer(context.Background(), addr); err != nil {
 		fmt.Fprintln(os.Stderr, "server error:", err)
 		os.Exit(1)
 	}

@@ -4,14 +4,17 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/gallowaysoftware/x4mcp/internal/plan"
 	"github.com/gallowaysoftware/x4mcp/internal/x4data"
 	"github.com/gallowaysoftware/x4mcp/internal/x4save"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const version = "0.1.0"
@@ -84,7 +87,13 @@ func (a *app) gateGraph() map[string][]string {
 	return a.gates
 }
 
-func runServer(ctx context.Context) error {
+// runServer starts the MCP server. addr == "" serves stdio (the default,
+// what `claude mcp add x4 -- x4mcp serve` wants); a host:port serves MCP
+// Streamable HTTP at /mcp so clients elsewhere on a LAN (a chat frontend
+// on another box) can use a gaming PC's saves. There is no auth — bind
+// beyond localhost only on a network you trust, and remember the tools
+// expose your savegame contents plus the plan-write tools.
+func runServer(ctx context.Context, addr string) error {
 	a := &app{}
 	s := mcp.NewServer(&mcp.Implementation{Name: "x4mcp", Version: version}, nil)
 
@@ -219,7 +228,34 @@ func runServer(ctx context.Context) error {
 		Description: "Append a timestamped note to the journal, e.g. advice given to the player this session.",
 	}, a.addJournal)
 
-	return s.Run(ctx, &mcp.StdioTransport{})
+	if addr == "" {
+		return s.Run(ctx, &mcp.StdioTransport{})
+	}
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, nil)
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", handler)
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		// Streamable HTTP sessions hold long-lived SSE streams.
+		WriteTimeout: 300 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+	fmt.Fprintf(os.Stderr, "x4mcp: serving MCP over HTTP on %s/mcp\n", addr)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }
 
 // ---- helpers ----
@@ -1008,14 +1044,14 @@ type wfConsumeLine struct {
 }
 
 type planWorkforceOut struct {
-	Race          string          `json:"race"`
-	Method        string          `json:"method"`
-	Workforce     int             `json:"workforce"`
-	Assume        string          `json:"assume"`
-	FromModules   []moduleCount   `json:"workforce_from_modules,omitempty"` // if derived from production_modules
-	Consumption   []wfConsumeLine `json:"consumption"`
-	Habitats      []moduleCount   `json:"habitats"` // how many of each habitat size houses the workforce
-	Note          string          `json:"note"`
+	Race        string          `json:"race"`
+	Method      string          `json:"method"`
+	Workforce   int             `json:"workforce"`
+	Assume      string          `json:"assume"`
+	FromModules []moduleCount   `json:"workforce_from_modules,omitempty"` // if derived from production_modules
+	Consumption []wfConsumeLine `json:"consumption"`
+	Habitats    []moduleCount   `json:"habitats"` // how many of each habitat size houses the workforce
+	Note        string          `json:"note"`
 }
 
 // resolveProductionModule finds a production module by macro, or by the ware it
@@ -1440,17 +1476,17 @@ type planFleetIn struct {
 }
 
 type planFleetOut struct {
-	Ware            string  `json:"ware"`
-	UnitsPerHour    float64 `json:"target_units_per_hour"`
-	CargoType       string  `json:"cargo_type"`
-	CycleMinutes    float64 `json:"cycle_minutes"`
-	Ship            string  `json:"ship"`
-	ShipMacro       string  `json:"ship_macro"`
-	CargoM3         int     `json:"cargo_m3"`
-	UnitsPerTrip    int     `json:"units_per_trip"`
-	PerShipPerHour  float64 `json:"per_ship_units_per_hour"`
-	ShipsNeeded     int     `json:"ships_needed"`
-	Note            string  `json:"note"`
+	Ware           string  `json:"ware"`
+	UnitsPerHour   float64 `json:"target_units_per_hour"`
+	CargoType      string  `json:"cargo_type"`
+	CycleMinutes   float64 `json:"cycle_minutes"`
+	Ship           string  `json:"ship"`
+	ShipMacro      string  `json:"ship_macro"`
+	CargoM3        int     `json:"cargo_m3"`
+	UnitsPerTrip   int     `json:"units_per_trip"`
+	PerShipPerHour float64 `json:"per_ship_units_per_hour"`
+	ShipsNeeded    int     `json:"ships_needed"`
+	Note           string  `json:"note"`
 }
 
 // macroFaction extracts the faction token from a ship macro (ship_arg_... -> arg).

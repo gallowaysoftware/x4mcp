@@ -99,6 +99,21 @@ empire"*, *"which miners are idle?"*, *"what is station SRC-496 short on?"*, and
 Claude will call the tools below. To persist the registration across projects use
 `claude mcp add --scope user x4 -- /absolute/path/to/x4mcp serve`.
 
+### Serving over the network
+
+The saves live on your gaming PC, but the assistant may not. `--http`
+serves MCP Streamable HTTP instead of stdio so a client elsewhere on your
+LAN (a chat frontend on a home server, Claude Code on a laptop) can use
+this machine's saves:
+
+```sh
+x4mcp serve --http 0.0.0.0:8093     # endpoint: http://<this-box>:8093/mcp
+claude mcp add --transport http x4 http://<gaming-pc>:8093/mcp
+```
+
+There is no auth: bind beyond localhost only on a network you trust. The
+tools expose your savegame contents, and the plan tools accept writes.
+
 ### Save discovery
 
 By default the server finds saves under:
