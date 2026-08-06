@@ -41,10 +41,16 @@ func main() {
 		case "workforce":
 			runWorkforce(os.Args[2:])
 			return
+		case "play":
+			if err := runPlay(os.Args[2:]); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			return
 		case "serve":
 			// fallthrough to server below
 		default:
-			fmt.Fprintf(os.Stderr, "unknown subcommand %q (want: serve|parse|stations|saves|extract|names|ships|modules|workforce)\n", os.Args[1])
+			fmt.Fprintf(os.Stderr, "unknown subcommand %q (want: serve|play|parse|stations|saves|extract|names|ships|modules|workforce)\n", os.Args[1])
 			os.Exit(2)
 		}
 	}
