@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,7 +12,7 @@ import (
 
 // errNoGameCommand is returned when play was given nothing to launch.
 var errNoGameCommand = errors.New(
-	`play needs the game command after --, e.g. "x4mcp play --connect ws://hum:8091/relay/x4 -- %command%"`)
+	`play needs the game command after --, e.g. "x4mcp play --relay ws://hum:8091/relay/x4 -- %command%"`)
 
 // runPlay launches X4 with the MCP server running alongside it, and
 // stops the server when the game exits.
@@ -33,14 +32,15 @@ var errNoGameCommand = errors.New(
 // Steam expands %command% to the real launcher, Proton and all, so the
 // game starts exactly as it would have.
 func runPlay(args []string) error {
-	fs := flag.NewFlagSet("play", flag.ExitOnError)
-	addr := fs.String("http", "", "serve MCP over Streamable HTTP on this host:port instead of stdio")
-	connect := fs.String("connect", "", "dial OUT to a state relay and serve through it (e.g. ws://hum:8091/relay/x4)")
-	fs.Parse(args)
-
-	rest := fs.Args()
-	// Go's flag package hands back the "--" separator; Steam's %command%
-	// expands to the launcher after it.
+	// Shared with fs25mcp (cmd/*/cli.go): transport flags are recognised
+	// before or after the subcommand, and scanning stops at "--" so the
+	// game's own arguments are never mistaken for ours.
+	tr, rest, err := parseTransport(args)
+	if err != nil {
+		return fmt.Errorf("%w\n%s", err, transportUsage)
+	}
+	// parseTransport keeps the "--"; Steam's %command% expands to the
+	// launcher after it.
 	if len(rest) > 0 && rest[0] == "--" {
 		rest = rest[1:]
 	}
@@ -52,7 +52,7 @@ func runPlay(args []string) error {
 	defer cancel()
 
 	serverErr := make(chan error, 1)
-	go func() { serverErr <- runServer(ctx, *addr, *connect) }()
+	go func() { serverErr <- runServer(ctx, tr.http, tr.relay) }()
 
 	game := exec.CommandContext(ctx, rest[0], rest[1:]...) //nolint:gosec // the command is the player's own launcher
 	game.Stdout, game.Stderr, game.Stdin = os.Stdout, os.Stderr, os.Stdin
