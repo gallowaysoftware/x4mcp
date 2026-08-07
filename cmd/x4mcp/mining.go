@@ -28,6 +28,12 @@ import (
 // by computing, from the game's own recipes, how much a refinery
 // compresses its input.
 
+// materiallyBetter is how much richer (by distance-weighted score) a
+// neighbouring field must be before it is worth leaving the sector for.
+// Below it, the in-sector field wins on freight alone; the threshold is a
+// judgement, not a measurement, so it is named rather than inlined.
+const materiallyBetter = 3.0
+
 // minables are the raw resources a mining ship can actually collect.
 // Everything else in a recipe tree bottoms out in one of these.
 var minables = map[string]string{
@@ -63,13 +69,18 @@ type miningSource struct {
 }
 
 type resourcePlan struct {
-	Resource  string         `json:"resource"`
-	Kind      string         `json:"kind"` // solid | gas
-	NeededFor []string       `json:"needed_for,omitempty"`
-	InTarget  bool           `json:"in_target_sector"`
-	Sources   []miningSource `json:"sources"`
-	Refinery  *refineryHint  `json:"refining,omitempty"`
-	Verdict   string         `json:"verdict"`
+	Resource  string   `json:"resource"`
+	Kind      string   `json:"kind"` // solid | gas
+	NeededFor []string `json:"needed_for,omitempty"`
+	InTarget  bool     `json:"in_target_sector"`
+	// Recorded separately because Sources is truncated to a limit, and
+	// the target sector's own field can rank below it — which left the
+	// verdict reading a weight that was not there and reporting 0.
+	InTargetWeight int64          `json:"in_target_weight,omitempty"`
+	InTargetFields int            `json:"in_target_fields,omitempty"`
+	Sources        []miningSource `json:"sources"`
+	Refinery       *refineryHint  `json:"refining,omitempty"`
+	Verdict        string         `json:"verdict"`
 }
 
 // refineryHint is the "should the refinery sit at the field or at the
@@ -81,7 +92,12 @@ type refineryHint struct {
 	OutPerCycle int     `json:"refined_per_cycle"`
 	VolumeRatio float64 `json:"volume_ratio"`
 	Transport   string  `json:"transport_change,omitempty"`
-	Note        string  `json:"note"`
+	// Other single-input refineries for the same resource. Ore feeds both
+	// Refined Metals and Teladianium, and with no complex named there is
+	// nothing to choose between them — so say so rather than pick one and
+	// look certain.
+	Alternatives []string `json:"alternatives,omitempty"`
+	Note         string   `json:"note"`
 }
 
 type miningPlanOut struct {
@@ -157,6 +173,7 @@ func (a *app) planMiningSupply(ctx context.Context, _ *mcp.CallToolRequest, in m
 			}
 			if macro == strings.ToLower(target) {
 				plan.InTarget = true
+				plan.InTargetWeight, plan.InTargetFields = weight, fields
 			}
 			src := miningSource{
 				Sector: sec.Macro, Name: sec.Name, Owner: sec.Owner,
@@ -185,7 +202,28 @@ func (a *app) planMiningSupply(ctx context.Context, _ *mcp.CallToolRequest, in m
 			return plan.Sources[i].Hops < plan.Sources[j].Hops
 		})
 		if len(plan.Sources) > limit {
+			var local *miningSource
+			for i := range plan.Sources {
+				if plan.Sources[i].Hops == 0 {
+					local = &plan.Sources[i]
+					break
+				}
+			}
 			plan.Sources = plan.Sources[:limit]
+			// A field in the sector being planned is never noise, however
+			// poorly it scores: "you already have some here" is the one
+			// answer the player cannot get anywhere else.
+			if local != nil {
+				kept := false
+				for _, s := range plan.Sources {
+					if s.Hops == 0 {
+						kept = true
+					}
+				}
+				if !kept {
+					plan.Sources = append(plan.Sources, *local)
+				}
+			}
 		}
 
 		plan.Refinery = a.refineryHintFor(res, via[res])
@@ -318,8 +356,23 @@ func pickRefinery(db map[string]x4data.Ware, res, preferred string) *refineryHin
 	// refinery and reported a 6.1x compression the player could not get
 	// from a refinery. Prefer the fewest inputs that are neither the
 	// resource nor energy cells; that is the definition, not a proxy.
+	// How many recipes consume each ware: with no complex named, the
+	// mainstream refinery is the one whose output the economy actually
+	// uses. Refined Metals feeds most of the game; Teladianium feeds
+	// Teladi construction. Alphabetical order would pick correctly here
+	// by luck, which is not a reason.
+	uses := map[string]int{}
+	for _, w := range db {
+		if m, ok := defaultMethod(w); ok {
+			for _, in := range m.Inputs {
+				uses[in.Ware]++
+			}
+		}
+	}
+
 	var best x4data.Ware
 	var bestQty, bestOut, bestExtras int
+	var alts []string
 	// The intermediate the recipe walk actually went through wins, when
 	// there was one: it is the branch this complex will really build.
 	candidates := db
@@ -346,8 +399,12 @@ func pickRefinery(db map[string]x4data.Ware, res, preferred string) *refineryHin
 		if qty == 0 || m.Amount == 0 {
 			continue
 		}
+		if extras == 0 && preferred == "" {
+			alts = append(alts, wareLabel(w))
+		}
 		better := bestQty == 0 || extras < bestExtras ||
-			(extras == bestExtras && qty > bestQty)
+			(extras == bestExtras && uses[w.ID] > uses[best.ID]) ||
+			(extras == bestExtras && uses[w.ID] == uses[best.ID] && w.ID < best.ID)
 		if better {
 			best, bestQty, bestOut, bestExtras = w, qty, m.Amount, extras
 		}
@@ -359,18 +416,24 @@ func pickRefinery(db map[string]x4data.Ware, res, preferred string) *refineryHin
 	// quietly presenting a factory's ratio as if it were one.
 	if bestExtras > 0 {
 		return &refineryHint{
-			Ware: best.ID, WareName: best.Name,
+			Ware: best.ID, WareName: wareLabel(best),
 			RawPerCycle: bestQty, OutPerCycle: bestOut,
 			Note: fmt.Sprintf("no single-input refinery consumes %s — the nearest is %s, which needs "+
 				"%d other input(s) too, so it cannot be a satellite next to the field. Haul the raw %s.",
-				res, best.Name, bestExtras, res),
+				res, wareLabel(best), bestExtras, res),
 		}
 	}
 	raw := db[res]
 	h := &refineryHint{
-		Ware: best.ID, WareName: best.Name,
+		Ware: best.ID, WareName: wareLabel(best),
 		RawPerCycle: bestQty, OutPerCycle: bestOut,
 	}
+	for _, a := range alts {
+		if a != h.WareName {
+			h.Alternatives = append(h.Alternatives, a)
+		}
+	}
+	sort.Strings(h.Alternatives)
 	// Volume, not unit count, is what fills a hold.
 	if raw.Volume > 0 && best.Volume > 0 {
 		h.VolumeRatio = float64(bestQty*raw.Volume) / float64(bestOut*best.Volume)
@@ -383,7 +446,7 @@ func pickRefinery(db map[string]x4data.Ware, res, preferred string) *refineryHin
 		h.Note = fmt.Sprintf(
 			"refining compresses %.1fx by volume, so hauling %s instead of raw %s is that much less freight per trip; "+
 				"worth a satellite refinery at the field when the field is several jumps out",
-			h.VolumeRatio, best.Name, res)
+			h.VolumeRatio, wareLabel(best), res)
 	case h.VolumeRatio > 0:
 		h.Note = fmt.Sprintf(
 			"refining barely changes volume (%.2fx), so there is no freight argument for refining at the field — "+
@@ -415,12 +478,38 @@ func verdictFor(res string, p resourcePlan) string {
 	case p.InTarget && best.Hops == 0:
 		return fmt.Sprintf("%s is in the target sector itself (weight %d across %d field(s)) — "+
 			"mine and refine in place; no hauling at all", res, best.Weight, best.Fields)
+	case p.InTarget:
+		// There IS some in the target sector, it just lost on score.
+		// Saying only "the nearest is N jumps away" contradicts the
+		// in_target_sector flag beside it and hides the real choice,
+		// which is a small field at zero range against a big one at N.
+		var localScore int64
+		for _, s := range p.Sources {
+			if s.Hops == 0 {
+				localScore = s.Score
+			}
+		}
+		// In-sector is a fine answer when the field is sizeable and
+		// nothing close is much better. Zero freight beats a somewhat
+		// richer field: a miner's cycle is dominated by the round trip,
+		// not by how dense the rock is, so a field that merely doubles
+		// the yield two jumps out does not double throughput.
+		if localScore > 0 && float64(best.Score) < materiallyBetter*float64(localScore) {
+			return fmt.Sprintf("%s is in the target sector (weight %d across %d field(s)) and nothing within "+
+				"range is materially better — mine and refine in place; no freight at all",
+				res, p.InTargetWeight, p.InTargetFields)
+		}
+		return fmt.Sprintf("%s is in the target sector but the field is thin (weight %d across %d field(s)) "+
+			"next to %s at %d jump(s), which scores %.0fx higher — plan to import it, and treat the local "+
+			"field as a supplement rather than the supply",
+			res, p.InTargetWeight, p.InTargetFields, displayName(best), best.Hops,
+			float64(best.Score)/float64(max64(localScore, 1)))
 	case best.Hops == 1:
 		return fmt.Sprintf("nearest %s is 1 jump away in %s — a short miner loop; "+
 			"refine at the complex unless the volume ratio below says otherwise",
 			res, displayName(best))
 	default:
-		return fmt.Sprintf("nearest usable %s is %d jumps away in %s — round trips are long, "+
+		return fmt.Sprintf("nearest %s is %d jumps away in %s — round trips are long, "+
 			"so this is where a satellite refinery next to the field earns its cost if the volume ratio is high",
 			res, best.Hops, displayName(best))
 	}
@@ -526,4 +615,22 @@ func defaultMethod(w x4data.Ware) (x4data.Method, bool) {
 		}
 	}
 	return w.Methods[0], true
+}
+
+// wareLabel is a ware's display name, falling back to its id. Plenty of
+// entries in the game database have no name — ships, equipment, and
+// nividiumgems, which IS a real single-input refinery and was being
+// reported as a blank.
+func wareLabel(w x4data.Ware) string {
+	if w.Name != "" {
+		return w.Name
+	}
+	return w.ID
+}
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
