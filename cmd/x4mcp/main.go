@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -15,7 +14,11 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 {
+	// A leading argument is only a subcommand if it is not a flag.
+	// Without this check, `x4mcp --http :8093` is rejected as an unknown
+	// subcommand, and "flags work in either position" — the whole point
+	// of the shared convention — is true of fs25mcp and false here.
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
 		switch os.Args[1] {
 		case "parse":
 			runParse(os.Args[2:])
@@ -54,16 +57,25 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	// serve [--http host:port | --connect ws://.../relay/x4] — stdio
-	// unless a network mode is asked for.
-	addr, connect := "", ""
-	if len(os.Args) > 2 {
-		fs := flag.NewFlagSet("serve", flag.ExitOnError)
-		fs.StringVar(&addr, "http", "", "serve MCP over Streamable HTTP on this host:port (e.g. 0.0.0.0:8093) instead of stdio")
-		fs.StringVar(&connect, "connect", "", "dial OUT to a state relay and serve through it (e.g. ws://hum:8091/relay/x4) — no inbound port needed")
-		fs.Parse(os.Args[2:])
+	// serve [--stdio | --http host:port | --relay ws://.../relay/x4].
+	// Parsed by the convention shared with fs25mcp (cli.go): stdio unless
+	// a network transport is asked for, flags in either position, older
+	// names still accepted.
+	tr, rest, err := parseTransport(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "x4mcp: %v\n%s", err, transportUsage)
+		os.Exit(2)
 	}
-	if err := runServer(context.Background(), addr, connect); err != nil {
+	// The subcommand is dropped AFTER parsing, not before: with flags
+	// allowed in either position, "serve" may not be the first argument.
+	if len(rest) > 0 && rest[0] == "serve" {
+		rest = rest[1:]
+	}
+	if len(rest) > 0 {
+		fmt.Fprintf(os.Stderr, "x4mcp: unexpected argument %q\n%s", rest[0], transportUsage)
+		os.Exit(2)
+	}
+	if err := runServer(context.Background(), tr.http, tr.relay); err != nil {
 		fmt.Fprintln(os.Stderr, "server error:", err)
 		os.Exit(1)
 	}
