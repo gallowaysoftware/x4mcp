@@ -148,6 +148,11 @@ func runServer(ctx context.Context, addr, connect string) error {
 	}, a.findMiningSectors)
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name:        "plan_mining_supply",
+		Description: "Plan an industrial complex's raw-material supply around a TARGET sector: for each resource the complex needs, find the reachable mining sectors within a few gate jumps, ranked by abundance against distance, and say whether to refine at the complex or beside the field. Give 'produces' (e.g. hullparts, claytronics) to derive the raw resources from the game's own recipes, or 'resources' to name them directly. Use this when siting a station; use find_mining_sectors when you only want the galaxy's richest fields for one resource.",
+	}, a.planMiningSupply)
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_recipe",
 		Description: "Look up a ware's production recipe and price band from the game database: inputs per cycle, cycle time, output amount, and min/avg/max price. Use to understand any commodity.",
 	}, a.getRecipe)
