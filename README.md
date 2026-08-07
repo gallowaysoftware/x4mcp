@@ -155,6 +155,7 @@ modified save.
 | `list_known_sectors`  | Galaxy map: sectors with controlling faction, contested/owned status (filter by owner) |
 | `find_trade_offers`   | Search discovered NPC stations' live trade offers by ware; rank by best buy (cheapest) or sell (highest) price. Prices normalized to credits. |
 | `find_mining_sectors` | Rank sectors by abundance of a minable solid (field weight) or gas (presence) |
+| `plan_mining_supply` | Site an industrial complex: for a TARGET sector, find the reachable mining sectors per resource (abundance against gate distance) and whether to refine at the complex or beside the field |
 | `get_recipe`          | A ware's production recipe (inputs/cycle/output) and price band, from the game DB |
 | `plan_production`     | Design a factory: output/hr, input rates, margin, exact vertical module ratios **and a whole-module buildable plan** (ceil'd so nothing starves, with per-ware surplus + the bottleneck module) + raw needs. Pass `build_sector` (or `sunlight`) to scale the Energy-Cells module count by 1/sunlight for that site. |
 | `get_module`          | Station-module hardware DB by macro/name/produced-ware/class: production (produced ware + workforce employed), habitation (workforce housed), storage (m³ + cargo type). Complements `get_recipe` (module build costs are the `module_*` wares). |
