@@ -202,3 +202,81 @@ func TestVerdictForNoSources(t *testing.T) {
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
 
 func timeoutChan() <-chan time.Time { return time.After(5 * time.Second) }
+
+// A resource present in the target sector but outranked by a richer
+// neighbour must not be reported only as "the nearest is N jumps away" —
+// that contradicts the in_target_sector flag printed beside it, and it
+// hides the actual trade-off: a small field at zero range against a big
+// one N jumps out.
+func TestVerdictWhenInSectorButOutranked(t *testing.T) {
+	p := resourcePlan{Kind: "solid", InTarget: true,
+		InTargetWeight: 155274, InTargetFields: 2,
+		Sources: []miningSource{
+			{Hops: 2, Name: "Scarlet Star", Weight: 46911216, Score: 15637072},
+			{Hops: 0, Name: "Holy Vision", Weight: 155274, Score: 155274},
+		}}
+	got := verdictFor("ore", p)
+	if !contains(got, "in the target sector") {
+		t.Errorf("verdict hides the in-sector field: %q", got)
+	}
+	if !contains(got, "155274") {
+		t.Errorf("verdict does not quote the local field's weight: %q", got)
+	}
+	if !contains(got, "Scarlet Star") {
+		t.Errorf("verdict does not name the richer alternative: %q", got)
+	}
+}
+
+// The primary refinery with no recipe context is the one the economy
+// actually uses, not whichever consumes more raw or sorts first.
+func TestPickRefineryPrefersMainstreamAndListsAlternatives(t *testing.T) {
+	db := testWares()
+	// Refined Metals feeds hullparts; Teladianium feeds nothing here.
+	h := pickRefinery(db, "ore", "")
+	if h == nil || h.Ware != "refinedmetals" {
+		t.Fatalf("primary = %+v, want refinedmetals (the one downstream recipes consume)", h)
+	}
+	if len(h.Alternatives) != 1 || h.Alternatives[0] != "Teladianium" {
+		t.Errorf("alternatives = %v, want [Teladianium]", h.Alternatives)
+	}
+}
+
+// Ships, equipment and nividiumgems have no display name in the game
+// database; reporting a blank refinery is worse than reporting its id.
+func TestWareLabelFallsBackToID(t *testing.T) {
+	if got := wareLabel(x4data.Ware{ID: "nividiumgems"}); got != "nividiumgems" {
+		t.Errorf("wareLabel = %q, want the id", got)
+	}
+	if got := wareLabel(x4data.Ware{ID: "x", Name: "Refined Metals"}); got != "Refined Metals" {
+		t.Errorf("wareLabel = %q, want the name", got)
+	}
+}
+
+// "In-sector is an OK answer if it's sizeable and there isn't a much
+// better field close." A neighbour that is merely somewhat richer does
+// not justify freight, because a miner's cycle is dominated by the round
+// trip rather than by ore density.
+func TestVerdictKeepsASizeableLocalField(t *testing.T) {
+	p := resourcePlan{Kind: "solid", InTarget: true,
+		InTargetWeight: 8_000_000, InTargetFields: 40,
+		Sources: []miningSource{
+			{Hops: 1, Name: "Next Door", Weight: 20_000_000, Score: 10_000_000},
+			{Hops: 0, Name: "Home", Weight: 8_000_000, Score: 8_000_000},
+		}}
+	got := verdictFor("ore", p)
+	if !contains(got, "nothing within range is materially better") {
+		t.Errorf("a 1.25x neighbour should not displace a sizeable local field: %q", got)
+	}
+
+	// But a field two orders of magnitude richer should.
+	p.Sources[0] = miningSource{Hops: 2, Name: "Scarlet Star", Weight: 46_911_216, Score: 15_637_072}
+	p.InTargetWeight = 212_541
+	p.Sources[1].Score = 212_541
+	got = verdictFor("ore", p)
+	if !contains(got, "plan to import") {
+		t.Errorf("a 73x neighbour should win: %q", got)
+	}
+	if !contains(got, "supplement") {
+		t.Errorf("verdict should still credit the local field: %q", got)
+	}
+}
