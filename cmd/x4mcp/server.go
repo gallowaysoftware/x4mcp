@@ -163,6 +163,16 @@ func runServer(ctx context.Context, addr, connect string) error {
 	}, a.planProduction)
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "plan_complex",
+		Description: "Design ONE station that supplies MANY wares at once — the multi-target form of plan_production. " +
+			"Use preset='wharf' or 'shipyard' for the complete shipbuilding input set (23 wares: hull construction AND the equipment a facility mounts), " +
+			"resolved from the installed game data so nothing is omitted. Also accepts an explicit 'wares' list. " +
+			"Returns the shared, vertically-integrated module ratios across every target (overlapping tiers like energy cells counted ONCE, not summed), " +
+			"whole-module build plan, one-off build cost, mined raws, and which module blueprints are missing. " +
+			"ALWAYS prefer this over calling plan_production once per ware — that route drops inputs and double-counts shared tiers.",
+	}, a.planComplex)
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_module",
 		Description: "Look up station-building modules from the game database by macro, name substring, produced ware, or class (production/habitation/storage/dock/buildmodule/defence). Returns each module's class, size, race, produced ware + workforce it employs (production), workforce it houses (habitation), or hold capacity + cargo type (storage). This is the hardware layer that complements get_recipe (which gives the ware recipes). Module build costs are the module_* wares — use get_recipe for those.",
 	}, a.getModule)
@@ -1365,80 +1375,18 @@ func (a *app) planProduction(ctx context.Context, _ *mcp.CallToolRequest, in pla
 	modsByWare := map[string]float64{}
 	rawByWare := map[string]float64{}
 	a.expand(w.ID, outRate, modsByWare, rawByWare, 0)
-	// Energy cells are raw-fed solar: scale ONLY their module count by 1/sunlight
-	// (it cascades to no other ware). At The Reach (3.67x) you need ~1/3.67 the EC modules.
-	if v, ok := modsByWare["energycells"]; ok {
-		modsByWare["energycells"] = v / sun
-	}
-	for ware, mods := range modsByWare {
-		out.IntegratedModules = append(out.IntegratedModules, moduleCount{Ware: ware, Name: db[ware].Name, Modules: round2(mods)})
-	}
-	sort.Slice(out.IntegratedModules, func(i, j int) bool { return out.IntegratedModules[i].Modules > out.IntegratedModules[j].Modules })
 
-	// Whole-module buildable plan: ceil each ratio so the chain never starves, then
-	// report per-ware headroom and the tightest (bottleneck) input module.
-	need := map[string]float64{}
-	for ware, mods := range modsByWare {
-		md, _ := db[ware].DefaultMethod()
-		if md.Amount <= 0 {
-			continue
-		}
-		produced := math.Ceil(mods) * perHour(md)
-		for _, inp := range md.Inputs {
-			need[inp.Ware] += produced * float64(inp.Amount) / float64(md.Amount)
-		}
-	}
-	bottleneckRatio := math.Inf(1)
-	for ware, mods := range modsByWare {
-		whole := int(math.Ceil(mods))
-		md, _ := db[ware].DefaultMethod()
-		capacity := float64(whole) * perHour(md)
-		if ware == "energycells" {
-			capacity *= sun // a built EC module makes sun-times more
-		}
-		n := need[ware]
-		out.BuildModules = append(out.BuildModules, buildModule{
-			Ware: ware, Name: db[ware].Name, FractionalModules: round2(mods), WholeModules: whole,
-			BuiltCapacityPerHour: round1(capacity), NeededPerHour: round1(n), SurplusPerHour: round1(capacity - n),
-		})
-		if n > 0 && capacity/n < bottleneckRatio {
-			bottleneckRatio = capacity / n
-			out.Bottleneck = ware
-		}
-	}
-	sort.Slice(out.BuildModules, func(i, j int) bool { return out.BuildModules[i].WholeModules > out.BuildModules[j].WholeModules })
+	d := a.designFrom(modsByWare, rawByWare, sun)
+	out.IntegratedModules = d.IntegratedModules
+	out.BuildModules = d.BuildModules
+	out.Bottleneck = d.Bottleneck
+	out.BuildCostCredits = d.BuildCostCredits
+	out.BuildWares = d.BuildWares
+	out.RawResources = d.RawResources
 
-	// One-off build cost: sum each build-module's ware price + its construction
-	// wares, over the whole-module counts. Maps each output ware to its production
-	// module (module_<faction>_prod_<ware>). Uses default-method modules, so it
-	// reflects the standard chain (not the alternate scrap-recycling modules).
-	buildWareTot := map[string]int64{}
-	for _, bm := range out.BuildModules {
-		mw, has := moduleWareFor(db, bm.Ware)
-		if !has || bm.WholeModules <= 0 {
-			continue
-		}
-		n := int64(bm.WholeModules)
-		out.BuildCostCredits += n * int64(mw.PriceAvg)
-		if md, ok := mw.DefaultMethod(); ok {
-			for _, inp := range md.Inputs {
-				buildWareTot[inp.Ware] += n * int64(inp.Amount)
-			}
-		}
-	}
-	for ware, amt := range buildWareTot {
-		out.BuildWares = append(out.BuildWares, buildWare{Ware: ware, Name: db[ware].Name, Amount: amt})
-	}
-	sort.Slice(out.BuildWares, func(i, j int) bool { return out.BuildWares[i].Amount > out.BuildWares[j].Amount })
 	if out.GrossMarginPerHour > 0 && out.BuildCostCredits > 0 {
 		out.PaybackHours = round1(float64(out.BuildCostCredits) / out.GrossMarginPerHour)
 	}
-
-	for ware, rate := range rawByWare {
-		rw := db[ware]
-		out.RawResources = append(out.RawResources, rateLine{Ware: ware, Name: rw.Name, PerHour: round1(rate), AvgPrice: rw.PriceAvg, CostPerHour: round1(rate * float64(rw.PriceAvg))})
-	}
-	sort.Slice(out.RawResources, func(i, j int) bool { return out.RawResources[i].PerHour > out.RawResources[j].PerHour })
 
 	// Can the player actually build this module today?
 	if snap != nil {
