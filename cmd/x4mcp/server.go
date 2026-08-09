@@ -178,6 +178,16 @@ func runServer(ctx context.Context, addr, connect string) error {
 	}, a.planProduction)
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name: "estimate_ship_cost",
+		Description: "What a ship ACTUALLY costs fitted, not the bare hull price. Reads the hull's real equipment slots " +
+			"(L/M turrets, weapons, shields, engines) from the install and prices them, because equipment is usually most " +
+			"of the bill — a Behemoth E hull is 9.25M and the fitted ship is ~26M. Returns a min/avg/max band (component " +
+			"prices float with the economy) plus a total at LIVE prices from stations the player has discovered, which is " +
+			"the closest thing to a wharf quote. Pass turret='flak' to price a specific loadout, quality='best' for the top " +
+			"of the range. Use this for any fleet budget — never quote a hull price as the cost of a warship.",
+	}, a.estimateShipCost)
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_plans",
 		Description: "List the player's OWN construction plans — the station layouts saved in the build menu, plus any Exported single-plan files. Use before analyze_plan to get exact names.",
 	}, a.listPlans)
