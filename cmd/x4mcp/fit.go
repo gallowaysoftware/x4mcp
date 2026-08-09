@@ -30,7 +30,7 @@ type fitIn struct {
 	Turret   string  `json:"turret,omitempty" jsonschema:"Substring picking the turret type to fit, e.g. 'flak', 'plasma', 'beam'. Omit for the cheapest compatible."`
 	Quality  string  `json:"quality,omitempty" jsonschema:"'budget' (cheapest compatible, default) or 'best' (most expensive) — the spread between them is most of the price"`
 	Race     string  `json:"race,omitempty" jsonschema:"Restrict components to a maker race (argon, teladi, paranid, split, terran, boron). Defaults to the hull's own race."`
-	Markup   float64 `json:"markup,omitempty" jsonschema:"Multiplier for wharf markup, which this tool does NOT model. Default 1.0 (component cost only). One observed data point: a fitted Behemoth E cost ~26M against a ~14M modelled floor, so ~1.85 for an NPC wharf."`
+	Markup   float64 `json:"markup,omitempty" jsonschema:"Optional multiplier applied to the totals, for markups or discounts this tool cannot see. Default 1.0. Against a real Behemoth E quote the modelled max band was already within 1%, so a markup is usually NOT needed."`
 }
 
 type fitLine struct {
@@ -166,12 +166,15 @@ func (a *app) estimateShipCost(ctx context.Context, _ *mcp.CallToolRequest, in f
 	if out.TotalAvg > 0 {
 		out.HullShare = fmt.Sprintf("%.0f%%", 100*float64(out.HullPrice)/float64(out.TotalAvg))
 	}
-	out.Note = "Equipment is most of a warship's price, so a hull quote understates it badly. " +
-		"total_min/avg/max is the economy's price band for these exact components — real purchases land inside it, " +
-		"not on the average. total_at_live_prices uses what discovered stations are ACTUALLY charging and is the " +
-		"closest to a wharf quote. Wharf markups, mk-level availability and faction discounts are NOT modelled, " +
-		"so treat this as a FLOOR, not a quote: one observed purchase (fitted Behemoth E) came to ~26M against a ~14M " +
-		"modelled floor, i.e. roughly 1.85x. Pass markup to apply that, and quality='best' for the top of the range."
+	out.Note = "Equipment is most of a warship's price — hull is typically 40-65% — so a hull quote understates it badly. " +
+		"total_min/avg/max is the economy's price band for these exact components; real purchases land inside it, not on " +
+		"the average. total_at_live_prices uses what discovered stations are ACTUALLY charging. " +
+		"NOT included, because they are per-purchase choices rather than hull properties: software, consumables " +
+		"(defence/repair drones, flares) and crew — on a Behemoth E those came to ~687k together. " +
+		"CALIBRATION against a real shipyard quote for a Behemoth E (24,691,067 Cr): quality='best' modelled " +
+		"22.43M avg / 23.75M max; adding the ~687k of extras lands within 1% of the quote at the top of the band. " +
+		"So use quality='best' and the MAX of the band for a purchase decision, and add ~3% for the extras. " +
+		"The mk level of the single thruster slot dominates everything: L All-round is 0.28M at Mk1 and 7.03M at Mk3."
 	return ok2(out)
 }
 

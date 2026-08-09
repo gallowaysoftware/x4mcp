@@ -110,3 +110,41 @@ func TestEquipForSortsCheapestFirst(t *testing.T) {
 		}
 	}
 }
+
+// A hull's single thruster is declared in its MACRO, not its component
+// connections, and it is routinely the priciest item on the ship — an L
+// All-round is 0.28M at Mk1 and 7.03M at Mk3. Missing it understated a
+// Behemoth E by about a third against the real shipyard quote.
+func TestMacroThrusterSizeIsParsed(t *testing.T) {
+	macro := `<macros><macro name="ship_arg_l_destroyer_02_a_macro" class="ship_l">
+	 <component ref="ship_arg_l_destroyer_02" />
+	 <properties><thruster tags="large" /><ship type="destroyer" /></properties>
+	</macro></macros>`
+	m := macroThrusterRe.FindStringSubmatch(macro)
+	if m == nil {
+		t.Fatal("thruster tag not matched in macro")
+	}
+	if slotSizes[m[1]] != "L" {
+		t.Errorf("thruster size = %q, want L", slotSizes[m[1]])
+	}
+	if c := macroCompRe.FindStringSubmatch(macro); c == nil || c[1] != "ship_arg_l_destroyer_02" {
+		t.Errorf("component ref not matched: %v", c)
+	}
+}
+
+// Thrusters must be priceable through the same matcher as everything else;
+// they are "gen" race, so a hull-race filter must not exclude them.
+func TestEquipForFindsGenericThrusters(t *testing.T) {
+	db := map[string]Ware{
+		"thruster_gen_l_allround_01_mk1": {ID: "thruster_gen_l_allround_01_mk1", PriceAvg: 281595},
+		"thruster_gen_l_allround_01_mk3": {ID: "thruster_gen_l_allround_01_mk3", PriceAvg: 7031799},
+		"thruster_gen_m_allround_01_mk1": {ID: "thruster_gen_m_allround_01_mk1", PriceAvg: 13019},
+	}
+	got := EquipFor(db, SlotThruster, "L", "argon", "")
+	if len(got) != 2 {
+		t.Fatalf("got %d L thrusters, want 2 (generic parts must survive a race filter)", len(got))
+	}
+	if got[0].PriceAvg != 281595 || got[len(got)-1].PriceAvg != 7031799 {
+		t.Errorf("budget/best picks wrong: %+v", got)
+	}
+}
