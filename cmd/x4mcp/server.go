@@ -163,6 +163,17 @@ func runServer(ctx context.Context, addr, connect string) error {
 	}, a.planProduction)
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name:        "list_plans",
+		Description: "List the player's OWN construction plans — the station layouts saved in the build menu, plus any Exported single-plan files. Use before analyze_plan to get exact names.",
+	}, a.listPlans)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "analyze_plan",
+		Description: "Analyse one of the player's OWN construction plans for ratios: per-ware production vs internal consumption, which intermediates run a deficit (and how many extra modules would close it), which mined resources it needs, sellable surplus, workforce jobs vs housing, storage and build cost. " +
+			"This is the INVERSE of plan_production/plan_complex — those design a station from scratch, this audits one he already laid out. Use it for any 'is my station balanced / what did I get wrong / check my ratios' question.",
+	}, a.analyzePlan)
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name: "plan_complex",
 		Description: "Design ONE station that supplies MANY wares at once — the multi-target form of plan_production. " +
 			"Use preset='wharf' or 'shipyard' for the complete shipbuilding input set (23 wares: hull construction AND the equipment a facility mounts), " +
