@@ -31,6 +31,12 @@ const (
 	SlotTurret SlotKind = "turret"
 	SlotShield SlotKind = "shield"
 	SlotEngine SlotKind = "engine"
+	// A hull has exactly ONE thruster, declared in its macro rather than its
+	// component connections — and it is routinely the most expensive item on
+	// the ship. An L All-round Mk3 is 7.03M against 0.28M for the Mk1, a 25x
+	// spread on a single slot, so omitting it (as the first version did)
+	// understates a destroyer by about a third.
+	SlotThruster SlotKind = "thruster"
 )
 
 // Slot is a count of one equipment class at one size on a hull.
@@ -53,6 +59,7 @@ var slotSizes = map[string]string{
 
 var connTagRe = regexp.MustCompile(`(?i)<connection\s+name="[^"]*"[^>]*tags="([^"]*)"`)
 var macroCompRe = regexp.MustCompile(`(?i)<component\s+ref="([^"]+)"`)
+var macroThrusterRe = regexp.MustCompile(`(?i)<thruster\s+tags="([^"]*)"`)
 
 // LoadShipSlots returns macro -> equipment slots for every ship in the install.
 // Cached to disk like the other static tables.
@@ -63,13 +70,18 @@ func LoadShipSlots(dir string) (map[string]ShipSlots, error) {
 	if dir == "" {
 		return map[string]ShipSlots{}, nil
 	}
-	fp := fingerprint(dir)
+	// The cache key carries a schema tag as well as the install fingerprint:
+	// adding the thruster slot changed the SHAPE of this table without changing
+	// the game files, so a fingerprint-only key would keep serving the old,
+	// thruster-less data forever.
+	fp := fingerprint(dir) + "|slots-v2-thrusters"
 	if cached, ok := readSlotCache(fp); ok {
 		return cached, nil
 	}
 
 	// macro -> component ref, and component name -> raw bytes.
 	macroComp := map[string]string{}
+	macroThruster := map[string]string{} // macro -> thruster size (S/M/L/XL)
 	compBytes := map[string][]byte{}
 	for _, cat := range listCats(dir) {
 		arc, err := readCat(cat)
@@ -93,6 +105,14 @@ func LoadShipSlots(dir string) (map[string]ShipSlots, error) {
 				if m := macroCompRe.FindStringSubmatch(string(b)); m != nil {
 					macroComp[base] = strings.ToLower(m[1])
 				}
+				if m := macroThrusterRe.FindStringSubmatch(string(b)); m != nil {
+					for _, t := range strings.Fields(strings.ToLower(m[1])) {
+						if sz, ok := slotSizes[t]; ok {
+							macroThruster[base] = sz
+							break
+						}
+					}
+				}
 				continue
 			}
 			if !strings.HasPrefix(base, "ship_") {
@@ -110,7 +130,11 @@ func LoadShipSlots(dir string) (map[string]ShipSlots, error) {
 		if !ok {
 			continue
 		}
-		if s := slotsFromComponent(macro, b); len(s.Slots) > 0 {
+		s := slotsFromComponent(macro, b)
+		if sz, ok := macroThruster[macro]; ok && sz != "" {
+			s.Slots = append(s.Slots, Slot{Kind: SlotThruster, Size: sz, Count: 1})
+		}
+		if len(s.Slots) > 0 {
 			out[macro] = s
 		}
 	}
@@ -155,7 +179,7 @@ func slotsFromComponent(macro string, b []byte) ShipSlots {
 		s.Slots = append(s.Slots, k)
 	}
 	sizeRank := map[string]int{"XL": 0, "L": 1, "M": 2, "S": 3, "XS": 4}
-	kindRank := map[SlotKind]int{SlotWeapon: 0, SlotTurret: 1, SlotShield: 2, SlotEngine: 3}
+	kindRank := map[SlotKind]int{SlotWeapon: 0, SlotTurret: 1, SlotShield: 2, SlotEngine: 3, SlotThruster: 4}
 	sort.Slice(s.Slots, func(i, j int) bool {
 		if kindRank[s.Slots[i].Kind] != kindRank[s.Slots[j].Kind] {
 			return kindRank[s.Slots[i].Kind] < kindRank[s.Slots[j].Kind]
@@ -168,7 +192,7 @@ func slotsFromComponent(macro string, b []byte) ShipSlots {
 // ---- component matching ----
 
 // equipWareRe splits an equipment ware id: <kind>_<race>_<size>_<rest>_mk<N>.
-var equipWareRe = regexp.MustCompile(`^(turret|weapon|shield|engine)_([a-z]+)_(xs|s|m|l|xl)_(.+)$`)
+var equipWareRe = regexp.MustCompile(`^(turret|weapon|shield|engine|thruster)_([a-z]+)_(xs|s|m|l|xl)_(.+)$`)
 
 // EquipOption is one component that can fill a slot.
 type EquipOption struct {
