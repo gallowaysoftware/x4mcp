@@ -135,7 +135,7 @@ func (a *app) planMiningSupply(ctx context.Context, _ *mcp.CallToolRequest, in m
 		return nil, miningPlanOut{}, err
 	}
 
-	dist := hopsFrom(a.gateGraph(), snap, strings.ToLower(target), maxHops)
+	dist := hopsFrom(a.effectiveGates(snap), snap, strings.ToLower(target), maxHops)
 	byMacro := map[string]x4save.Sector{}
 	for _, s := range snap.Sectors {
 		byMacro[strings.ToLower(s.Macro)] = s

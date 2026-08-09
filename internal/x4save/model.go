@@ -51,6 +51,18 @@ type Snapshot struct {
 	// ship/equipment mods). You can only build modules you have a blueprint for.
 	Blueprints []string `json:"blueprints,omitempty"`
 
+	// GateGraph is sector macro -> reachable neighbour sector macros, built from
+	// the gates in THIS save that are actually connected.
+	//
+	// The install's galaxy.xml lists every gate the universe can ever have, which
+	// is not the same set as the gates a given playthrough can fly through:
+	// plots open and close them, and this save has 17 gates out of 323 with no
+	// <connected> link at all. Routing over those makes a sector look one jump
+	// away when it cannot be reached, which silently corrupts every hop count,
+	// mining-site ranking and fleet cycle-time estimate downstream. Empty when
+	// no gates were decoded, so callers can fall back to the static graph.
+	GateGraph map[string][]string `json:"gate_graph,omitempty"`
+
 	// BlueprintsSeen records whether the save's <blueprints> element was actually
 	// decoded. An empty Blueprints list is otherwise ambiguous: "owns none" and
 	// "never reached that part of the file" look identical, and the difference

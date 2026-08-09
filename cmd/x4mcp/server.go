@@ -87,6 +87,21 @@ func (a *app) gateGraph() map[string][]string {
 	return a.gates
 }
 
+// effectiveGates returns the gate graph to route over: the SAVE's, when it has
+// one, else the install's galaxy.xml.
+//
+// They are not the same universe. galaxy.xml lists every gate that can ever
+// exist; a playthrough opens and closes them (gate shutdown/reopening plots),
+// and a gate with no partner is not a route. Routing over the static graph
+// makes an unreachable sector look one jump away, which quietly corrupts every
+// hop count, mining-site ranking and fleet cycle estimate built on top of it.
+func (a *app) effectiveGates(snap *x4save.Snapshot) map[string][]string {
+	if snap != nil && len(snap.GateGraph) > 0 {
+		return snap.GateGraph
+	}
+	return a.gateGraph()
+}
+
 // runServer starts the MCP server. addr == "" serves stdio (the default,
 // what `claude mcp add x4 -- x4mcp serve` wants); a host:port serves MCP
 // Streamable HTTP at /mcp so clients elsewhere on a LAN (a chat frontend
@@ -303,7 +318,7 @@ func (a *app) snapshot(savePath string) (*x4save.Snapshot, error) {
 	}
 	snap.ApplySectorNames(a.sectorNames())
 	snap.ApplySectorGases(a.sectorGases())
-	snap.ApplyEnvironment(a.sunlight(), a.gateGraph())
+	snap.ApplyEnvironment(a.sunlight(), a.effectiveGates(snap))
 	snap.ApplyReputationNames(a.factionNames())
 	// Resolve hull display names (e.g. "Elite Sport") from the ship-stat DB.
 	if ships := a.shipDB(); len(ships) > 0 {
@@ -561,7 +576,7 @@ func (a *app) listClaimableShips(ctx context.Context, _ *mcp.CallToolRequest, in
 			}
 		}
 	}
-	gates := a.gateGraph()
+	gates := a.effectiveGates(snap)
 
 	var matched []x4save.ClaimableShip
 	for _, c := range snap.ClaimableShips {
@@ -1827,23 +1842,46 @@ func (a *app) sectorDistance(ctx context.Context, _ *mcp.CallToolRequest, in sec
 	if from == "" || to == "" {
 		return nil, sectorDistOut{}, fmt.Errorf("could not resolve sector(s): from=%q to=%q", in.From, in.To)
 	}
-	hops := x4data.Hops(a.gateGraph(), from, to)
+	hops := x4data.Hops(a.effectiveGates(snap), from, to)
 	return ok2(sectorDistOut{From: fromName, To: toName, Hops: hops})
 }
 
-// resolveSector matches a query to a sector macro by exact macro, or by
-// case-insensitive name/macro substring. Returns (macro, displayName).
+// resolveSector maps a macro or (partial) sector name to (macro, displayName).
+//
+// Match order matters. X4 names sectors in numbered families, so a plain
+// substring pass answers "Hatikvah's Choice I" with "Hatikvah's Choice III":
+// the query is a literal prefix of the longer name, and whichever the save
+// listed first won. Silently analysing the wrong sector is worse than most
+// errors here, because every hop count and mining plan is built on it.
+//
+// Exact macro, then exact name, then the SHORTEST substring match — the
+// shortest name containing the query is the least over-matched one.
 func resolveSector(snap *x4save.Snapshot, q string) (string, string) {
 	ql := strings.ToLower(strings.TrimSpace(q))
+	if ql == "" {
+		return "", ""
+	}
 	for _, s := range snap.Sectors {
 		if strings.ToLower(s.Macro) == ql {
 			return s.Macro, s.Name
 		}
 	}
 	for _, s := range snap.Sectors {
-		if s.Name != "" && strings.Contains(strings.ToLower(s.Name), ql) {
+		if s.Name != "" && strings.ToLower(s.Name) == ql {
 			return s.Macro, s.Name
 		}
+	}
+	best := -1
+	for i, s := range snap.Sectors {
+		if s.Name == "" || !strings.Contains(strings.ToLower(s.Name), ql) {
+			continue
+		}
+		if best < 0 || len(s.Name) < len(snap.Sectors[best].Name) {
+			best = i
+		}
+	}
+	if best >= 0 {
+		return snap.Sectors[best].Macro, snap.Sectors[best].Name
 	}
 	return "", ""
 }

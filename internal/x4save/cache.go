@@ -25,7 +25,7 @@ func CacheDir() string {
 
 // schemaVersion is bumped whenever the parser/Snapshot shape changes, so a
 // code change automatically invalidates stale cached snapshots.
-const schemaVersion = 23
+const schemaVersion = 24
 
 func cacheKey(path string, size, mtime int64) string {
 	h := sha1.Sum([]byte(fmt.Sprintf("v%d|%s|%d|%d", schemaVersion, path, size, mtime)))
