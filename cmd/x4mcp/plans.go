@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gallowaysoftware/x4mcp/internal/x4data"
 	"github.com/gallowaysoftware/x4mcp/internal/x4save"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -62,9 +63,22 @@ func (a *app) listPlans(ctx context.Context, _ *mcp.CallToolRequest, in listPlan
 // ---- analyze_plan ----
 
 type analyzePlanIn struct {
-	Plan     string  `json:"plan" jsonschema:"Construction plan name (exact, or a substring that matches exactly one). List them with list_plans."`
-	Sunlight float64 `json:"sunlight,omitempty" jsonschema:"Sunlight factor of the intended sector (e.g. 1.5); scales Energy Cells output. Default 1.0"`
-	Sector   string  `json:"sector,omitempty" jsonschema:"Sector name to take the sunlight factor from instead of passing it directly"`
+	Plan      string  `json:"plan" jsonschema:"Construction plan name (exact, or a substring that matches exactly one). List them with list_plans."`
+	Sunlight  float64 `json:"sunlight,omitempty" jsonschema:"Sunlight factor of the intended sector (e.g. 1.5); scales Energy Cells output. Default 1.0"`
+	Sector    string  `json:"sector,omitempty" jsonschema:"Sector name to take the sunlight factor from instead of passing it directly"`
+	Race      string  `json:"race,omitempty" jsonschema:"Workforce race whose diet to charge (argon/teladi/paranid/split/terran/boron). Defaults to the race of the plan's habitation modules, else the race of its food modules, else argon."`
+	Workforce int     `json:"workforce,omitempty" jsonschema:"Workers to feed. Defaults to the OPTIMAL workforce — every job the plan's production modules offer at full staffing."`
+}
+
+// workforceNeed is one ware the workforce eats, against what the plan makes.
+type workforceNeed struct {
+	Ware         string  `json:"ware"`
+	Name         string  `json:"name,omitempty"`
+	DemandPerH   float64 `json:"demand_per_hour"`
+	ProducedPerH float64 `json:"produced_per_hour"`
+	NetPerH      float64 `json:"net_per_hour"`
+	Verdict      string  `json:"verdict"`
+	FixModules   float64 `json:"modules_needed_to_balance,omitempty"`
 }
 
 type moduleGroup struct {
@@ -87,23 +101,29 @@ type wareBalance struct {
 }
 
 type analyzePlanOut struct {
-	Plan            string           `json:"plan"`
-	File            string           `json:"file"`
-	TotalModules    int              `json:"total_modules"`
-	ByClass         map[string]int   `json:"modules_by_class"`
-	Groups          []moduleGroup    `json:"module_groups"`
-	UnknownMacros   []string         `json:"unknown_macros,omitempty"` // in the plan but absent from the module DB
-	Balance         []wareBalance    `json:"ware_balance"`
-	Imports         []wareBalance    `json:"must_import,omitempty"` // net-negative wares, worst first
-	Surplus         []wareBalance    `json:"sellable_surplus,omitempty"`
-	RawNeeds        []rateLine       `json:"raw_resources_per_hour,omitempty"` // mined inputs this plan burns
-	WorkforceJobs   int              `json:"workforce_jobs"`                   // workers the production modules employ
-	WorkforceHoused int              `json:"workforce_housed"`                 // capacity of its habitation modules
-	WorkforceShort  int              `json:"workforce_shortfall,omitempty"`
-	StorageByType   map[string]int64 `json:"storage_by_type,omitempty"`
-	Sunlight        float64          `json:"sunlight,omitempty"`
-	Findings        []string         `json:"findings"`
-	Note            string           `json:"note"`
+	Plan            string         `json:"plan"`
+	File            string         `json:"file"`
+	TotalModules    int            `json:"total_modules"`
+	ByClass         map[string]int `json:"modules_by_class"`
+	Groups          []moduleGroup  `json:"module_groups"`
+	UnknownMacros   []string       `json:"unknown_macros,omitempty"` // in the plan but absent from the module DB
+	Balance         []wareBalance  `json:"ware_balance"`
+	Imports         []wareBalance  `json:"must_import,omitempty"` // net-negative wares, worst first
+	Surplus         []wareBalance  `json:"sellable_surplus,omitempty"`
+	RawNeeds        []rateLine     `json:"raw_resources_per_hour,omitempty"` // mined inputs this plan burns
+	WorkforceJobs   int            `json:"workforce_jobs"`                   // workers the production modules employ
+	WorkforceHoused int            `json:"workforce_housed"`                 // capacity of its habitation modules
+	WorkforceShort  int            `json:"workforce_shortfall,omitempty"`
+	// Feeding the workforce. WorkforceFed is the head-count these figures are
+	// charged for — the optimal (fully staffed) workforce unless overridden.
+	WorkforceRace  string           `json:"workforce_race,omitempty"`
+	RaceBasis      string           `json:"workforce_race_basis,omitempty"` // how that race was chosen
+	WorkforceFed   int              `json:"workforce_fed,omitempty"`
+	WorkforceNeeds []workforceNeed  `json:"workforce_supply,omitempty"`
+	StorageByType  map[string]int64 `json:"storage_by_type,omitempty"`
+	Sunlight       float64          `json:"sunlight,omitempty"`
+	Findings       []string         `json:"findings"`
+	Note           string           `json:"note"`
 }
 
 func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyzePlanIn) (*mcp.CallToolResult, analyzePlanOut, error) {
@@ -201,6 +221,28 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 		out.StorageByType = storage
 	}
 
+	// Feed the workforce. Without this the food chain reads as pure sellable
+	// surplus, because nothing in the recipe graph eats it — workers are not a
+	// production module, and their consumption lives in the workunit wares.
+	// Charge the OPTIMAL workforce by default: "have I got enough food for a
+	// fully staffed station" is the question people actually mean.
+	workers := in.Workforce
+	if workers <= 0 {
+		workers = out.WorkforceJobs
+	}
+	out.WorkforceFed = workers
+	race, basis := a.planRace(in.Race, counts, mods)
+	out.WorkforceRace, out.RaceBasis = race, basis
+
+	wfDemand := map[string]float64{}
+	if wf, ok := a.workforceDB()[race]; ok && workers > 0 {
+		for _, q := range wf.Busy {
+			d := x4data.PerHourFor(q.Amount, workers)
+			wfDemand[q.Ware] += d
+			consumed[q.Ware] += d // so the main balance reflects it too
+		}
+	}
+
 	// Balance every ware the plan touches on either side.
 	seen := map[string]bool{}
 	for w := range produced {
@@ -261,6 +303,38 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 	}
 	sort.Slice(out.Surplus, func(i, j int) bool { return out.Surplus[i].NetPerH > out.Surplus[j].NetPerH })
 
+	// The direct answer to "have I got enough food and medical supplies?".
+	for ware, demand := range wfDemand {
+		w := db[ware]
+		n := workforceNeed{
+			Ware: ware, Name: w.Name,
+			DemandPerH: round1(demand), ProducedPerH: round1(produced[ware]),
+			NetPerH: round1(produced[ware] - demand),
+		}
+		// Other production modules may eat the same ware; charge them too.
+		other := consumed[ware] - demand
+		if other > 0 {
+			n.NetPerH = round1(produced[ware] - consumed[ware])
+		}
+		switch {
+		case n.ProducedPerH == 0:
+			n.Verdict = "NOT PRODUCED — the whole demand must be imported"
+		case n.NetPerH < 0:
+			n.Verdict = "SHORT — the station cannot feed its own workforce"
+		default:
+			n.Verdict = "covered"
+		}
+		if n.NetPerH < 0 {
+			if m, has := w.DefaultMethod(); has && perHour(m) > 0 {
+				n.FixModules = round2(-n.NetPerH / perHour(m))
+			}
+		}
+		out.WorkforceNeeds = append(out.WorkforceNeeds, n)
+	}
+	sort.Slice(out.WorkforceNeeds, func(i, j int) bool {
+		return out.WorkforceNeeds[i].NetPerH < out.WorkforceNeeds[j].NetPerH
+	})
+
 	// Deliberately NOT reporting a build cost. A plan names modules by structure
 	// macro (prod_gen_energycells_macro) while prices live on the module_* wares
 	// (module_gen_prod_energycells_01), and the data carries no reliable link
@@ -276,16 +350,72 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 	return ok2(out)
 }
 
+// planRace decides whose diet to charge the workforce. The habitats decide it
+// in game, so they decide it here; a plan with none has still declared its
+// intent through the race of its food modules (a Teladi food chain is not there
+// to feed Argons). Falls back to argon — the "default" workunit method — and
+// always reports which of the three it used, because the answer changes with it.
+func (a *app) planRace(explicit string, counts map[string]int, mods map[string]x4data.Module) (race, basis string) {
+	if r := strings.ToLower(strings.TrimSpace(explicit)); r != "" {
+		return r, "given in the request"
+	}
+	byRace := func(class string) (string, int) {
+		tally := map[string]int{}
+		for macro, n := range counts {
+			m, ok := mods[macro]
+			if !ok || m.Class != class || m.Race == "" || m.Race == "gen" {
+				continue
+			}
+			tally[m.Race] += n
+		}
+		best, bestN := "", 0
+		for r, n := range tally {
+			if n > bestN || (n == bestN && r < best) {
+				best, bestN = r, n
+			}
+		}
+		return best, bestN
+	}
+	if r, _ := byRace("habitation"); r != "" {
+		return r, "the plan's habitation modules"
+	}
+	if r, _ := byRace("production"); r != "" {
+		return r, "the race of the plan's race-specific production modules (it has no habitats to read)"
+	}
+	return "argon", "defaulted — the plan has neither habitats nor race-specific production modules"
+}
+
 // planFindings turns the numbers into the handful of things worth saying first.
 func planFindings(out *analyzePlanOut) []string {
 	var f []string
 	if out.WorkforceJobs > 0 && out.WorkforceHoused == 0 {
 		f = append(f, fmt.Sprintf(
-			"NO habitation: %d jobs and nowhere to house anyone, so every production module runs at its unstaffed base rate. Adding habitats is the single biggest throughput gain available to this plan.",
+			"NO habitation: %d jobs and nowhere to house anyone, so the workforce is ZERO — every production module runs at its unstaffed base rate and the food/medical chain feeds nobody. Adding habitats is the single biggest throughput gain available to this plan, and it is what the food supply below is sized against.",
 			out.WorkforceJobs))
 	} else if out.WorkforceShort > 0 {
-		f = append(f, fmt.Sprintf("Workforce shortfall: %d jobs vs %d housed (%d short).",
+		f = append(f, fmt.Sprintf("Workforce shortfall: %d jobs vs %d housed (%d short), so the station runs below full staffing.",
 			out.WorkforceJobs, out.WorkforceHoused, out.WorkforceShort))
+	}
+
+	if len(out.WorkforceNeeds) > 0 {
+		var short, ok []string
+		for _, n := range out.WorkforceNeeds {
+			if n.NetPerH < 0 {
+				s := fmt.Sprintf("%s %.0f/h short of %.0f needed", n.Name, -n.NetPerH, n.DemandPerH)
+				if n.FixModules > 0 {
+					s += fmt.Sprintf(" (+%.2f modules)", n.FixModules)
+				}
+				short = append(short, s)
+				continue
+			}
+			ok = append(ok, fmt.Sprintf("%s %.0f/h spare", n.Name, n.NetPerH))
+		}
+		head := fmt.Sprintf("Feeding %d %s workers (%s):", out.WorkforceFed, out.WorkforceRace, out.RaceBasis)
+		if len(short) == 0 {
+			f = append(f, head+" food and medical supplies are COVERED — "+strings.Join(ok, ", ")+".")
+		} else {
+			f = append(f, head+" NOT covered — "+strings.Join(short, "; ")+".")
+		}
 	}
 
 	var deficits, raws []string
