@@ -136,6 +136,11 @@ func ParseFile(path string) (*Snapshot, error) {
 	var curScript, curPlot string
 	// per-sector minable-resource aggregation, attached to Sectors at the end.
 	resAgg := map[string]map[string]*ResourceField{}
+	// Gate wiring: connection id -> the sector that gate sits in, plus each
+	// (own connection id, paired connection id) link. Joined after the walk,
+	// because a gate's partner is usually parsed much later.
+	gateSector := map[string]string{}
+	var gateLinks [][2]string
 	// latest player reputation per faction text-ref, from the event log (the
 	// -30..+30 reputation rank, tracked separately from the -1..+1 relation).
 	type repEntry struct {
@@ -307,6 +312,28 @@ func ParseFile(path string) (*Snapshot, error) {
 						snap.TradeStations = append(snap.TradeStations, *ts)
 					}
 					collectAssets(&rc, sec, "", snap)
+				case cls == "gate":
+					// A gate records the connection id of its pair in <connected>.
+					// A gate with none is inactive in this playthrough and must not
+					// become an edge — see Snapshot.GateGraph.
+					var g rawGate
+					if err := dec.DecodeElement(&g, &t); err != nil {
+						return nil, fmt.Errorf("decode gate: %w", err)
+					}
+					sec := currentSector(descendStack)
+					if sec == "" {
+						break
+					}
+					for _, c := range g.Connections {
+						if c.ID != "" {
+							gateSector[c.ID] = sec
+						}
+						for _, cc := range c.Connected {
+							if cc.Connection != "" {
+								gateLinks = append(gateLinks, [2]string{c.ID, cc.Connection})
+							}
+						}
+					}
 				case owner == "player" && !boringPlayerClasses[cls]:
 					snap.OtherCounts[cls]++
 					if err := dec.Skip(); err != nil {
@@ -362,6 +389,37 @@ func ParseFile(path string) (*Snapshot, error) {
 		}
 		sort.Slice(rfs, func(a, b int) bool { return rfs[a].Weight > rfs[b].Weight })
 		snap.Sectors[i].Resources = rfs
+	}
+
+	// Join the gate links into a sector adjacency. Only pairs where BOTH ends
+	// resolved become edges: a link naming a connection we never saw is not a
+	// route we can prove exists, and inventing it is the bug this replaces.
+	if len(gateLinks) > 0 {
+		adj := map[string]map[string]bool{}
+		for _, l := range gateLinks {
+			from, ok1 := gateSector[l[0]]
+			to, ok2 := gateSector[l[1]]
+			if !ok1 || !ok2 || from == to {
+				continue
+			}
+			if adj[from] == nil {
+				adj[from] = map[string]bool{}
+			}
+			if adj[to] == nil {
+				adj[to] = map[string]bool{}
+			}
+			adj[from][to] = true
+			adj[to][from] = true // gates are two-way
+		}
+		if len(adj) > 0 {
+			snap.GateGraph = make(map[string][]string, len(adj))
+			for s, set := range adj {
+				for n := range set {
+					snap.GateGraph[s] = append(snap.GateGraph[s], n)
+				}
+				sort.Strings(snap.GateGraph[s])
+			}
+		}
 	}
 
 	if len(repByFaction) > 0 {
@@ -1009,4 +1067,15 @@ func findCaptain(rc *rawComp) (string, *CaptainSkills) {
 		}
 	}
 	return "", nil
+}
+
+// rawGate is a gate component's wiring. <connected> names the connection id of
+// the gate at the other end; a gate with none is inactive in this playthrough.
+type rawGate struct {
+	Connections []struct {
+		ID        string `xml:"id,attr"`
+		Connected []struct {
+			Connection string `xml:"connection,attr"`
+		} `xml:"connected"`
+	} `xml:"connections>connection"`
 }
