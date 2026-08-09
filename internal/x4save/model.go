@@ -51,6 +51,14 @@ type Snapshot struct {
 	// ship/equipment mods). You can only build modules you have a blueprint for.
 	Blueprints []string `json:"blueprints,omitempty"`
 
+	// BlueprintsSeen records whether the save's <blueprints> element was actually
+	// decoded. An empty Blueprints list is otherwise ambiguous: "owns none" and
+	// "never reached that part of the file" look identical, and the difference
+	// matters. A save read while X4 was still writing it once yielded zero
+	// blueprints, and the planners dutifully reported that the player could build
+	// nothing — absence of data presented as a fact about the game.
+	BlueprintsSeen bool `json:"blueprints_seen"`
+
 	// Discovered galaxy: every sector seen in the save (the map), and the NPC
 	// stations the player has discovered (knownto=player) with their live
 	// trade offers — the basis for trade-route and station-product planning.

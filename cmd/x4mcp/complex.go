@@ -151,6 +151,7 @@ type planComplexOut struct {
 	BuildCostCredits  int64           `json:"build_cost_credits,omitempty"` //
 	BuildWares        []buildWare     `json:"build_wares,omitempty"`        //
 	MissingBlueprints []string        `json:"missing_blueprints,omitempty"` // modules in this plan he cannot build yet
+	BlueprintStatus   string          `json:"blueprint_status,omitempty"`   // whether the save actually supplied blueprint data
 	Note              string          `json:"note"`
 }
 
@@ -251,8 +252,15 @@ func (a *app) planComplex(ctx context.Context, _ *mcp.CallToolRequest, in planCo
 	out.BuildWares = d.BuildWares
 	out.RawResources = d.RawResources
 
-	// Blueprint gaps across the whole design — the thing that actually blocks a build.
-	if snap != nil {
+	// Blueprint gaps across the whole design — the thing that actually blocks a
+	// build. Only reported when the save actually yielded a blueprint list:
+	// a snapshot that never reached that section would otherwise read as "you
+	// own nothing", which is a far more alarming claim than "I could not tell".
+	switch {
+	case snap == nil:
+	case !snap.BlueprintsSeen:
+		out.BlueprintStatus = "unknown — this save did not yield a blueprint list; re-run after X4 finishes saving"
+	default:
 		owned := producibleWares(snap)
 		for _, bm := range d.BuildModules {
 			if bm.WholeModules > 0 && !owned[bm.Ware] {
@@ -260,6 +268,7 @@ func (a *app) planComplex(ctx context.Context, _ *mcp.CallToolRequest, in planCo
 			}
 		}
 		sort.Strings(out.MissingBlueprints)
+		out.BlueprintStatus = "read from save"
 	}
 
 	out.Note = fmt.Sprintf(

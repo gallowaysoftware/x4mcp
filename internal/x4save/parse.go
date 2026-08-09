@@ -3,9 +3,11 @@ package x4save
 import (
 	"compress/gzip"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -89,6 +91,10 @@ var boringPlayerClasses = map[string]bool{
 	"computer": true,
 	"npc":      true,
 }
+
+// ErrSaveChanged reports that the savegame was modified while it was being
+// parsed, so the resulting Snapshot cannot be trusted. Callers should retry.
+var ErrSaveChanged = errors.New("save changed during parse")
 
 // ParseFile streams a (gzip-compressed) X4 savegame and returns a Snapshot of
 // the player-relevant state. Memory stays bounded: the universe tree is walked
@@ -205,6 +211,7 @@ func ParseFile(path string) (*Snapshot, error) {
 				if err := dec.DecodeElement(&bp, &t); err != nil {
 					return nil, fmt.Errorf("decode blueprints: %w", err)
 				}
+				snap.BlueprintsSeen = true
 				for _, b := range bp.List {
 					if b.Ware != "" {
 						snap.Blueprints = append(snap.Blueprints, b.Ware)
@@ -361,6 +368,18 @@ func ParseFile(path string) (*Snapshot, error) {
 		snap.RawReputations = make(map[string]int, len(repByFaction))
 		for fac, e := range repByFaction {
 			snap.RawReputations[fac] = e.rep
+		}
+	}
+
+	// X4 rewrites a save in place while the player keeps playing, and a parse of
+	// this size takes ~10s — long enough to straddle a write. The result is a
+	// snapshot stitched from two different game states, or one missing whole
+	// sections, and nothing about it looks wrong to a caller. Re-stat and refuse
+	// it rather than serve it: a save being written is a transient condition, so
+	// the honest answer is "try again", never a confident half-truth.
+	if fi2, err := os.Stat(path); err == nil {
+		if fi2.Size() != fi.Size() || !fi2.ModTime().Equal(fi.ModTime()) {
+			return nil, fmt.Errorf("%w: %s changed while being read (X4 is probably saving)", ErrSaveChanged, filepath.Base(path))
 		}
 	}
 
@@ -611,6 +630,9 @@ type rawSkills struct {
 func collectAssets(rc *rawComp, sector, parentID string, snap *Snapshot) {
 	// The player character component (carrying the blueprint list) is nested in
 	// the player ship's cockpit; capture blueprints wherever they appear.
+	if len(rc.Blueprints) > 0 {
+		snap.BlueprintsSeen = true
+	}
 	for _, b := range rc.Blueprints {
 		if b.Ware != "" {
 			snap.Blueprints = append(snap.Blueprints, b.Ware)
