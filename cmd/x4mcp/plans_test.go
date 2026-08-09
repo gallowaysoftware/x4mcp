@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,5 +180,81 @@ func TestAnalyzePlanUnknownPlanIsAnError(t *testing.T) {
 	a := planTestApp(t, unbalancedPlan)
 	if _, _, err := a.analyzePlan(context.Background(), nil, analyzePlanIn{Plan: "Wharf"}); err == nil {
 		t.Fatal("expected an error naming an unknown plan")
+	}
+}
+
+// "Have I got enough food and medical supplies?" — the workforce is not a
+// production module, so nothing in the recipe graph eats what the food chain
+// makes. Without charging it, a food module reads as pure sellable surplus.
+func TestAnalyzePlanFeedsTheWorkforce(t *testing.T) {
+	a := planTestApp(t, unbalancedPlan)
+	// Teladi diet: per 200 workers per 600s.
+	a.wf = map[string]x4data.WorkforceDemand{
+		"teladi": {Race: "teladi", Method: "teladi", Busy: []x4data.WareQty{
+			{Ware: "nostropoil", Amount: 38}, {Ware: "medicalsupplies", Amount: 2}}},
+	}
+	a.wfOnce.Do(func() {})
+	a.wares["nostropoil"] = x4data.Ware{ID: "nostropoil", Name: "Nostrop Oil",
+		Methods: []x4data.Method{{Method: "default", Time: 3600, Amount: 100}}}
+	a.wares["medicalsupplies"] = x4data.Ware{ID: "medicalsupplies", Name: "Medical Supplies",
+		Methods: []x4data.Method{{Method: "default", Time: 3600, Amount: 100}}}
+
+	_, out, err := a.analyzePlan(context.Background(), nil,
+		analyzePlanIn{Plan: "Test Station", Race: "teladi"})
+	if err != nil {
+		t.Fatalf("analyzePlan: %v", err)
+	}
+
+	// 490 jobs is the OPTIMAL workforce, and what the question is about.
+	if out.WorkforceFed != 490 {
+		t.Fatalf("fed for %d, want the 490 jobs the plan offers", out.WorkforceFed)
+	}
+	if out.WorkforceRace != "teladi" || out.RaceBasis == "" {
+		t.Errorf("race = %q basis %q; both must be reported", out.WorkforceRace, out.RaceBasis)
+	}
+
+	need := map[string]workforceNeed{}
+	for _, n := range out.WorkforceNeeds {
+		need[n.Ware] = n
+	}
+	// 38 per 200 per 600s for 490 workers = 38 * 6 * 2.45 = 558.6/h.
+	oil, ok := need["nostropoil"]
+	if !ok {
+		t.Fatalf("nostropoil missing from workforce_supply: %+v", out.WorkforceNeeds)
+	}
+	if want := x4data.PerHourFor(38, 490); math.Abs(oil.DemandPerH-want) > 0.5 {
+		t.Errorf("nostrop oil demand = %v/h, want %v/h", oil.DemandPerH, want)
+	}
+	// The plan makes none of it, so the whole demand is an import.
+	if oil.ProducedPerH != 0 || oil.NetPerH >= 0 {
+		t.Errorf("nostrop oil = made %v net %v; want a shortfall", oil.ProducedPerH, oil.NetPerH)
+	}
+	if !strings.Contains(oil.Verdict, "NOT PRODUCED") {
+		t.Errorf("verdict = %q, want NOT PRODUCED", oil.Verdict)
+	}
+
+	// The demand must also reach the main balance, not just its own section.
+	b := findBalance(t, out, "medicalsupplies")
+	if b.ConsumedPerH <= 0 {
+		t.Errorf("medical supplies consumed = %v in ware_balance; workforce demand must be folded in", b.ConsumedPerH)
+	}
+
+	joined := strings.Join(out.Findings, " | ")
+	if !strings.Contains(joined, "NOT covered") {
+		t.Errorf("findings should say the workforce is not fed; got %s", joined)
+	}
+}
+
+// With no workforce demand configured the plan must not invent one.
+func TestAnalyzePlanWithoutWorkforceData(t *testing.T) {
+	a := planTestApp(t, unbalancedPlan)
+	a.wf = map[string]x4data.WorkforceDemand{}
+	a.wfOnce.Do(func() {})
+	_, out, err := a.analyzePlan(context.Background(), nil, analyzePlanIn{Plan: "Test Station"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.WorkforceNeeds) != 0 {
+		t.Errorf("workforce_supply = %+v, want empty when no diet is known", out.WorkforceNeeds)
 	}
 }
