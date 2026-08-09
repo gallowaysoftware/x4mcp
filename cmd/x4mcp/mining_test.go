@@ -280,3 +280,61 @@ func TestVerdictKeepsASizeableLocalField(t *testing.T) {
 		t.Errorf("verdict should still credit the local field: %q", got)
 	}
 }
+
+// Kyle's rule: "it's more important that it has enough to supply and is close."
+// Abundance-first ranking buried a viable 1-jump ore field at position 8, under
+// three 3-jump sectors holding 8-14x the deposit — which is the wrong answer
+// when the station needs a fixed rate delivered, not the region's biggest field.
+func TestSortSourcesPrefersCloseAndAdequate(t *testing.T) {
+	mk := func(name string, hops int, weight int64) miningSource {
+		return miningSource{Name: name, Hops: hops, Weight: weight, Score: weight / int64(1+hops)}
+	}
+	// The real Argon Prime ore case.
+	src := []miningSource{
+		mk("Silent Witness XI", 3, 144_132_928),
+		mk("Windfall I Union Summit", 3, 114_169_632),
+		mk("President's End", 3, 82_630_254),
+		mk("Nopileos' Memorial", 2, 20_550_587),
+		mk("The Reach", 1, 10_635_618),
+	}
+
+	got := append([]miningSource(nil), src...)
+	sortSources(got, "")
+	if got[0].Name != "The Reach" {
+		t.Errorf("proximity ranking put %q first; the 1-jump adequate field should win", got[0].Name)
+	}
+	if got[1].Name != "Nopileos' Memorial" {
+		t.Errorf("second = %q, want the 2-jump field", got[1].Name)
+	}
+
+	// abundance keeps the old behaviour for "where is the most of it".
+	got = append([]miningSource(nil), src...)
+	sortSources(got, "abundance")
+	if got[0].Name != "Silent Witness XI" {
+		t.Errorf("abundance ranking = %q first, want the richest", got[0].Name)
+	}
+}
+
+// Proximity must not promote a token deposit over a real field one jump further.
+func TestSortSourcesSkipsScrapings(t *testing.T) {
+	src := []miningSource{
+		{Name: "Token Field", Hops: 1, Weight: 200_000, Score: 100_000},
+		{Name: "Real Field", Hops: 2, Weight: 60_000_000, Score: 20_000_000},
+	}
+	sortSources(src, "")
+	if src[0].Name != "Real Field" {
+		t.Errorf("got %q first; a deposit below the adequacy floor must not outrank a real field", src[0].Name)
+	}
+}
+
+// Gases carry no weight, so adequacy cannot apply — pure distance.
+func TestSortSourcesGasesRankByDistance(t *testing.T) {
+	src := []miningSource{
+		{Name: "Far", Hops: 3, Score: 250},
+		{Name: "Near", Hops: 1, Score: 500},
+	}
+	sortSources(src, "")
+	if src[0].Name != "Near" {
+		t.Errorf("got %q first, want the nearer gas source", src[0].Name)
+	}
+}
