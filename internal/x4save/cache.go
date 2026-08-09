@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/gob"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,38 +25,55 @@ func CacheDir() string {
 
 // schemaVersion is bumped whenever the parser/Snapshot shape changes, so a
 // code change automatically invalidates stale cached snapshots.
-const schemaVersion = 22
+const schemaVersion = 23
 
 func cacheKey(path string, size, mtime int64) string {
 	h := sha1.Sum([]byte(fmt.Sprintf("v%d|%s|%d|%d", schemaVersion, path, size, mtime)))
 	return hex.EncodeToString(h[:])
 }
 
+// parseRetries is how many times a save that changed mid-parse is retried.
+// X4's autosave cadence is minutes apart, so losing two races in a row means
+// something else is wrong and the caller deserves the error.
+const parseRetries = 2
+
 // LoadSnapshot returns a Snapshot for the save at path, parsing it (and caching
 // the result) only if no fresh cache entry exists. force re-parses unconditionally.
+//
+// A save caught mid-write is retried rather than returned: the re-stat in
+// ParseFile makes that case loud instead of silent, and re-reading is almost
+// always enough because the write has finished by the time we notice.
 func LoadSnapshot(path string, force bool) (*Snapshot, error) {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	key := cacheKey(path, fi.Size(), fi.ModTime().Unix())
-	cacheFile := filepath.Join(CacheDir(), key+".gob")
-
-	if !force {
-		if snap, err := readCache(cacheFile); err == nil {
-			return snap, nil
+	var lastErr error
+	for attempt := 0; attempt <= parseRetries; attempt++ {
+		fi, err := os.Stat(path)
+		if err != nil {
+			return nil, err
 		}
-	}
+		key := cacheKey(path, fi.Size(), fi.ModTime().Unix())
+		cacheFile := filepath.Join(CacheDir(), key+".gob")
 
-	snap, err := ParseFile(path)
-	if err != nil {
-		return nil, err
+		if !force {
+			if snap, err := readCache(cacheFile); err == nil {
+				return snap, nil
+			}
+		}
+
+		snap, err := ParseFile(path)
+		if err != nil {
+			lastErr = err
+			if errors.Is(err, ErrSaveChanged) {
+				continue // the write has almost certainly finished by now
+			}
+			return nil, err
+		}
+		if err := writeCache(cacheFile, snap); err != nil {
+			// Caching is best-effort; a failure here shouldn't fail the query.
+			_ = err
+		}
+		return snap, nil
 	}
-	if err := writeCache(cacheFile, snap); err != nil {
-		// Caching is best-effort; a failure here shouldn't fail the query.
-		_ = err
-	}
-	return snap, nil
+	return nil, lastErr
 }
 
 func readCache(file string) (*Snapshot, error) {

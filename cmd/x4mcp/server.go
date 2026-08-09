@@ -1244,6 +1244,7 @@ type planProductionOut struct {
 	BuildWares         []buildWare   `json:"build_wares,omitempty"`        // one-off construction wares to build those modules
 	PaybackHours       float64       `json:"payback_hours,omitempty"`      // build cost / gross margin per hour
 	BlueprintOwned     bool          `json:"blueprint_owned"`
+	BlueprintStatus    string        `json:"blueprint_status,omitempty"` // "read from save" or why it is unknown
 	Note               string        `json:"note"`
 }
 
@@ -1388,11 +1389,18 @@ func (a *app) planProduction(ctx context.Context, _ *mcp.CallToolRequest, in pla
 		out.PaybackHours = round1(float64(out.BuildCostCredits) / out.GrossMarginPerHour)
 	}
 
-	// Can the player actually build this module today?
+	// Can the player actually build this module today? Only assert "no" when the
+	// save actually supplied a blueprint list — see Snapshot.BlueprintsSeen.
 	if snap != nil {
-		out.BlueprintOwned = producibleWares(snap)[w.ID]
-		if !out.BlueprintOwned {
-			out.Note += " You do NOT own this module's blueprint yet — buy it from a faction rep (mostly a credit purchase) before building."
+		if !snap.BlueprintsSeen {
+			out.BlueprintStatus = "unknown — this save did not yield a blueprint list; re-run after X4 finishes saving"
+			out.Note += " Blueprint ownership could NOT be read from this save, so treat it as unknown rather than missing."
+		} else {
+			out.BlueprintOwned = producibleWares(snap)[w.ID]
+			out.BlueprintStatus = "read from save"
+			if !out.BlueprintOwned {
+				out.Note += " You do NOT own this module's blueprint yet — buy it from a faction rep (mostly a credit purchase) before building."
+			}
 		}
 	}
 	return ok2(out)
@@ -1634,6 +1642,7 @@ type listBlueprintsOut struct {
 	Total           int      `json:"total"`
 	ProducibleWares []string `json:"producible_wares"` // wares you have a production module for
 	Blueprints      []string `json:"blueprints"`
+	Status          string   `json:"status,omitempty"` // set when the save yielded no blueprint section at all
 }
 
 func (a *app) listBlueprints(ctx context.Context, _ *mcp.CallToolRequest, in listBlueprintsIn) (*mcp.CallToolResult, listBlueprintsOut, error) {
@@ -1654,7 +1663,12 @@ func (a *app) listBlueprints(ctx context.Context, _ *mcp.CallToolRequest, in lis
 		producible = append(producible, w)
 	}
 	sort.Strings(producible)
-	return ok2(listBlueprintsOut{Total: len(snap.Blueprints), ProducibleWares: producible, Blueprints: bps})
+	out := listBlueprintsOut{Total: len(snap.Blueprints), ProducibleWares: producible, Blueprints: bps}
+	if !snap.BlueprintsSeen {
+		// Report "could not read" rather than an authoritative zero.
+		out.Status = "UNKNOWN: this save did not yield a blueprint section, so an empty list here means the read failed, NOT that the player owns no blueprints. Re-run after X4 finishes saving."
+	}
+	return ok2(out)
 }
 
 type plotProgressIn struct {
