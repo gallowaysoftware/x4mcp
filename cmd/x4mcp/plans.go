@@ -173,6 +173,7 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 	produced := map[string]float64{} // ware -> units/hr made
 	consumed := map[string]float64{} // ware -> units/hr burnt
 	prodModules := map[string]int{}  // ware -> module count
+	prodRace := map[string]string{}  // ware -> makerrace of the module producing it
 	storage := map[string]int64{}
 	unknown := map[string]bool{}
 
@@ -191,13 +192,16 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 			storage[mod.StorageType] += int64(mod.StorageMax) * int64(n)
 		}
 
-		// A production module makes its ware and burns that recipe's inputs.
+		// A production module makes its ware and burns that recipe's inputs —
+		// the inputs for ITS race's method, not the generic one. A Teladi
+		// medical-supplies module takes sunrise flowers where the Argon one
+		// takes wheat, and charging the wrong recipe is wrong at both ends.
 		for _, ware := range strings.Fields(mod.Produces) {
 			w, ok := db[ware]
 			if !ok {
 				continue
 			}
-			m, has := w.DefaultMethod()
+			m, has := w.MethodFor(mod.Race)
 			if !has {
 				continue
 			}
@@ -207,6 +211,7 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 			}
 			produced[ware] += rate
 			prodModules[ware] += n
+			prodRace[ware] = mod.Race
 			for _, inp := range m.Inputs {
 				consumed[inp.Ware] += rate * float64(inp.Amount) / float64(m.Amount)
 			}
@@ -273,7 +278,7 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 		}
 		// How many more modules would close a deficit?
 		if b.NetPerH < 0 && producible {
-			if m, has := w.DefaultMethod(); has {
+			if m, has := w.MethodFor(prodRace[ware]); has {
 				per := perHour(m)
 				if ware == "energycells" {
 					per *= sun
@@ -325,7 +330,7 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 			n.Verdict = "covered"
 		}
 		if n.NetPerH < 0 {
-			if m, has := w.DefaultMethod(); has && perHour(m) > 0 {
+			if m, has := w.MethodFor(prodRace[ware]); has && perHour(m) > 0 {
 				n.FixModules = round2(-n.NetPerH / perHour(m))
 			}
 		}
