@@ -54,6 +54,7 @@ type miningPlanIn struct {
 	Resources  []string `json:"resources,omitempty" jsonschema:"Raw resources to plan for, instead of deriving them from 'produces' (ore, silicon, ice, nividium, scrap, hydrogen, helium, methane)"`
 	MaxHops    int      `json:"max_hops,omitempty" jsonschema:"How many gate jumps out to search (default 3)"`
 	Limit      int      `json:"limit,omitempty" jsonschema:"Max sources per resource (default 5)"`
+	Prefer     string   `json:"prefer,omitempty" jsonschema:"Ranking: 'proximity' (default) puts the CLOSEST adequate field first, which is what a fixed delivery rate actually needs; 'abundance' ranks by field size against distance, for 'where is the most of this in the region'"`
 	IncludeAll bool     `json:"include_all,omitempty" jsonschema:"Include hostile (Xenon/Kha'ak) and contested sectors (default false)"`
 }
 
@@ -145,9 +146,13 @@ func (a *app) planMiningSupply(ctx context.Context, _ *mcp.CallToolRequest, in m
 	out := miningPlanOut{
 		Target: target, TargetName: targetName, TargetOwner: targetSec.Owner,
 		MaxHops: maxHops, Reachable: len(dist),
-		Scoring: "score = field weight / (1 + hops); a heuristic, not a rate. " +
-			"Miner throughput is dominated by round-trip time, so a nearer, smaller field usually " +
-			"out-supplies a richer distant one. Gases have no field weight and rank by distance only.",
+		Scoring: "Sources are ranked by PROXIMITY: the closest field with an adequate deposit first, " +
+			"because a station needs a fixed rate delivered and miner throughput is dominated by " +
+			"round-trip time, not field size. 'score' (weight / (1 + hops)) is still reported and is " +
+			"what prefer='abundance' sorts by — use that for 'where is the most of this in the region'. " +
+			"Weight is a deposit size, NOT a sustainable extraction rate; 9.00 depletes and regenerates " +
+			"fields dynamically, so re-check a thin source after it has been mined for a while. " +
+			"Gases have no field weight and rank by distance only.",
 	}
 	if len(dist) <= 1 {
 		out.Note = "no gate neighbours found for this sector — the gate graph may be unavailable " +
@@ -195,12 +200,7 @@ func (a *app) planMiningSupply(ctx context.Context, _ *mcp.CallToolRequest, in m
 			plan.Sources = append(plan.Sources, src)
 		}
 
-		sort.Slice(plan.Sources, func(i, j int) bool {
-			if plan.Sources[i].Score != plan.Sources[j].Score {
-				return plan.Sources[i].Score > plan.Sources[j].Score
-			}
-			return plan.Sources[i].Hops < plan.Sources[j].Hops
-		})
+		sortSources(plan.Sources, in.Prefer)
 		if len(plan.Sources) > limit {
 			var local *miningSource
 			for i := range plan.Sources {
@@ -633,4 +633,57 @@ func max64(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+// Ranking modes for mining sources.
+//
+// The original score, weight/(1+hops), rewards the biggest field. That is the
+// wrong emphasis for the question people actually ask: a station needs a FIXED
+// rate delivered, not the largest deposit in the region. At 23,040 ore/h it does
+// not matter that a sector three jumps out holds 14x the ore — what buys you
+// ships is cycle time, and a 1-jump field with enough in it wins. Abundance-first
+// ranking buried a viable 1-jump source at position 8, below three 3-jump ones.
+//
+// So proximity is the default: nearest first, and among equals the richer field.
+// "abundance" keeps the old behaviour for "where is the most ore in the region".
+const (
+	preferProximity = "proximity"
+	preferAbundance = "abundance"
+)
+
+// adequateWeight is the field weight below which a solid source is treated as a
+// scraping rather than a supply, so proximity ranking cannot promote a token
+// field over a real one a jump further out. It is a floor for ORDERING only —
+// nothing is dropped, and the weight is always reported so the player judges it.
+//
+// Deliberately NOT presented as a sustainable extraction rate: the game data
+// gives a field weight, not units/hour, and 9.00 regenerates and depletes
+// dynamically. Converting one to the other would be inventing a number.
+const adequateWeight = 5_000_000
+
+// sortSources orders mining sources by the requested preference.
+func sortSources(src []miningSource, prefer string) {
+	byAbundance := func(i, j int) bool {
+		if src[i].Score != src[j].Score {
+			return src[i].Score > src[j].Score
+		}
+		return src[i].Hops < src[j].Hops
+	}
+	if strings.EqualFold(strings.TrimSpace(prefer), preferAbundance) {
+		sort.Slice(src, byAbundance)
+		return
+	}
+	sort.Slice(src, func(i, j int) bool {
+		a, b := src[i], src[j]
+		// Gases carry no weight, so adequacy never applies to them.
+		adqA := a.Weight == 0 || a.Weight >= adequateWeight
+		adqB := b.Weight == 0 || b.Weight >= adequateWeight
+		if adqA != adqB {
+			return adqA // a real field outranks a scraping
+		}
+		if a.Hops != b.Hops {
+			return a.Hops < b.Hops // then: closest wins
+		}
+		return a.Score > b.Score // then: the richer of two equals
+	})
 }
