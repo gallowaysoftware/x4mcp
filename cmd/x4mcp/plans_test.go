@@ -258,3 +258,42 @@ func TestAnalyzePlanWithoutWorkforceData(t *testing.T) {
 		t.Errorf("workforce_supply = %+v, want empty when no diet is known", out.WorkforceNeeds)
 	}
 }
+
+// The bug Kyle caught: a prod_tel_* module was charged the Argon recipe, so
+// the plan "needed" wheat it will never buy and under-counted the flowers it
+// will. Race-specific recipes are common in the food chain.
+func TestAnalyzePlanUsesTheModuleRaceRecipe(t *testing.T) {
+	a := planTestApp(t, `<plans><plan id="1" name="Test Station">
+	  <entry index="1" macro="prod_tel_medicalsupplies_macro"/>
+	</plan></plans>`)
+	a.mods["prod_tel_medicalsupplies_macro"] = x4data.Module{
+		Macro: "prod_tel_medicalsupplies_macro", Name: "Medical Supplies Production (Teladi)",
+		Class: "production", Race: "teladi", Produces: "medicalsupplies", WorkforceMax: 90,
+	}
+	a.wares["medicalsupplies"] = x4data.Ware{ID: "medicalsupplies", Name: "Medical Supplies", Methods: []x4data.Method{
+		{Method: "default", Time: 300, Amount: 208, Inputs: []x4data.WareQty{{Ware: "wheat", Amount: 30}}},
+		{Method: "teladi", Time: 300, Amount: 208, Inputs: []x4data.WareQty{{Ware: "sunriseflowers", Amount: 12}}},
+	}}
+	a.wares["wheat"] = x4data.Ware{ID: "wheat", Name: "Wheat"}
+	a.wares["sunriseflowers"] = x4data.Ware{ID: "sunriseflowers", Name: "Sunrise Flowers"}
+
+	_, out, err := a.analyzePlan(context.Background(), nil, analyzePlanIn{Plan: "Test Station"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawFlowers, sawWheat bool
+	for _, b := range out.Balance {
+		switch b.Ware {
+		case "sunriseflowers":
+			sawFlowers = b.ConsumedPerH > 0
+		case "wheat":
+			sawWheat = b.ConsumedPerH > 0
+		}
+	}
+	if !sawFlowers {
+		t.Errorf("a Teladi medical module must consume sunrise flowers; balance = %+v", out.Balance)
+	}
+	if sawWheat {
+		t.Errorf("a Teladi medical module must NOT consume wheat (that is the Argon recipe); balance = %+v", out.Balance)
+	}
+}

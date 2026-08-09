@@ -51,6 +51,33 @@ func (w Ware) DefaultMethod() (Method, bool) {
 	return Method{}, false
 }
 
+// raceMethod maps a module's makerrace to the wares.xml production-method id.
+// Argon is the unnamed "default" method; every other race names its own.
+var raceMethod = map[string]string{
+	"argon": "default", "teladi": "teladi", "paranid": "paranid",
+	"split": "split", "terran": "terran", "boron": "boron",
+}
+
+// MethodFor returns the production method a module of the given makerrace
+// actually runs, falling back to DefaultMethod when the race has no variant.
+//
+// This is NOT cosmetic. Several wares are built differently by each race, from
+// whatever that race can grow: Medical Supplies takes wheat for Argon, soja
+// beans for Paranid and sunrise flowers for Teladi. Reading the "default"
+// method for a prod_tel_* module charges the station for wheat it will never
+// buy and omits the flowers it will — wrong about both ends of the chain, and
+// plausible enough to go unnoticed. Pass the module's Race whenever one exists.
+func (w Ware) MethodFor(race string) (Method, bool) {
+	if want, ok := raceMethod[strings.ToLower(strings.TrimSpace(race))]; ok {
+		for _, m := range w.Methods {
+			if m.Method == want {
+				return m, true
+			}
+		}
+	}
+	return w.DefaultMethod()
+}
+
 // LoadWares returns id -> Ware for every ware in the installed game + DLCs.
 // Result is cached to disk (static per build). Empty map if no install found.
 func LoadWares(dir string) (map[string]Ware, error) {
