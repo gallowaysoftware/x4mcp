@@ -273,6 +273,10 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 			b.Verdict = "DEFICIT — production does not cover internal demand"
 		case p > 0 && c == 0:
 			b.Verdict = "END PRODUCT — all of it is available to sell"
+		case p-c < 0:
+			// Inside the 5% tolerance but still negative. Calling this "surplus
+			// available to sell" would be flatly untrue — the station buys it.
+			b.Verdict = "MARGINAL — just short (within 5%); a trickle of imports covers it"
 		default:
 			b.Verdict = "balanced (surplus available to sell)"
 		}

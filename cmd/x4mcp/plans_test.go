@@ -297,3 +297,33 @@ func TestAnalyzePlanUsesTheModuleRaceRecipe(t *testing.T) {
 		t.Errorf("a Teladi medical module must NOT consume wheat (that is the Argon recipe); balance = %+v", out.Balance)
 	}
 }
+
+// A ware that is slightly net-NEGATIVE sits inside the 5% deficit tolerance,
+// and used to be labelled "surplus available to sell" — the station buys it.
+func TestAnalyzePlanMarginalIsNotCalledSurplus(t *testing.T) {
+	a := planTestApp(t, `<plans><plan id="1" name="Test Station">
+	  <entry index="1" macro="prod_gen_energycells_macro"/>
+	  <entry index="2" macro="burner_macro"/>
+	</plan></plans>`)
+	// Burns 102/h against the 100/h the solar module makes: 2% short.
+	a.mods["burner_macro"] = x4data.Module{Macro: "burner_macro", Class: "production",
+		Produces: "widget", Name: "Widget Production"}
+	a.wares["widget"] = x4data.Ware{ID: "widget", Name: "Widget",
+		Methods: []x4data.Method{{Method: "default", Time: 3600, Amount: 100,
+			Inputs: []x4data.WareQty{{Ware: "energycells", Amount: 102}}}}}
+
+	_, out, err := a.analyzePlan(context.Background(), nil, analyzePlanIn{Plan: "Test Station"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ec := findBalance(t, out, "energycells")
+	if ec.NetPerH >= 0 {
+		t.Fatalf("fixture should be slightly short, got net %v", ec.NetPerH)
+	}
+	if strings.Contains(ec.Verdict, "surplus") {
+		t.Errorf("verdict %q describes a net-negative ware as surplus", ec.Verdict)
+	}
+	if !strings.HasPrefix(ec.Verdict, "MARGINAL") {
+		t.Errorf("verdict = %q, want MARGINAL", ec.Verdict)
+	}
+}
