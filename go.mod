@@ -1,4 +1,4 @@
-module github.com/gallowaysoftware/x4mcp
+module github.com/pequalsnp/x4mcp
 
 go 1.26.4
 

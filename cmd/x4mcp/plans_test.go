@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gallowaysoftware/x4mcp/internal/x4data"
+	"github.com/pequalsnp/x4mcp/internal/x4data"
 )
 
 // planFixture: a deliberately unbalanced station — it makes refined metals but

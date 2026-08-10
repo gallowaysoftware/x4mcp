@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gallowaysoftware/x4mcp/internal/x4save"
+	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
 
 // runStations prints a full per-station factory report (production modules,
