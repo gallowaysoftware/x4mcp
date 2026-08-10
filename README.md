@@ -151,16 +151,32 @@ keeping the newest 200 files and staying under 20 GiB.
 
 ```sh
 ./scripts/install-archiver.sh     # symlink + systemd user timer, every 5 min
+X4_ARCHIVE_DIR=/mnt/big/x4 ./scripts/install-archiver.sh   # archive elsewhere
 journalctl --user -u x4mcp-archive-saves -f
 ./scripts/archive-saves_test.sh   # no game install or real save needed
 ```
 
 It is strictly read-then-copy — it never writes to the game's save
-directories, and the unit enforces that with `ReadOnlyPaths=%h`. Copies are
-staged under a temp name and `gzip -t`'d before they count as archived, and a
-save touched in the last 30 s is left alone in case the game is still writing
-it. Override `X4_SAVE_DIRS`, `X4_ARCHIVE_DIR`, `X4_ARCHIVE_KEEP`,
-`X4_ARCHIVE_MAX_BYTES`, `X4_ARCHIVE_MIN_AGE` (see `--help`).
+directories. Three things enforce that rather than promising it: the unit's
+`ReadOnlyPaths=%h`, a startup check that **refuses to run** (exit 1) if the
+archive dir is, contains, or sits inside a save dir, and a prune loop that will
+only unlink a regular file whose parent resolves to the archive dir.
+
+Copies are staged under a temp name and `gzip -t`'d before they count as
+archived, and a save touched in the last 30 s is left alone in case the game is
+still writing it. Only a source that fails its *own* gzip check is quarantined
+with a `.bad` marker; a copy that failed for any other reason (mid-write, full
+disk) is simply retried next tick. Quarantine markers expire after 24 h, are
+re-announced in the journal on every run, and are reaped once expired — an
+exclusion from the corpus is never silent or permanent. One run at a time is
+mandatory: `flock` when it exists, an atomic `mkdir` mutex when it does not.
+
+`X4_ARCHIVE_DIR` given to the installer is baked into the installed unit — both
+`Environment=` and `ReadWritePaths=` — so the sandbox and the script always
+agree on where the archive lives; re-run the installer to move it. For direct
+invocation, override `X4_SAVE_DIRS`, `X4_ARCHIVE_DIR`, `X4_ARCHIVE_KEEP`,
+`X4_ARCHIVE_MAX_BYTES`, `X4_ARCHIVE_MIN_AGE`, `X4_ARCHIVE_BAD_TTL`,
+`X4_ARCHIVE_LOCK` (see `--help`).
 
 ## Tools
 

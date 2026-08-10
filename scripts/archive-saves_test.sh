@@ -71,6 +71,16 @@ fingerprint() {
 
 new_tmp() { mktemp -d "${TMPDIR:-/tmp}/x4arch-test.XXXXXX"; }
 
+# count_glob <pattern...> — how many of these paths exist.
+count_glob() {
+	local f n=0
+	for f in "$@"; do [[ -e $f ]] && n=$((n + 1)); done
+	printf '%s' "$n"
+}
+
+# a pid that cannot be running: one past the kernel's maximum.
+dead_pid() { printf '%s' "$(($(cat /proc/sys/kernel/pid_max 2>/dev/null || echo 32768) + 1))"; }
+
 # --- copies every save, from every profile -----------------------------------
 test_copies_all_profiles() {
 	local t saves archive out
@@ -278,6 +288,374 @@ test_ignores_non_saves() {
 	rm -rf "$t"
 }
 
+# --- an archive dir that overlaps a save dir is refused outright --------------
+# The prune loop deletes the oldest entries in the archive dir. If that dir IS
+# (or is inside, or contains) a save dir, those entries are the game's saves.
+test_refuses_overlapping_archive_dir() {
+	local t saves before out rc
+	t=$(new_tmp)
+	saves="$t/saves/71052239/save"
+	mkdir -p "$saves"
+	mk_save "$saves/save_001.xml.gz" 1754000000 "one"
+	mk_save "$saves/save_002.xml.gz" 1754000600 "two"
+	mk_save "$saves/save_003.xml.gz" 1754001200 "three"
+	mk_save "$saves/save_004.xml.gz" 1754001800 "four"
+	mk_save "$saves/save_005.xml.gz" 1754002400 "five"
+	before=$(fingerprint "$saves")
+
+	# 1. archive dir == save dir (the reproduction that destroyed 3 of 5 saves)
+	out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$saves" X4_ARCHIVE_KEEP=2 \
+		X4_ARCHIVE_MIN_AGE=0 "$ARCHIVER" 2>&1)
+	rc=$?
+	if ((rc != 0)); then ok "overlap: same dir refused (exit $rc)"; else fail "overlap: same dir ran anyway (exit 0)"; fi
+	assert_contains "$out" "overlaps save dir" "overlap: says why"
+	assert_eq "$before" "$(fingerprint "$saves")" "overlap: every save still intact"
+	assert_eq 5 "$(find "$saves" -name '*.xml.gz' | wc -l)" "overlap: nothing pruned"
+
+	# 2. archive dir inside the save dir
+	out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$saves/archive" X4_ARCHIVE_KEEP=1 \
+		X4_ARCHIVE_MIN_AGE=0 "$ARCHIVER" 2>&1)
+	rc=$?
+	if ((rc != 0)); then ok "overlap: archive under save dir refused"; else fail "overlap: archive under save dir ran anyway"; fi
+	assert_eq 5 "$(find "$saves" -maxdepth 1 -name '*.xml.gz' | wc -l)" "overlap: saves intact under nested archive"
+
+	# 3. save dir inside the archive dir
+	out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$t/saves" X4_ARCHIVE_KEEP=1 \
+		X4_ARCHIVE_MIN_AGE=0 "$ARCHIVER" 2>&1)
+	rc=$?
+	if ((rc != 0)); then ok "overlap: save dir under archive refused"; else fail "overlap: save dir under archive ran anyway"; fi
+	assert_eq "$before" "$(fingerprint "$saves")" "overlap: saves intact under enclosing archive"
+
+	# 4. ...even through a symlink, because the check resolves both sides.
+	ln -s "$saves" "$t/link-to-saves"
+	out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$t/link-to-saves" X4_ARCHIVE_KEEP=1 \
+		X4_ARCHIVE_MIN_AGE=0 "$ARCHIVER" 2>&1)
+	rc=$?
+	if ((rc != 0)); then ok "overlap: symlinked archive dir refused"; else fail "overlap: symlinked archive dir ran anyway"; fi
+	assert_eq "$before" "$(fingerprint "$saves")" "overlap: saves intact behind a symlink"
+	rm -rf "$t"
+}
+
+# --- the prune loop only ever unlinks real files inside the archive -----------
+# Second line of defence behind the overlap check: whatever ends up in the
+# archive dir, a savegame reached through a link is not the archiver's to delete.
+test_prune_refuses_links_out_of_the_archive() {
+	local t saves archive out
+	t=$(new_tmp)
+	saves="$t/saves/71052239/save"
+	archive="$t/archive"
+	mkdir -p "$saves" "$archive"
+	mk_save "$saves/quicksave.xml.gz" 1754003600 "alpha"
+	# Sorts first (oldest), so the keep=1 prune reaches it before anything else.
+	ln -s "$saves/quicksave.xml.gz" "$archive/20200101T000000Z_71052239_planted_1.xml.gz"
+
+	out=$(run "$saves" "$archive" 1)
+	assert_contains "$out" "refusing to delete a symlink" "prune guard: refuses the planted link"
+	if [[ -e $saves/quicksave.xml.gz ]]; then ok "prune guard: the save it pointed at survives"; else fail "prune guard: prune followed the link and deleted a save"; fi
+	rm -rf "$t"
+}
+
+# --- a copy that fails once is retried, not blacklisted forever ---------------
+# A truncating 'cp' stands in for every transient copy fault: the game rewriting
+# the save mid-read, a flaky filesystem, another process eating the temp file.
+# The SOURCE is a perfectly good save, so it must be archived on the next tick.
+test_retries_transient_copy_failure() {
+	local t saves archive shim out
+	t=$(new_tmp)
+	saves="$t/saves/71052239/save"
+	archive="$t/archive"
+	shim="$t/shim"
+	mkdir -p "$saves" "$shim"
+	mk_save "$saves/quicksave.xml.gz" 1754000000 "a payload worth keeping"
+
+	cat >"$shim/cp" <<-'EOF'
+		#!/usr/bin/env bash
+		# cp that "succeeds" but writes a truncated (non-gzip) copy.
+		args=()
+		for a in "$@"; do case $a in -*) continue ;; esac; args+=("$a"); done
+		head -c 5 -- "${args[0]}" >"${args[1]}"
+	EOF
+	chmod +x "$shim/cp"
+
+	out=$(PATH="$shim:$PATH" X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" \
+		X4_ARCHIVE_MIN_AGE=0 "$ARCHIVER" 2>&1)
+	assert_eq 0 "$(count_archive "$archive")" "transient: nothing archived on the failing run"
+	assert_contains "$out" "will retry next run" "transient: reported as retryable"
+	assert_eq 0 "$(find "$archive" -name '*.bad' | wc -l)" "transient: no quarantine marker for a good source"
+	assert_eq 0 "$(count_glob "$archive"/.tmp.*)" "transient: partial copy cleaned up"
+
+	# Next tick, with a working cp.
+	out=$(run "$saves" "$archive")
+	assert_eq 1 "$(count_archive "$archive")" "transient: archived on the following run"
+	assert_eq "a payload worth keeping" "$(gzip -dc "$archive"/*.xml.gz)" "transient: payload intact"
+	rm -rf "$t"
+}
+
+# --- a quarantine marker expires, and is loud while it lasts ------------------
+test_bad_marker_expires_and_is_never_silent() {
+	local t saves archive marker out
+	t=$(new_tmp)
+	saves="$t/saves/71052239/save"
+	archive="$t/archive"
+	mkdir -p "$saves" "$archive"
+	mk_save "$saves/quicksave.xml.gz" 1754000000 "still a good save"
+	marker="$archive/$(ts 1754000000)_71052239_quicksave_$(stat -c %s "$saves/quicksave.xml.gz").xml.gz.bad"
+
+	# A fresh marker holds — and says so, every single run.
+	: >"$marker"
+	out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=0 "$ARCHIVER")
+	assert_eq 0 "$(count_archive "$archive")" "quarantine: fresh marker still skips the save"
+	assert_contains "$out" "skipping quarantined save" "quarantine: skip is announced"
+	out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=0 "$ARCHIVER")
+	assert_contains "$out" "skipping quarantined save" "quarantine: re-announced on every run, never silent"
+
+	# Age it past the TTL and the save comes back into the corpus.
+	touch -d '@1000000000' -- "$marker"
+	out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=0 "$ARCHIVER")
+	assert_contains "$out" "expired" "quarantine: expiry logged"
+	assert_eq 1 "$(count_archive "$archive")" "quarantine: save archived once the marker expires"
+	assert_eq 0 "$(find "$archive" -name '*.bad' | wc -l)" "quarantine: expired marker removed"
+	rm -rf "$t"
+}
+
+# --- expired markers for saves that are long gone are reaped ------------------
+test_reaps_orphaned_bad_markers() {
+	local t saves archive out
+	t=$(new_tmp)
+	saves="$t/saves/71052239/save"
+	archive="$t/archive"
+	mkdir -p "$saves" "$archive"
+	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"
+	: >"$archive/20250101T000000Z_71052239_deleted_save_99.xml.gz.bad"
+	touch -d '@1000000000' -- "$archive/20250101T000000Z_71052239_deleted_save_99.xml.gz.bad"
+	: >"$archive/20250102T000000Z_71052239_recent_save_99.xml.gz.bad" # fresh: kept
+
+	out=$(run "$saves" "$archive")
+	assert_eq 1 "$(find "$archive" -name '*.bad' | wc -l)" "reap: expired orphan marker deleted, fresh one kept"
+	assert_contains "$out" "reaped expired quarantine marker" "reap: logged"
+	assert_contains "$out" "1 .bad markers" "reap: done line counts the survivors"
+	rm -rf "$t"
+}
+
+# --- the stale-temp reaper must not eat a live run's in-progress copy ---------
+# Deleting another run's temp is what turns a healthy save into a .bad marker.
+test_reaper_spares_live_temps() {
+	local t saves archive live stale
+	t=$(new_tmp)
+	saves="$t/saves/71052239/save"
+	archive="$t/archive"
+	mkdir -p "$saves" "$archive"
+	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"
+	live="$archive/.tmp.$$.20250101T000000Z_71052239_inflight_1.xml.gz"
+	stale="$archive/.tmp.$(dead_pid).20250101T000000Z_71052239_abandoned_1.xml.gz"
+	printf 'in flight' >"$live"
+	printf 'abandoned' >"$stale"
+
+	run "$saves" "$archive" >/dev/null
+	if [[ -e $live ]]; then ok "reaper: live run's temp left alone"; else fail "reaper: deleted a live run's temp"; fi
+	if [[ ! -e $stale ]]; then ok "reaper: abandoned temp removed"; else fail "reaper: kept an abandoned temp"; fi
+	rm -rf "$t"
+}
+
+# --- the lock is mandatory, not best-effort ----------------------------------
+# Held lock => the run must stand down. Checked for flock, for the mkdir
+# fallback, and — the case that actually bit — on a host with no flock at all,
+# where the archiver used to run with no mutual exclusion and no warning.
+test_lock_is_mandatory() {
+	local t saves archive out shim tool
+	t=$(new_tmp)
+	saves="$t/saves/71052239/save"
+	archive="$t/archive"
+	mkdir -p "$saves" "$archive"
+	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"
+
+	# 1. flock held by this test process.
+	exec 9>"$archive/.lock"
+	if flock -n 9; then
+		out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=0 \
+			X4_ARCHIVE_LOCK=flock "$ARCHIVER")
+		assert_contains "$out" "holds the lock; skipping this tick" "lock: flock held -> stands down"
+		assert_eq 0 "$(count_archive "$archive")" "lock: flock held -> nothing archived"
+	else
+		fail "lock: test could not take the flock itself"
+	fi
+	exec 9>&-
+	run "$saves" "$archive" >/dev/null
+	assert_eq 1 "$(count_archive "$archive")" "lock: archives once the lock is free"
+	rm -f "$archive"/*.xml.gz
+
+	# 2. mkdir mutex held by a live pid.
+	mkdir -p "$archive/.lock.d"
+	printf '%s\n' "$$" >"$archive/.lock.d/pid"
+	out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=0 \
+		X4_ARCHIVE_LOCK=mkdir "$ARCHIVER")
+	assert_contains "$out" "holds the lock; skipping this tick" "lock: live mkdir mutex -> stands down"
+	assert_eq 0 "$(count_archive "$archive")" "lock: live mkdir mutex -> nothing archived"
+
+	# 3. a mutex with no pid file yet is a run that started microseconds ago.
+	rm -f "$archive/.lock.d/pid"
+	out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=0 \
+		X4_ARCHIVE_LOCK=mkdir "$ARCHIVER")
+	assert_contains "$out" "holds the lock; skipping this tick" "lock: fresh pid-less mutex is respected"
+
+	# 4. ...but a mutex owned by a dead pid is taken over, not deadlocked on.
+	printf '%s\n' "$(dead_pid)" >"$archive/.lock.d/pid"
+	out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=0 \
+		X4_ARCHIVE_LOCK=mkdir "$ARCHIVER")
+	assert_contains "$out" "clearing a lock left behind by a dead run" "lock: dead holder cleared"
+	assert_eq 1 "$(count_archive "$archive")" "lock: run proceeds after clearing a dead lock"
+	if [[ ! -e $archive/.lock.d ]]; then ok "lock: mutex released on exit"; else fail "lock: mutex leaked"; fi
+	rm -f "$archive"/*.xml.gz
+
+	# 5. no flock on the box at all: the fallback must still lock.
+	shim="$t/nopath"
+	mkdir -p "$shim"
+	for tool in bash env date sed sort basename dirname readlink stat cp mv rm rmdir mkdir gzip cat; do
+		ln -sf -- "$(command -v "$tool")" "$shim/$tool"
+	done
+	if PATH="$shim" command -v flock >/dev/null 2>&1; then
+		fail "lock: shim PATH still exposes flock"
+	else
+		ok "lock: shim PATH has no flock"
+	fi
+	mkdir -p "$archive/.lock.d"
+	printf '%s\n' "$$" >"$archive/.lock.d/pid"
+	out=$(PATH="$shim" X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=0 "$ARCHIVER")
+	assert_contains "$out" "holds the lock; skipping this tick" "lock: no flock -> mkdir fallback still excludes"
+	assert_eq 0 "$(count_archive "$archive")" "lock: no flock -> nothing archived while held"
+	rm -rf "$archive/.lock.d"
+	out=$(PATH="$shim" X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=0 "$ARCHIVER")
+	assert_eq 1 "$(count_archive "$archive")" "lock: no flock -> still archives when free"
+	rm -rf "$t"
+}
+
+# --- two runs at once: everything archived exactly once, nothing corrupted ----
+test_concurrent_runs_are_serialized() {
+	local mode t saves archive n names dupes
+	for mode in flock mkdir; do
+		t=$(new_tmp)
+		saves="$t/saves/71052239/save"
+		archive="$t/archive"
+		mkdir -p "$saves"
+		for n in $(seq 1 40); do
+			mk_save "$saves/save_$n.xml.gz" $((1754000000 + n * 60)) "$(head -c 20000 /dev/zero | tr '\0' "$((n % 10))")"
+		done
+
+		X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=0 \
+			X4_ARCHIVE_LOCK="$mode" "$ARCHIVER" >"$t/a.log" 2>&1 &
+		local pid_a=$!
+		X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=0 \
+			X4_ARCHIVE_LOCK="$mode" "$ARCHIVER" >"$t/b.log" 2>&1 &
+		local pid_b=$!
+		wait "$pid_a"
+		local rc_a=$?
+		wait "$pid_b"
+		local rc_b=$?
+
+		assert_eq 0 "$rc_a" "concurrent[$mode]: first run exits clean"
+		assert_eq 0 "$rc_b" "concurrent[$mode]: second run exits clean"
+		assert_eq 40 "$(count_archive "$archive")" "concurrent[$mode]: every save archived"
+		assert_eq 0 "$(find "$archive" -name '*.bad' | wc -l)" "concurrent[$mode]: no save wrongly quarantined"
+		assert_eq 0 "$(count_glob "$archive"/.tmp.*)" "concurrent[$mode]: no partial copies left behind"
+		if [[ ! -e $archive/.lock.d ]]; then ok "concurrent[$mode]: lock released"; else fail "concurrent[$mode]: lock dir leaked"; fi
+
+		# "exactly once" — no source archived under two different names.
+		names=$(ls_archive "$archive")
+		dupes=$(printf '%s\n' $names | sed 's/^[0-9TZ]*_71052239_//' | LC_ALL=C sort | uniq -d | wc -l)
+		assert_eq 0 "$dupes" "concurrent[$mode]: no save archived twice"
+		rm -rf "$t"
+	done
+}
+
+# --- paths with spaces and shell metacharacters -------------------------------
+test_paths_with_spaces() {
+	local t saves archive out
+	t=$(new_tmp)
+	saves="$t/my saves (steam)/71052239/save"
+	archive="$t/x4 archive \$dir"
+	mkdir -p "$saves"
+	mk_save "$saves/quick save 1.xml.gz" 1754000000 "alpha"
+	mk_save "$saves/auto save.xml.gz" 1754000600 "beta"
+
+	out=$(run "$saves" "$archive")
+	assert_eq 2 "$(count_archive "$archive")" "spaces: both saves archived"
+	assert_contains "$(ls_archive "$archive")" "_quick_save_1_" "spaces: name sanitised, not split"
+	assert_eq 2 "$(find "$saves" -name '*.xml.gz' | wc -l)" "spaces: source untouched"
+
+	out=$(run "$saves" "$archive")
+	assert_contains "$out" "done: 0 new" "spaces: dedup still works"
+	rm -rf "$t"
+}
+
+# --- a save dated in the future is archived, not stuck 'settling' -------------
+test_future_mtime_is_not_stuck() {
+	local t saves archive out
+	t=$(new_tmp)
+	saves="$t/saves/71052239/save"
+	archive="$t/archive"
+	mkdir -p "$saves"
+	mk_save "$saves/quicksave.xml.gz" "$(($(date +%s) + 7200))" "alpha"
+
+	out=$(X4_SAVE_DIRS="$saves" X4_ARCHIVE_DIR="$archive" X4_ARCHIVE_MIN_AGE=30 "$ARCHIVER")
+	assert_eq 1 "$(count_archive "$archive")" "future mtime: archived rather than waiting for the clock"
+	assert_contains "$out" "in the future" "future mtime: clock skew warned about"
+	assert_not_contains "$out" "1 still settling" "future mtime: not counted as settling"
+	rm -rf "$t"
+}
+
+# --- a failure to WRITE is not reported as a failure to READ ------------------
+test_distinguishes_write_failure_from_vanished_source() {
+	local t saves archive out
+	if [[ $(id -u) == 0 ]]; then
+		ok "write failure: skipped (running as root, permissions do not apply)"
+		return
+	fi
+	t=$(new_tmp)
+	saves="$t/saves/71052239/save"
+	archive="$t/archive"
+	mkdir -p "$saves" "$archive"
+	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"
+	: >"$archive/.lock" # flock needs to open this; the dir itself goes read-only
+	chmod 0500 "$archive"
+
+	out=$(run "$saves" "$archive")
+	chmod 0700 "$archive"
+	assert_contains "$out" "could not write to the archive" "write failure: blames the archive, not the save dir"
+	assert_not_contains "$out" "vanished or unreadable" "write failure: does not claim the source vanished"
+	assert_eq 0 "$(count_archive "$archive")" "write failure: nothing archived"
+
+	out=$(run "$saves" "$archive")
+	assert_eq 1 "$(count_archive "$archive")" "write failure: archived once the archive is writable again"
+	rm -rf "$t"
+}
+
+# --- the installed unit points at the archive dir the installer was given -----
+test_installer_templates_archive_dir() {
+	local t unit_dir bin_dir archive unit
+	t=$(new_tmp)
+	unit_dir="$t/units"
+	bin_dir="$t/bin"
+	archive="$t/big disk/x4"
+	X4_INSTALL_NO_SYSTEMCTL=1 X4_INSTALL_UNIT_DIR="$unit_dir" X4_INSTALL_BIN_DIR="$bin_dir" \
+		X4_ARCHIVE_DIR="$archive" "$SCRIPT_DIR/install-archiver.sh" >/dev/null
+	unit=$(cat "$unit_dir/x4mcp-archive-saves.service")
+
+	assert_contains "$unit" "Environment=\"X4_ARCHIVE_DIR=$archive\"" "installer: unit exports the chosen archive dir"
+	assert_contains "$unit" "ReadWritePaths=\"-$archive\"" "installer: sandbox allows writing to it"
+	assert_not_contains "$unit" "%h/x4-save-archive" "installer: default path fully substituted"
+	if [[ -d $archive ]]; then ok "installer: archive dir created"; else fail "installer: archive dir not created"; fi
+	if [[ -L $bin_dir/x4-archive-saves ]]; then ok "installer: archiver symlinked"; else fail "installer: no symlink"; fi
+	if [[ -f $unit_dir/x4mcp-archive-saves.timer ]]; then ok "installer: timer installed"; else fail "installer: timer missing"; fi
+
+	# The default install still names the default dir, in both places.
+	X4_INSTALL_NO_SYSTEMCTL=1 X4_INSTALL_UNIT_DIR="$unit_dir" X4_INSTALL_BIN_DIR="$bin_dir" \
+		X4_ARCHIVE_DIR="$t/plain" "$SCRIPT_DIR/install-archiver.sh" >/dev/null
+	unit=$(cat "$unit_dir/x4mcp-archive-saves.service")
+	assert_contains "$unit" "Environment=\"X4_ARCHIVE_DIR=$t/plain\"" "installer: re-running retargets the unit"
+	assert_not_contains "$unit" "$archive" "installer: old archive dir gone from the unit"
+	rm -rf "$t"
+}
+
 for t in \
 	test_copies_all_profiles \
 	test_dedups_on_rerun \
@@ -288,7 +666,19 @@ for t in \
 	test_skips_settling_saves \
 	test_rejects_bad_gzip \
 	test_tolerates_missing_dirs \
-	test_ignores_non_saves; do
+	test_ignores_non_saves \
+	test_refuses_overlapping_archive_dir \
+	test_prune_refuses_links_out_of_the_archive \
+	test_retries_transient_copy_failure \
+	test_bad_marker_expires_and_is_never_silent \
+	test_reaps_orphaned_bad_markers \
+	test_reaper_spares_live_temps \
+	test_lock_is_mandatory \
+	test_concurrent_runs_are_serialized \
+	test_paths_with_spaces \
+	test_future_mtime_is_not_stuck \
+	test_distinguishes_write_failure_from_vanished_source \
+	test_installer_templates_archive_dir; do
 	printf -- '--- %s\n' "$t"
 	"$t"
 done

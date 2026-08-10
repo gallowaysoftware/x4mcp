@@ -1,10 +1,16 @@
 [Unit]
-Description=x4mcp save archiver — copy new X4 savegames into ~/x4-save-archive
+Description=x4mcp save archiver — copy new X4 savegames into %h/x4-save-archive
 Documentation=https://github.com/pequalsnp/x4mcp
 
 [Service]
 Type=oneshot
 ExecStart=%h/.local/bin/x4-archive-saves
+
+# The archive location lives in exactly two places: this Environment line and
+# the ReadWritePaths below. install-archiver.sh rewrites BOTH from
+# X4_ARCHIVE_DIR, so the sandbox can never disagree with where the script
+# actually writes. Edit them as a pair, or re-run the installer.
+Environment="X4_ARCHIVE_DIR=%h/x4-save-archive"
 
 # This runs while the game is running. Copying half a gigabyte must never be
 # the reason a frame drops, so the archiver yields on both CPU and disk.
