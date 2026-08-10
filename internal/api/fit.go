@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"context"
@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	"github.com/pequalsnp/x4mcp/internal/x4data"
-	"github.com/pequalsnp/x4mcp/internal/x4save"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // What a warship actually costs.
@@ -24,7 +22,7 @@ import (
 // the savegame has discovered a station actually selling the component, its live
 // price is reported too — that is the only number that is real.
 
-type fitIn struct {
+type FitIn struct {
 	SavePath string  `json:"save_path,omitempty" jsonschema:"Absolute path to a save; omit for most recent"`
 	Ship     string  `json:"ship" jsonschema:"Ship name or macro (e.g. 'Behemoth E', 'Minotaur Raider')"`
 	Turret   string  `json:"turret,omitempty" jsonschema:"Substring picking the turret type to fit, e.g. 'flak', 'plasma', 'beam'. Omit for the cheapest compatible."`
@@ -33,7 +31,7 @@ type fitIn struct {
 	Markup   float64 `json:"markup,omitempty" jsonschema:"Optional multiplier applied to the totals, for markups or discounts this tool cannot see. Default 1.0. Against a real Behemoth E quote the modelled max band was already within 1%, so a markup is usually NOT needed."`
 }
 
-type fitLine struct {
+type FitLine struct {
 	Kind      string `json:"kind"`
 	Size      string `json:"size"`
 	Count     int    `json:"count"`
@@ -50,13 +48,13 @@ type fitLine struct {
 	Note       string `json:"note,omitempty"`
 }
 
-type fitOut struct {
+type FitOut struct {
 	Ship      string    `json:"ship"`
 	Macro     string    `json:"macro"`
 	Size      string    `json:"size,omitempty"`
 	Race      string    `json:"race,omitempty"`
 	HullPrice int64     `json:"hull_price"`
-	Lines     []fitLine `json:"equipment"`
+	Lines     []FitLine `json:"equipment"`
 	EquipAvg  int64     `json:"equipment_avg"`
 	EquipMin  int64     `json:"equipment_min"`
 	EquipMax  int64     `json:"equipment_max"`
@@ -70,24 +68,24 @@ type fitOut struct {
 	Note      string    `json:"note"`
 }
 
-func (a *app) estimateShipCost(ctx context.Context, _ *mcp.CallToolRequest, in fitIn) (*mcp.CallToolResult, fitOut, error) {
-	db := a.wareDB()
-	ships := a.shipDB()
+func (s *Service) EstimateShipCost(ctx context.Context, in FitIn) (FitOut, error) {
+	db := s.wareDB()
+	ships := s.shipDB()
 	if len(db) == 0 || len(ships) == 0 {
-		return nil, fitOut{}, fmt.Errorf("game database unavailable; set X4MCP_GAME_DIR")
+		return FitOut{}, fmt.Errorf("game database unavailable; set X4MCP_GAME_DIR")
 	}
 	slots, err := x4data.LoadShipSlots("")
 	if err != nil || len(slots) == 0 {
-		return nil, fitOut{}, fmt.Errorf("ship slot data unavailable: %w", err)
+		return FitOut{}, fmt.Errorf("ship slot data unavailable: %w", err)
 	}
 
 	macro, sh, ok := resolveShip(ships, in.Ship)
 	if !ok {
-		return nil, fitOut{}, fmt.Errorf("no ship matching %q", in.Ship)
+		return FitOut{}, fmt.Errorf("no ship matching %q", in.Ship)
 	}
 	ss, ok := slots[macro]
 	if !ok {
-		return nil, fitOut{}, fmt.Errorf("no equipment slots known for %s", sh.Name)
+		return FitOut{}, fmt.Errorf("no equipment slots known for %s", sh.Name)
 	}
 
 	race := strings.ToLower(strings.TrimSpace(in.Race))
@@ -96,24 +94,24 @@ func (a *app) estimateShipCost(ctx context.Context, _ *mcp.CallToolRequest, in f
 	}
 	best := strings.EqualFold(strings.TrimSpace(in.Quality), "best")
 
-	out := fitOut{Ship: sh.Name, Macro: macro, Size: sh.Size, Race: race}
+	out := FitOut{Ship: sh.Name, Macro: macro, Size: sh.Size, Race: race}
 	// Hull price: the ship's own ware (ship_<macro minus _macro>).
 	if w, ok := db[strings.TrimSuffix(macro, "_macro")]; ok {
 		out.HullPrice = int64(w.PriceAvg)
 	}
 
-	live := liveSellPrices(a, in.SavePath)
+	live := s.liveSellPrices(ctx, in.SavePath)
 	var covered, total int
 
-	for _, s := range ss.Slots {
-		line := fitLine{Kind: string(s.Kind), Size: s.Size, Count: s.Count}
+	for _, slot := range ss.Slots {
+		line := FitLine{Kind: string(slot.Kind), Size: slot.Size, Count: slot.Count}
 		match := ""
-		if s.Kind == x4data.SlotTurret || s.Kind == x4data.SlotWeapon {
+		if slot.Kind == x4data.SlotTurret || slot.Kind == x4data.SlotWeapon {
 			match = strings.ToLower(strings.TrimSpace(in.Turret))
 		}
-		opts := x4data.EquipFor(db, s.Kind, s.Size, race, match)
+		opts := x4data.EquipFor(db, slot.Kind, slot.Size, race, match)
 		if len(opts) == 0 && match != "" {
-			opts = x4data.EquipFor(db, s.Kind, s.Size, race, "")
+			opts = x4data.EquipFor(db, slot.Kind, slot.Size, race, "")
 			if len(opts) > 0 {
 				line.Note = fmt.Sprintf("no %q option at this size; priced with the cheapest compatible instead", match)
 			}
@@ -127,7 +125,7 @@ func (a *app) estimateShipCost(ctx context.Context, _ *mcp.CallToolRequest, in f
 		if best {
 			pick = opts[len(opts)-1]
 		}
-		n := int64(s.Count)
+		n := int64(slot.Count)
 		line.Ware, line.Name, line.UnitAvg = pick.Ware, pick.Name, pick.PriceAvg
 		line.SubtotAvg = n * int64(pick.PriceAvg)
 		line.SubtotMin = n * int64(pick.PriceMin)
@@ -175,7 +173,7 @@ func (a *app) estimateShipCost(ctx context.Context, _ *mcp.CallToolRequest, in f
 		"22.43M avg / 23.75M max; adding the ~687k of extras lands within 1% of the quote at the top of the band. " +
 		"So use quality='best' and the MAX of the band for a purchase decision, and add ~3% for the extras. " +
 		"The mk level of the single thruster slot dominates everything: L All-round is 0.28M at Mk1 and 7.03M at Mk3."
-	return ok2(out)
+	return out, nil
 }
 
 // livePrice is the cheapest discovered station selling a ware.
@@ -187,9 +185,9 @@ type livePrice struct {
 // liveSellPrices indexes ware -> cheapest live SELL offer across discovered
 // stations. This is the "varies with the economy" half: a component's real cost
 // is whatever somebody near you is charging today.
-func liveSellPrices(a *app, savePath string) map[string]livePrice {
+func (s *Service) liveSellPrices(ctx context.Context, savePath string) map[string]livePrice {
 	out := map[string]livePrice{}
-	snap, err := a.snapshot(savePath)
+	snap, err := s.Snapshot(ctx, savePath)
 	if err != nil || snap == nil {
 		return out
 	}
@@ -259,5 +257,3 @@ func shipRaceFromMacro(macro string) string {
 	}
 	return p[1]
 }
-
-var _ = x4save.Snapshot{}

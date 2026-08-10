@@ -1,12 +1,10 @@
-package main
+package api
 
 import (
 	"context"
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/pequalsnp/x4mcp/internal/x4data"
 	"github.com/pequalsnp/x4mcp/internal/x4save"
@@ -47,7 +45,7 @@ var minables = map[string]string{
 	"methane":  "gas",
 }
 
-type miningPlanIn struct {
+type MiningPlanIn struct {
 	SavePath   string   `json:"save_path,omitempty" jsonschema:"Absolute path to a save; omit for most recent"`
 	Sector     string   `json:"sector" jsonschema:"Target sector for the complex, by name or macro (e.g. 'Avarice IV')"`
 	Produces   []string `json:"produces,omitempty" jsonschema:"Wares the complex will produce (e.g. hullparts, claytronics). Their recipes are walked down to raw minables. Omit to consider every minable."`
@@ -58,7 +56,7 @@ type miningPlanIn struct {
 	IncludeAll bool     `json:"include_all,omitempty" jsonschema:"Include hostile (Xenon/Kha'ak) and contested sectors (default false)"`
 }
 
-type miningSource struct {
+type MiningSource struct {
 	Sector string `json:"sector"`
 	Name   string `json:"name,omitempty"`
 	Owner  string `json:"owner,omitempty"`
@@ -69,7 +67,7 @@ type miningSource struct {
 	Note   string `json:"note,omitempty"`
 }
 
-type resourcePlan struct {
+type ResourcePlan struct {
 	Resource  string   `json:"resource"`
 	Kind      string   `json:"kind"` // solid | gas
 	NeededFor []string `json:"needed_for,omitempty"`
@@ -79,14 +77,14 @@ type resourcePlan struct {
 	// verdict reading a weight that was not there and reporting 0.
 	InTargetWeight int64          `json:"in_target_weight,omitempty"`
 	InTargetFields int            `json:"in_target_fields,omitempty"`
-	Sources        []miningSource `json:"sources"`
-	Refinery       *refineryHint  `json:"refining,omitempty"`
+	Sources        []MiningSource `json:"sources"`
+	Refinery       *RefineryHint  `json:"refining,omitempty"`
 	Verdict        string         `json:"verdict"`
 }
 
-// refineryHint is the "should the refinery sit at the field or at the
+// RefineryHint is the "should the refinery sit at the field or at the
 // complex" evidence, computed from the recipe rather than asserted.
-type refineryHint struct {
+type RefineryHint struct {
 	Ware        string  `json:"refined_ware"`
 	WareName    string  `json:"refined_ware_name,omitempty"`
 	RawPerCycle int     `json:"raw_per_cycle"`
@@ -101,25 +99,25 @@ type refineryHint struct {
 	Note         string   `json:"note"`
 }
 
-type miningPlanOut struct {
+type MiningPlanOut struct {
 	Target      string         `json:"target_sector"`
 	TargetName  string         `json:"target_sector_name,omitempty"`
 	TargetOwner string         `json:"target_sector_owner,omitempty"`
 	MaxHops     int            `json:"max_hops"`
 	Reachable   int            `json:"sectors_searched"`
-	Plans       []resourcePlan `json:"resources"`
+	Plans       []ResourcePlan `json:"resources"`
 	Scoring     string         `json:"scoring"`
 	Note        string         `json:"note,omitempty"`
 }
 
-func (a *app) planMiningSupply(ctx context.Context, _ *mcp.CallToolRequest, in miningPlanIn) (*mcp.CallToolResult, miningPlanOut, error) {
-	snap, err := a.snapshot(in.SavePath)
+func (s *Service) PlanMiningSupply(ctx context.Context, in MiningPlanIn) (MiningPlanOut, error) {
+	snap, err := s.Snapshot(ctx, in.SavePath)
 	if err != nil {
-		return nil, miningPlanOut{}, err
+		return MiningPlanOut{}, err
 	}
 	target, targetName := resolveSector(snap, in.Sector)
 	if target == "" {
-		return nil, miningPlanOut{}, fmt.Errorf("could not resolve sector %q", in.Sector)
+		return MiningPlanOut{}, fmt.Errorf("could not resolve sector %q", in.Sector)
 	}
 	maxHops := in.MaxHops
 	if maxHops <= 0 {
@@ -131,19 +129,19 @@ func (a *app) planMiningSupply(ctx context.Context, _ *mcp.CallToolRequest, in m
 	}
 
 	// Which raw resources matter, and what wanted them.
-	wanted, neededFor, via, err := a.rawInputs(in.Resources, in.Produces)
+	wanted, neededFor, via, err := s.rawInputs(in.Resources, in.Produces)
 	if err != nil {
-		return nil, miningPlanOut{}, err
+		return MiningPlanOut{}, err
 	}
 
-	dist := hopsFrom(a.effectiveGates(snap), snap, strings.ToLower(target), maxHops)
+	dist := hopsFrom(s.effectiveGates(snap), snap, strings.ToLower(target), maxHops)
 	byMacro := map[string]x4save.Sector{}
 	for _, s := range snap.Sectors {
 		byMacro[strings.ToLower(s.Macro)] = s
 	}
 	targetSec := byMacro[strings.ToLower(target)]
 
-	out := miningPlanOut{
+	out := MiningPlanOut{
 		Target: target, TargetName: targetName, TargetOwner: targetSec.Owner,
 		MaxHops: maxHops, Reachable: len(dist),
 		Scoring: "Sources are ranked by PROXIMITY: the closest field with an adequate deposit first, " +
@@ -161,7 +159,7 @@ func (a *app) planMiningSupply(ctx context.Context, _ *mcp.CallToolRequest, in m
 
 	for _, res := range wanted {
 		kind := minables[res]
-		plan := resourcePlan{Resource: res, Kind: kind, NeededFor: neededFor[res]}
+		plan := ResourcePlan{Resource: res, Kind: kind, NeededFor: neededFor[res]}
 
 		for macro, hops := range dist {
 			sec, ok := byMacro[macro]
@@ -180,7 +178,7 @@ func (a *app) planMiningSupply(ctx context.Context, _ *mcp.CallToolRequest, in m
 				plan.InTarget = true
 				plan.InTargetWeight, plan.InTargetFields = weight, fields
 			}
-			src := miningSource{
+			src := MiningSource{
 				Sector: sec.Macro, Name: sec.Name, Owner: sec.Owner,
 				Hops: hops, Weight: weight, Fields: fields,
 				Score: weight / int64(1+hops),
@@ -202,7 +200,7 @@ func (a *app) planMiningSupply(ctx context.Context, _ *mcp.CallToolRequest, in m
 
 		sortSources(plan.Sources, in.Prefer)
 		if len(plan.Sources) > limit {
-			var local *miningSource
+			var local *MiningSource
 			for i := range plan.Sources {
 				if plan.Sources[i].Hops == 0 {
 					local = &plan.Sources[i]
@@ -226,18 +224,18 @@ func (a *app) planMiningSupply(ctx context.Context, _ *mcp.CallToolRequest, in m
 			}
 		}
 
-		plan.Refinery = a.refineryHintFor(res, via[res])
+		plan.Refinery = s.refineryHintFor(res, via[res])
 		plan.Verdict = verdictFor(res, plan)
 		out.Plans = append(out.Plans, plan)
 	}
 
 	sort.Slice(out.Plans, func(i, j int) bool { return out.Plans[i].Resource < out.Plans[j].Resource })
-	return ok(out)
+	return out, nil
 }
 
 // rawInputs resolves the raw minables to plan for: an explicit list, or
 // whatever the requested wares bottom out in, or everything.
-func (a *app) rawInputs(explicit, produces []string) ([]string, map[string][]string, map[string]string, error) {
+func (s *Service) rawInputs(explicit, produces []string) ([]string, map[string][]string, map[string]string, error) {
 	neededFor := map[string][]string{}
 	via := map[string]string{}
 
@@ -254,13 +252,13 @@ func (a *app) rawInputs(explicit, produces []string) ([]string, map[string][]str
 	}
 
 	if len(produces) > 0 {
-		db := a.wareDB()
+		db := s.wareDB()
 		if len(db) == 0 {
 			return nil, nil, nil, fmt.Errorf("ware database unavailable, so recipes cannot be walked; pass 'resources' explicitly or set X4MCP_GAME_DIR")
 		}
 		var out []string
 		for _, q := range produces {
-			w, ok := a.resolveWare(strings.TrimSpace(q))
+			w, ok := s.resolveWare(strings.TrimSpace(q))
 			if !ok {
 				return nil, nil, nil, fmt.Errorf("no ware matching %q", q)
 			}
@@ -337,13 +335,13 @@ func rawsOf(db map[string]x4data.Ware, id string, seen map[string]bool) []rawPat
 // bulk, which is the argument for or against a satellite refinery at the
 // field rather than at the complex. Read from the recipe, because the
 // ratios differ per resource and change between patches.
-func (a *app) refineryHintFor(res, preferred string) *refineryHint {
-	return pickRefinery(a.wareDB(), res, preferred)
+func (s *Service) refineryHintFor(res, preferred string) *RefineryHint {
+	return pickRefinery(s.wareDB(), res, preferred)
 }
 
 // pickRefinery is the pure half, so the selection rule can be tested
 // against hand-built recipes instead of a 90MB savegame.
-func pickRefinery(db map[string]x4data.Ware, res, preferred string) *refineryHint {
+func pickRefinery(db map[string]x4data.Ware, res, preferred string) *RefineryHint {
 	if len(db) == 0 {
 		return nil
 	}
@@ -415,7 +413,7 @@ func pickRefinery(db map[string]x4data.Ware, res, preferred string) *refineryHin
 	// Nothing that needs other inputs is a refinery; saying so beats
 	// quietly presenting a factory's ratio as if it were one.
 	if bestExtras > 0 {
-		return &refineryHint{
+		return &RefineryHint{
 			Ware: best.ID, WareName: wareLabel(best),
 			RawPerCycle: bestQty, OutPerCycle: bestOut,
 			Note: fmt.Sprintf("no single-input refinery consumes %s — the nearest is %s, which needs "+
@@ -424,7 +422,7 @@ func pickRefinery(db map[string]x4data.Ware, res, preferred string) *refineryHin
 		}
 	}
 	raw := db[res]
-	h := &refineryHint{
+	h := &RefineryHint{
 		Ware: best.ID, WareName: wareLabel(best),
 		RawPerCycle: bestQty, OutPerCycle: bestOut,
 	}
@@ -462,7 +460,7 @@ func pickRefinery(db map[string]x4data.Ware, res, preferred string) *refineryHin
 	return h
 }
 
-func verdictFor(res string, p resourcePlan) string {
+func verdictFor(res string, p ResourcePlan) string {
 	if len(p.Sources) == 0 {
 		return fmt.Sprintf("no %s reachable within range — this complex would have to import it, "+
 			"so either widen max_hops, pick another sector, or buy %s on the market", res, res)
@@ -515,7 +513,7 @@ func verdictFor(res string, p resourcePlan) string {
 	}
 }
 
-func displayName(s miningSource) string {
+func displayName(s MiningSource) string {
 	if s.Name != "" {
 		return s.Name
 	}
@@ -662,7 +660,7 @@ const (
 const adequateWeight = 5_000_000
 
 // sortSources orders mining sources by the requested preference.
-func sortSources(src []miningSource, prefer string) {
+func sortSources(src []MiningSource, prefer string) {
 	byAbundance := func(i, j int) bool {
 		if src[i].Score != src[j].Score {
 			return src[i].Score > src[j].Score

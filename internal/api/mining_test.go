@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"reflect"
@@ -181,8 +181,8 @@ func TestResourceInHandlesSolidsAndGases(t *testing.T) {
 // A gas in the target sector must not be described as "weight 0 across 0
 // fields", which reads as an empty sector rather than a present resource.
 func TestVerdictForGasDoesNotQuoteFieldWeight(t *testing.T) {
-	p := resourcePlan{Kind: "gas", InTarget: true,
-		Sources: []miningSource{{Hops: 0, Name: "Avarice IV"}}}
+	p := ResourcePlan{Kind: "gas", InTarget: true,
+		Sources: []MiningSource{{Hops: 0, Name: "Avarice IV"}}}
 	got := verdictFor("methane", p)
 	if contains(got, "weight 0") || contains(got, "0 field") {
 		t.Errorf("gas verdict quotes field weight: %q", got)
@@ -193,7 +193,7 @@ func TestVerdictForGasDoesNotQuoteFieldWeight(t *testing.T) {
 }
 
 func TestVerdictForNoSources(t *testing.T) {
-	got := verdictFor("nividium", resourcePlan{Kind: "solid"})
+	got := verdictFor("nividium", ResourcePlan{Kind: "solid"})
 	if !contains(got, "no nividium reachable") {
 		t.Errorf("verdict = %q, want it to say nothing is reachable", got)
 	}
@@ -209,9 +209,9 @@ func timeoutChan() <-chan time.Time { return time.After(5 * time.Second) }
 // hides the actual trade-off: a small field at zero range against a big
 // one N jumps out.
 func TestVerdictWhenInSectorButOutranked(t *testing.T) {
-	p := resourcePlan{Kind: "solid", InTarget: true,
+	p := ResourcePlan{Kind: "solid", InTarget: true,
 		InTargetWeight: 155274, InTargetFields: 2,
-		Sources: []miningSource{
+		Sources: []MiningSource{
 			{Hops: 2, Name: "Scarlet Star", Weight: 46911216, Score: 15637072},
 			{Hops: 0, Name: "Holy Vision", Weight: 155274, Score: 155274},
 		}}
@@ -257,9 +257,9 @@ func TestWareLabelFallsBackToID(t *testing.T) {
 // not justify freight, because a miner's cycle is dominated by the round
 // trip rather than by ore density.
 func TestVerdictKeepsASizeableLocalField(t *testing.T) {
-	p := resourcePlan{Kind: "solid", InTarget: true,
+	p := ResourcePlan{Kind: "solid", InTarget: true,
 		InTargetWeight: 8_000_000, InTargetFields: 40,
-		Sources: []miningSource{
+		Sources: []MiningSource{
 			{Hops: 1, Name: "Next Door", Weight: 20_000_000, Score: 10_000_000},
 			{Hops: 0, Name: "Home", Weight: 8_000_000, Score: 8_000_000},
 		}}
@@ -269,7 +269,7 @@ func TestVerdictKeepsASizeableLocalField(t *testing.T) {
 	}
 
 	// But a field two orders of magnitude richer should.
-	p.Sources[0] = miningSource{Hops: 2, Name: "Scarlet Star", Weight: 46_911_216, Score: 15_637_072}
+	p.Sources[0] = MiningSource{Hops: 2, Name: "Scarlet Star", Weight: 46_911_216, Score: 15_637_072}
 	p.InTargetWeight = 212_541
 	p.Sources[1].Score = 212_541
 	got = verdictFor("ore", p)
@@ -286,11 +286,11 @@ func TestVerdictKeepsASizeableLocalField(t *testing.T) {
 // three 3-jump sectors holding 8-14x the deposit — which is the wrong answer
 // when the station needs a fixed rate delivered, not the region's biggest field.
 func TestSortSourcesPrefersCloseAndAdequate(t *testing.T) {
-	mk := func(name string, hops int, weight int64) miningSource {
-		return miningSource{Name: name, Hops: hops, Weight: weight, Score: weight / int64(1+hops)}
+	mk := func(name string, hops int, weight int64) MiningSource {
+		return MiningSource{Name: name, Hops: hops, Weight: weight, Score: weight / int64(1+hops)}
 	}
 	// The real Argon Prime ore case.
-	src := []miningSource{
+	src := []MiningSource{
 		mk("Silent Witness XI", 3, 144_132_928),
 		mk("Windfall I Union Summit", 3, 114_169_632),
 		mk("President's End", 3, 82_630_254),
@@ -298,7 +298,7 @@ func TestSortSourcesPrefersCloseAndAdequate(t *testing.T) {
 		mk("The Reach", 1, 10_635_618),
 	}
 
-	got := append([]miningSource(nil), src...)
+	got := append([]MiningSource(nil), src...)
 	sortSources(got, "")
 	if got[0].Name != "The Reach" {
 		t.Errorf("proximity ranking put %q first; the 1-jump adequate field should win", got[0].Name)
@@ -308,7 +308,7 @@ func TestSortSourcesPrefersCloseAndAdequate(t *testing.T) {
 	}
 
 	// abundance keeps the old behaviour for "where is the most of it".
-	got = append([]miningSource(nil), src...)
+	got = append([]MiningSource(nil), src...)
 	sortSources(got, "abundance")
 	if got[0].Name != "Silent Witness XI" {
 		t.Errorf("abundance ranking = %q first, want the richest", got[0].Name)
@@ -317,7 +317,7 @@ func TestSortSourcesPrefersCloseAndAdequate(t *testing.T) {
 
 // Proximity must not promote a token deposit over a real field one jump further.
 func TestSortSourcesSkipsScrapings(t *testing.T) {
-	src := []miningSource{
+	src := []MiningSource{
 		{Name: "Token Field", Hops: 1, Weight: 200_000, Score: 100_000},
 		{Name: "Real Field", Hops: 2, Weight: 60_000_000, Score: 20_000_000},
 	}
@@ -329,7 +329,7 @@ func TestSortSourcesSkipsScrapings(t *testing.T) {
 
 // Gases carry no weight, so adequacy cannot apply — pure distance.
 func TestSortSourcesGasesRankByDistance(t *testing.T) {
-	src := []miningSource{
+	src := []MiningSource{
 		{Name: "Far", Hops: 3, Score: 250},
 		{Name: "Near", Hops: 1, Score: 500},
 	}

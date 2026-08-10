@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/pequalsnp/x4mcp/internal/x4data"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Multi-target station design.
@@ -29,18 +28,18 @@ import (
 // modules, the tightest input, one-off build cost, and the mined raws at the
 // bottom. Shared by plan_production (one target) and plan_complex (many).
 type stationDesign struct {
-	IntegratedModules []moduleCount
-	BuildModules      []buildModule
+	IntegratedModules []ModuleCount
+	BuildModules      []BuildModule
 	Bottleneck        string
 	BuildCostCredits  int64
-	BuildWares        []buildWare
-	RawResources      []rateLine
+	BuildWares        []BuildWare
+	RawResources      []RateLine
 }
 
 // designFrom turns accumulated module ratios + raw rates into a buildable plan.
 // sun scales energy-cell modules only (see plan_production).
-func (a *app) designFrom(modsByWare, rawByWare map[string]float64, sun float64) stationDesign {
-	db := a.wareDB()
+func (s *Service) designFrom(modsByWare, rawByWare map[string]float64, sun float64) stationDesign {
+	db := s.wareDB()
 	var d stationDesign
 
 	// Energy cells are raw-fed solar: scale ONLY their module count by 1/sunlight
@@ -49,7 +48,7 @@ func (a *app) designFrom(modsByWare, rawByWare map[string]float64, sun float64) 
 		modsByWare["energycells"] = v / sun
 	}
 	for ware, mods := range modsByWare {
-		d.IntegratedModules = append(d.IntegratedModules, moduleCount{Ware: ware, Name: db[ware].Name, Modules: round2(mods)})
+		d.IntegratedModules = append(d.IntegratedModules, ModuleCount{Ware: ware, Name: db[ware].Name, Modules: round2(mods)})
 	}
 	sort.Slice(d.IntegratedModules, func(i, j int) bool { return d.IntegratedModules[i].Modules > d.IntegratedModules[j].Modules })
 
@@ -75,7 +74,7 @@ func (a *app) designFrom(modsByWare, rawByWare map[string]float64, sun float64) 
 			capacity *= sun // a built EC module makes sun-times more
 		}
 		n := need[ware]
-		d.BuildModules = append(d.BuildModules, buildModule{
+		d.BuildModules = append(d.BuildModules, BuildModule{
 			Ware: ware, Name: db[ware].Name, FractionalModules: round2(mods), WholeModules: whole,
 			BuiltCapacityPerHour: round1(capacity), NeededPerHour: round1(n), SurplusPerHour: round1(capacity - n),
 		})
@@ -103,13 +102,13 @@ func (a *app) designFrom(modsByWare, rawByWare map[string]float64, sun float64) 
 		}
 	}
 	for ware, amt := range buildWareTot {
-		d.BuildWares = append(d.BuildWares, buildWare{Ware: ware, Name: db[ware].Name, Amount: amt})
+		d.BuildWares = append(d.BuildWares, BuildWare{Ware: ware, Name: db[ware].Name, Amount: amt})
 	}
 	sort.Slice(d.BuildWares, func(i, j int) bool { return d.BuildWares[i].Amount > d.BuildWares[j].Amount })
 
 	for ware, rate := range rawByWare {
 		rw := db[ware]
-		d.RawResources = append(d.RawResources, rateLine{
+		d.RawResources = append(d.RawResources, RateLine{
 			Ware: ware, Name: rw.Name, PerHour: round1(rate),
 			AvgPrice: rw.PriceAvg, CostPerHour: round1(rate * float64(rw.PriceAvg)),
 		})
@@ -120,7 +119,7 @@ func (a *app) designFrom(modsByWare, rawByWare map[string]float64, sun float64) 
 
 // ---- plan_complex ----
 
-type planComplexIn struct {
+type PlanComplexIn struct {
 	Preset      string   `json:"preset,omitempty" jsonschema:"Shipbuilding facility whose full input set to supply: wharf (XS/S/M hulls + equipment), shipyard (L/XL hulls + equipment), ships (all hulls, no equipment), equipment (equipment only). Resolved from the installed game data, so nothing is missed."`
 	Wares       []string `json:"wares,omitempty" jsonschema:"Explicit target ware ids or name substrings to produce, instead of (or in addition to) a preset"`
 	Modules     int      `json:"modules,omitempty" jsonschema:"Production modules per target ware (default 1). Sets the scale of the whole complex."`
@@ -129,43 +128,43 @@ type planComplexIn struct {
 	SavePath    string   `json:"save_path,omitempty" jsonschema:"Save to check blueprint ownership against; omit for most recent"`
 }
 
-type complexTarget struct {
+type ComplexTarget struct {
 	Ware          string  `json:"ware"`
 	Name          string  `json:"name,omitempty"`
 	Modules       int     `json:"modules"`
 	OutputPerHour float64 `json:"output_per_hour"`
 }
 
-type planComplexOut struct {
+type PlanComplexOut struct {
 	Preset            string          `json:"preset,omitempty"`
-	Targets           []complexTarget `json:"targets"`
+	Targets           []ComplexTarget `json:"targets"`
 	TargetCount       int             `json:"target_count"`
 	Unresolved        []string        `json:"unresolved,omitempty"`         // asked for but not in the ware DB
 	RawTargets        []string        `json:"raw_targets,omitempty"`        // mined, cannot be produced — mine these instead
-	IntegratedModules []moduleCount   `json:"integrated_modules"`           // exact shared ratios across ALL targets
-	BuildModules      []buildModule   `json:"recommended_build_modules"`    // whole modules, never starving
+	IntegratedModules []ModuleCount   `json:"integrated_modules"`           // exact shared ratios across ALL targets
+	BuildModules      []BuildModule   `json:"recommended_build_modules"`    // whole modules, never starving
 	Bottleneck        string          `json:"bottleneck_module,omitempty"`  //
 	BuildSector       string          `json:"build_sector,omitempty"`       //
 	Sunlight          float64         `json:"sunlight,omitempty"`           //
-	RawResources      []rateLine      `json:"raw_resources_per_hour"`       // feed to plan_mining_supply
+	RawResources      []RateLine      `json:"raw_resources_per_hour"`       // feed to plan_mining_supply
 	BuildCostCredits  int64           `json:"build_cost_credits,omitempty"` //
-	BuildWares        []buildWare     `json:"build_wares,omitempty"`        //
+	BuildWares        []BuildWare     `json:"build_wares,omitempty"`        //
 	MissingBlueprints []string        `json:"missing_blueprints,omitempty"` // modules in this plan he cannot build yet
 	BlueprintStatus   string          `json:"blueprint_status,omitempty"`   // whether the save actually supplied blueprint data
 	Note              string          `json:"note"`
 }
 
-func (a *app) planComplex(ctx context.Context, _ *mcp.CallToolRequest, in planComplexIn) (*mcp.CallToolResult, planComplexOut, error) {
-	db := a.wareDB()
+func (s *Service) PlanComplex(ctx context.Context, in PlanComplexIn) (PlanComplexOut, error) {
+	db := s.wareDB()
 	if len(db) == 0 {
-		return nil, planComplexOut{}, fmt.Errorf("ware database unavailable; set X4MCP_GAME_DIR")
+		return PlanComplexOut{}, fmt.Errorf("ware database unavailable; set X4MCP_GAME_DIR")
 	}
 	if in.Preset == "" && len(in.Wares) == 0 {
-		return nil, planComplexOut{}, fmt.Errorf("give a preset (%s) or an explicit wares list",
+		return PlanComplexOut{}, fmt.Errorf("give a preset (%s) or an explicit wares list",
 			strings.Join(x4data.ConstructionPresets(), ", "))
 	}
 
-	out := planComplexOut{Preset: in.Preset}
+	out := PlanComplexOut{Preset: in.Preset}
 
 	// Resolve the target set. The preset half is the point of the tool: the game
 	// data states what a wharf consumes, so completeness never depends on recall.
@@ -180,14 +179,14 @@ func (a *app) planComplex(ctx context.Context, _ *mcp.CallToolRequest, in planCo
 	if in.Preset != "" {
 		ids, err := x4data.ConstructionInputs(db, in.Preset)
 		if err != nil {
-			return nil, planComplexOut{}, err
+			return PlanComplexOut{}, err
 		}
 		for _, id := range ids {
 			addWare(id)
 		}
 	}
 	for _, q := range in.Wares {
-		w, ok := a.resolveWare(q)
+		w, ok := s.resolveWare(q)
 		if !ok {
 			out.Unresolved = append(out.Unresolved, q)
 			continue
@@ -200,7 +199,7 @@ func (a *app) planComplex(ctx context.Context, _ *mcp.CallToolRequest, in planCo
 		modules = 1
 	}
 
-	snap, _ := a.snapshot(in.SavePath)
+	snap, _ := s.Snapshot(ctx, in.SavePath)
 	sun := 1.0
 	if in.Sunlight > 0 {
 		sun = in.Sunlight
@@ -234,17 +233,17 @@ func (a *app) planComplex(ctx context.Context, _ *mcp.CallToolRequest, in planCo
 			continue
 		}
 		rate := perHour(m) * float64(modules)
-		out.Targets = append(out.Targets, complexTarget{
+		out.Targets = append(out.Targets, ComplexTarget{
 			Ware: id, Name: w.Name, Modules: modules, OutputPerHour: round1(rate),
 		})
-		a.expand(id, rate, modsByWare, rawByWare, 0)
+		s.expand(id, rate, modsByWare, rawByWare, 0)
 	}
 	out.TargetCount = len(out.Targets)
 	if out.TargetCount == 0 {
-		return nil, planComplexOut{}, fmt.Errorf("no producible target wares resolved")
+		return PlanComplexOut{}, fmt.Errorf("no producible target wares resolved")
 	}
 
-	d := a.designFrom(modsByWare, rawByWare, sun)
+	d := s.designFrom(modsByWare, rawByWare, sun)
 	out.IntegratedModules = d.IntegratedModules
 	out.BuildModules = d.BuildModules
 	out.Bottleneck = d.Bottleneck
@@ -280,5 +279,5 @@ func (a *app) planComplex(ctx context.Context, _ *mcp.CallToolRequest, in planCo
 	if len(out.MissingBlueprints) > 0 {
 		out.Note += fmt.Sprintf(" You do NOT own %d of these module blueprints yet.", len(out.MissingBlueprints))
 	}
-	return ok2(out)
+	return out, nil
 }

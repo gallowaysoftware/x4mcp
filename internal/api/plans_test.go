@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"context"
@@ -38,14 +38,17 @@ func planModules() map[string]x4data.Module {
 	}
 }
 
-// planTestApp seeds both databases and points plan discovery at a temp dir.
-func planTestApp(t *testing.T, planBody string) *app {
+// planData is the seed bundle: both databases, no game install involved. Tests
+// that need more (a workforce diet, an extra ware) add it BEFORE handing the
+// bundle to planTestService, since a Service's game data is immutable once set.
+func planData() *GameData {
+	return &GameData{Wares: planWares(), Modules: planModules()}
+}
+
+// planTestService builds a Service over that bundle and points plan discovery
+// at a temp dir.
+func planTestService(t *testing.T, d *GameData, planBody string) *Service {
 	t.Helper()
-	a := &app{}
-	a.wares = planWares()
-	a.waresOnce.Do(func() {})
-	a.mods = planModules()
-	a.modsOnce.Do(func() {})
 
 	// Plan discovery walks the real save roots, so lay out the same shape
 	// under a temporary HOME: <home>/.config/EgoSoft/X4/<profile>/constructionplan.
@@ -58,7 +61,7 @@ func planTestApp(t *testing.T, planBody string) *app {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", dir)
-	return a
+	return New(d, nil)
 }
 
 // Two refined-metals modules (each burning 150 EC/h) against one EC module
@@ -72,7 +75,7 @@ const unbalancedPlan = `<plans><plan id="1" name="Test Station">
   <entry index="6" macro="not_a_real_module_macro"/>
 </plan></plans>`
 
-func findBalance(t *testing.T, out analyzePlanOut, ware string) wareBalance {
+func findBalance(t *testing.T, out AnalyzePlanOut, ware string) WareBalance {
 	t.Helper()
 	for _, b := range out.Balance {
 		if b.Ware == ware {
@@ -80,12 +83,12 @@ func findBalance(t *testing.T, out analyzePlanOut, ware string) wareBalance {
 		}
 	}
 	t.Fatalf("no balance entry for %q in %+v", ware, out.Balance)
-	return wareBalance{}
+	return WareBalance{}
 }
 
 func TestAnalyzePlanBalance(t *testing.T) {
-	a := planTestApp(t, unbalancedPlan)
-	_, out, err := a.analyzePlan(context.Background(), nil, analyzePlanIn{Plan: "Test Station"})
+	svc := planTestService(t, planData(), unbalancedPlan)
+	out, err := svc.AnalyzePlan(context.Background(), AnalyzePlanIn{Plan: "Test Station"})
 	if err != nil {
 		t.Fatalf("analyzePlan: %v", err)
 	}
@@ -153,12 +156,12 @@ func TestAnalyzePlanBalance(t *testing.T) {
 // Sunlight scales solar output, which can turn a deficit into a surplus —
 // the same plan is a different design depending on where it is built.
 func TestAnalyzePlanSunlightScalesEnergy(t *testing.T) {
-	a := planTestApp(t, unbalancedPlan)
-	_, dim, err := a.analyzePlan(context.Background(), nil, analyzePlanIn{Plan: "Test Station", Sunlight: 1})
+	svc := planTestService(t, planData(), unbalancedPlan)
+	dim, err := svc.AnalyzePlan(context.Background(), AnalyzePlanIn{Plan: "Test Station", Sunlight: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, bright, err := a.analyzePlan(context.Background(), nil, analyzePlanIn{Plan: "Test Station", Sunlight: 4})
+	bright, err := svc.AnalyzePlan(context.Background(), AnalyzePlanIn{Plan: "Test Station", Sunlight: 4})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,8 +180,8 @@ func TestAnalyzePlanSunlightScalesEnergy(t *testing.T) {
 }
 
 func TestAnalyzePlanUnknownPlanIsAnError(t *testing.T) {
-	a := planTestApp(t, unbalancedPlan)
-	if _, _, err := a.analyzePlan(context.Background(), nil, analyzePlanIn{Plan: "Wharf"}); err == nil {
+	svc := planTestService(t, planData(), unbalancedPlan)
+	if _, err := svc.AnalyzePlan(context.Background(), AnalyzePlanIn{Plan: "Wharf"}); err == nil {
 		t.Fatal("expected an error naming an unknown plan")
 	}
 }
@@ -187,20 +190,19 @@ func TestAnalyzePlanUnknownPlanIsAnError(t *testing.T) {
 // production module, so nothing in the recipe graph eats what the food chain
 // makes. Without charging it, a food module reads as pure sellable surplus.
 func TestAnalyzePlanFeedsTheWorkforce(t *testing.T) {
-	a := planTestApp(t, unbalancedPlan)
+	d := planData()
 	// Teladi diet: per 200 workers per 600s.
-	a.wf = map[string]x4data.WorkforceDemand{
+	d.Workforce = map[string]x4data.WorkforceDemand{
 		"teladi": {Race: "teladi", Method: "teladi", Busy: []x4data.WareQty{
 			{Ware: "nostropoil", Amount: 38}, {Ware: "medicalsupplies", Amount: 2}}},
 	}
-	a.wfOnce.Do(func() {})
-	a.wares["nostropoil"] = x4data.Ware{ID: "nostropoil", Name: "Nostrop Oil",
+	d.Wares["nostropoil"] = x4data.Ware{ID: "nostropoil", Name: "Nostrop Oil",
 		Methods: []x4data.Method{{Method: "default", Time: 3600, Amount: 100}}}
-	a.wares["medicalsupplies"] = x4data.Ware{ID: "medicalsupplies", Name: "Medical Supplies",
+	d.Wares["medicalsupplies"] = x4data.Ware{ID: "medicalsupplies", Name: "Medical Supplies",
 		Methods: []x4data.Method{{Method: "default", Time: 3600, Amount: 100}}}
+	svc := planTestService(t, d, unbalancedPlan)
 
-	_, out, err := a.analyzePlan(context.Background(), nil,
-		analyzePlanIn{Plan: "Test Station", Race: "teladi"})
+	out, err := svc.AnalyzePlan(context.Background(), AnalyzePlanIn{Plan: "Test Station", Race: "teladi"})
 	if err != nil {
 		t.Fatalf("analyzePlan: %v", err)
 	}
@@ -213,7 +215,7 @@ func TestAnalyzePlanFeedsTheWorkforce(t *testing.T) {
 		t.Errorf("race = %q basis %q; both must be reported", out.WorkforceRace, out.RaceBasis)
 	}
 
-	need := map[string]workforceNeed{}
+	need := map[string]WorkforceNeed{}
 	for _, n := range out.WorkforceNeeds {
 		need[n.Ware] = n
 	}
@@ -247,10 +249,10 @@ func TestAnalyzePlanFeedsTheWorkforce(t *testing.T) {
 
 // With no workforce demand configured the plan must not invent one.
 func TestAnalyzePlanWithoutWorkforceData(t *testing.T) {
-	a := planTestApp(t, unbalancedPlan)
-	a.wf = map[string]x4data.WorkforceDemand{}
-	a.wfOnce.Do(func() {})
-	_, out, err := a.analyzePlan(context.Background(), nil, analyzePlanIn{Plan: "Test Station"})
+	d := planData()
+	d.Workforce = map[string]x4data.WorkforceDemand{}
+	svc := planTestService(t, d, unbalancedPlan)
+	out, err := svc.AnalyzePlan(context.Background(), AnalyzePlanIn{Plan: "Test Station"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,21 +265,22 @@ func TestAnalyzePlanWithoutWorkforceData(t *testing.T) {
 // the plan "needed" wheat it will never buy and under-counted the flowers it
 // will. Race-specific recipes are common in the food chain.
 func TestAnalyzePlanUsesTheModuleRaceRecipe(t *testing.T) {
-	a := planTestApp(t, `<plans><plan id="1" name="Test Station">
-	  <entry index="1" macro="prod_tel_medicalsupplies_macro"/>
-	</plan></plans>`)
-	a.mods["prod_tel_medicalsupplies_macro"] = x4data.Module{
+	d := planData()
+	d.Modules["prod_tel_medicalsupplies_macro"] = x4data.Module{
 		Macro: "prod_tel_medicalsupplies_macro", Name: "Medical Supplies Production (Teladi)",
 		Class: "production", Race: "teladi", Produces: "medicalsupplies", WorkforceMax: 90,
 	}
-	a.wares["medicalsupplies"] = x4data.Ware{ID: "medicalsupplies", Name: "Medical Supplies", Methods: []x4data.Method{
+	d.Wares["medicalsupplies"] = x4data.Ware{ID: "medicalsupplies", Name: "Medical Supplies", Methods: []x4data.Method{
 		{Method: "default", Time: 300, Amount: 208, Inputs: []x4data.WareQty{{Ware: "wheat", Amount: 30}}},
 		{Method: "teladi", Time: 300, Amount: 208, Inputs: []x4data.WareQty{{Ware: "sunriseflowers", Amount: 12}}},
 	}}
-	a.wares["wheat"] = x4data.Ware{ID: "wheat", Name: "Wheat"}
-	a.wares["sunriseflowers"] = x4data.Ware{ID: "sunriseflowers", Name: "Sunrise Flowers"}
+	d.Wares["wheat"] = x4data.Ware{ID: "wheat", Name: "Wheat"}
+	d.Wares["sunriseflowers"] = x4data.Ware{ID: "sunriseflowers", Name: "Sunrise Flowers"}
+	svc := planTestService(t, d, `<plans><plan id="1" name="Test Station">
+	  <entry index="1" macro="prod_tel_medicalsupplies_macro"/>
+	</plan></plans>`)
 
-	_, out, err := a.analyzePlan(context.Background(), nil, analyzePlanIn{Plan: "Test Station"})
+	out, err := svc.AnalyzePlan(context.Background(), AnalyzePlanIn{Plan: "Test Station"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,18 +304,19 @@ func TestAnalyzePlanUsesTheModuleRaceRecipe(t *testing.T) {
 // A ware that is slightly net-NEGATIVE sits inside the 5% deficit tolerance,
 // and used to be labelled "surplus available to sell" — the station buys it.
 func TestAnalyzePlanMarginalIsNotCalledSurplus(t *testing.T) {
-	a := planTestApp(t, `<plans><plan id="1" name="Test Station">
+	d := planData()
+	// Burns 102/h against the 100/h the solar module makes: 2% short.
+	d.Modules["burner_macro"] = x4data.Module{Macro: "burner_macro", Class: "production",
+		Produces: "widget", Name: "Widget Production"}
+	d.Wares["widget"] = x4data.Ware{ID: "widget", Name: "Widget",
+		Methods: []x4data.Method{{Method: "default", Time: 3600, Amount: 100,
+			Inputs: []x4data.WareQty{{Ware: "energycells", Amount: 102}}}}}
+	svc := planTestService(t, d, `<plans><plan id="1" name="Test Station">
 	  <entry index="1" macro="prod_gen_energycells_macro"/>
 	  <entry index="2" macro="burner_macro"/>
 	</plan></plans>`)
-	// Burns 102/h against the 100/h the solar module makes: 2% short.
-	a.mods["burner_macro"] = x4data.Module{Macro: "burner_macro", Class: "production",
-		Produces: "widget", Name: "Widget Production"}
-	a.wares["widget"] = x4data.Ware{ID: "widget", Name: "Widget",
-		Methods: []x4data.Method{{Method: "default", Time: 3600, Amount: 100,
-			Inputs: []x4data.WareQty{{Ware: "energycells", Amount: 102}}}}}
 
-	_, out, err := a.analyzePlan(context.Background(), nil, analyzePlanIn{Plan: "Test Station"})
+	out, err := svc.AnalyzePlan(context.Background(), AnalyzePlanIn{Plan: "Test Station"})
 	if err != nil {
 		t.Fatal(err)
 	}

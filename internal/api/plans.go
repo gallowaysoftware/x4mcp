@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 
 	"github.com/pequalsnp/x4mcp/internal/x4data"
 	"github.com/pequalsnp/x4mcp/internal/x4save"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Construction-plan analysis.
@@ -25,44 +24,44 @@ import (
 // throughput roughly uniformly, so it moves the whole design's scale without
 // moving the ratios that this tool is about.
 
-type listPlansIn struct {
+type ListPlansIn struct {
 	Filter string `json:"filter,omitempty" jsonschema:"Optional case-insensitive substring to match plan names"`
 }
 
-type planSummary struct {
+type PlanSummary struct {
 	Name    string `json:"name"`
 	Modules int    `json:"modules"`
 	File    string `json:"file"`
 }
 
-type listPlansOut struct {
-	Plans []planSummary `json:"plans"`
+type ListPlansOut struct {
+	Plans []PlanSummary `json:"plans"`
 	Total int           `json:"total"`
 	Note  string        `json:"note,omitempty"`
 }
 
-func (a *app) listPlans(ctx context.Context, _ *mcp.CallToolRequest, in listPlansIn) (*mcp.CallToolResult, listPlansOut, error) {
+func (s *Service) ListPlans(ctx context.Context, in ListPlansIn) (ListPlansOut, error) {
 	plans, err := x4save.LoadPlans()
 	if err != nil {
-		return nil, listPlansOut{}, err
+		return ListPlansOut{}, err
 	}
 	f := strings.ToLower(strings.TrimSpace(in.Filter))
-	out := listPlansOut{}
+	out := ListPlansOut{}
 	for _, p := range plans {
 		if f != "" && !strings.Contains(strings.ToLower(p.Name), f) {
 			continue
 		}
-		out.Plans = append(out.Plans, planSummary{Name: p.Name, Modules: len(p.Macros), File: p.File})
+		out.Plans = append(out.Plans, PlanSummary{Name: p.Name, Modules: len(p.Macros), File: p.File})
 	}
 	sort.Slice(out.Plans, func(i, j int) bool { return out.Plans[i].Name < out.Plans[j].Name })
 	out.Total = len(out.Plans)
 	out.Note = "Plans come from the in-game collection (constructionplans.xml) and any Exported single plans. Analyse one with analyze_plan."
-	return ok2(out)
+	return out, nil
 }
 
 // ---- analyze_plan ----
 
-type analyzePlanIn struct {
+type AnalyzePlanIn struct {
 	Plan      string  `json:"plan" jsonschema:"Construction plan name (exact, or a substring that matches exactly one). List them with list_plans."`
 	Sunlight  float64 `json:"sunlight,omitempty" jsonschema:"Sunlight factor of the intended sector (e.g. 1.5); scales Energy Cells output. Default 1.0"`
 	Sector    string  `json:"sector,omitempty" jsonschema:"Sector name to take the sunlight factor from instead of passing it directly"`
@@ -70,8 +69,8 @@ type analyzePlanIn struct {
 	Workforce int     `json:"workforce,omitempty" jsonschema:"Workers to feed. Defaults to the OPTIMAL workforce — every job the plan's production modules offer at full staffing."`
 }
 
-// workforceNeed is one ware the workforce eats, against what the plan makes.
-type workforceNeed struct {
+// WorkforceNeed is one ware the workforce eats, against what the plan makes.
+type WorkforceNeed struct {
 	Ware         string  `json:"ware"`
 	Name         string  `json:"name,omitempty"`
 	DemandPerH   float64 `json:"demand_per_hour"`
@@ -81,15 +80,15 @@ type workforceNeed struct {
 	FixModules   float64 `json:"modules_needed_to_balance,omitempty"`
 }
 
-type moduleGroup struct {
+type ModuleGroup struct {
 	Macro string `json:"macro"`
 	Name  string `json:"name,omitempty"`
 	Class string `json:"class"`
 	Count int    `json:"count"`
 }
 
-// wareBalance is the heart of it: what the plan makes against what it burns.
-type wareBalance struct {
+// WareBalance is the heart of it: what the plan makes against what it burns.
+type WareBalance struct {
 	Ware         string  `json:"ware"`
 	Name         string  `json:"name,omitempty"`
 	Modules      int     `json:"modules"`
@@ -100,17 +99,17 @@ type wareBalance struct {
 	FixModules   float64 `json:"modules_needed_to_balance,omitempty"` // extra modules that would close a deficit
 }
 
-type analyzePlanOut struct {
+type AnalyzePlanOut struct {
 	Plan            string         `json:"plan"`
 	File            string         `json:"file"`
 	TotalModules    int            `json:"total_modules"`
 	ByClass         map[string]int `json:"modules_by_class"`
-	Groups          []moduleGroup  `json:"module_groups"`
+	Groups          []ModuleGroup  `json:"module_groups"`
 	UnknownMacros   []string       `json:"unknown_macros,omitempty"` // in the plan but absent from the module DB
-	Balance         []wareBalance  `json:"ware_balance"`
-	Imports         []wareBalance  `json:"must_import,omitempty"` // net-negative wares, worst first
-	Surplus         []wareBalance  `json:"sellable_surplus,omitempty"`
-	RawNeeds        []rateLine     `json:"raw_resources_per_hour,omitempty"` // mined inputs this plan burns
+	Balance         []WareBalance  `json:"ware_balance"`
+	Imports         []WareBalance  `json:"must_import,omitempty"` // net-negative wares, worst first
+	Surplus         []WareBalance  `json:"sellable_surplus,omitempty"`
+	RawNeeds        []RateLine     `json:"raw_resources_per_hour,omitempty"` // mined inputs this plan burns
 	WorkforceJobs   int            `json:"workforce_jobs"`                   // workers the production modules employ
 	WorkforceHoused int            `json:"workforce_housed"`                 // capacity of its habitation modules
 	WorkforceShort  int            `json:"workforce_shortfall,omitempty"`
@@ -119,36 +118,36 @@ type analyzePlanOut struct {
 	WorkforceRace  string           `json:"workforce_race,omitempty"`
 	RaceBasis      string           `json:"workforce_race_basis,omitempty"` // how that race was chosen
 	WorkforceFed   int              `json:"workforce_fed,omitempty"`
-	WorkforceNeeds []workforceNeed  `json:"workforce_supply,omitempty"`
+	WorkforceNeeds []WorkforceNeed  `json:"workforce_supply,omitempty"`
 	StorageByType  map[string]int64 `json:"storage_by_type,omitempty"`
 	Sunlight       float64          `json:"sunlight,omitempty"`
 	Findings       []string         `json:"findings"`
 	Note           string           `json:"note"`
 }
 
-func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyzePlanIn) (*mcp.CallToolResult, analyzePlanOut, error) {
-	db := a.wareDB()
+func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePlanOut, error) {
+	db := s.wareDB()
 	if len(db) == 0 {
-		return nil, analyzePlanOut{}, fmt.Errorf("ware database unavailable; set X4MCP_GAME_DIR")
+		return AnalyzePlanOut{}, fmt.Errorf("ware database unavailable; set X4MCP_GAME_DIR")
 	}
-	mods := a.moduleDB()
+	mods := s.moduleDB()
 	if len(mods) == 0 {
-		return nil, analyzePlanOut{}, fmt.Errorf("module database unavailable; set X4MCP_GAME_DIR")
+		return AnalyzePlanOut{}, fmt.Errorf("module database unavailable; set X4MCP_GAME_DIR")
 	}
 	plans, err := x4save.LoadPlans()
 	if err != nil {
-		return nil, analyzePlanOut{}, err
+		return AnalyzePlanOut{}, err
 	}
 	plan, err := x4save.FindPlan(in.Plan, plans)
 	if err != nil {
-		return nil, analyzePlanOut{}, err
+		return AnalyzePlanOut{}, err
 	}
 
 	sun := 1.0
 	if in.Sunlight > 0 {
 		sun = in.Sunlight
 	} else if in.Sector != "" {
-		if snap, _ := a.snapshot(""); snap != nil {
+		if snap, _ := s.Snapshot(ctx, ""); snap != nil {
 			if macro, _ := resolveSector(snap, in.Sector); macro != "" {
 				for _, sec := range snap.Sectors {
 					if sec.Macro == macro && sec.Sunlight > 0 {
@@ -160,7 +159,7 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 		}
 	}
 
-	out := analyzePlanOut{
+	out := AnalyzePlanOut{
 		Plan: plan.Name, File: plan.File, TotalModules: len(plan.Macros),
 		ByClass: map[string]int{}, Sunlight: sun,
 	}
@@ -184,7 +183,7 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 			continue
 		}
 		out.ByClass[mod.Class] += n
-		out.Groups = append(out.Groups, moduleGroup{Macro: macro, Name: mod.Name, Class: mod.Class, Count: n})
+		out.Groups = append(out.Groups, ModuleGroup{Macro: macro, Name: mod.Name, Class: mod.Class, Count: n})
 
 		out.WorkforceJobs += mod.WorkforceMax * n
 		out.WorkforceHoused += mod.WorkforceCapacity * n
@@ -236,11 +235,11 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 		workers = out.WorkforceJobs
 	}
 	out.WorkforceFed = workers
-	race, basis := a.planRace(in.Race, counts, mods)
+	race, basis := s.planRace(in.Race, counts, mods)
 	out.WorkforceRace, out.RaceBasis = race, basis
 
 	wfDemand := map[string]float64{}
-	if wf, ok := a.workforceDB()[race]; ok && workers > 0 {
+	if wf, ok := s.workforceDB()[race]; ok && workers > 0 {
 		for _, q := range wf.Busy {
 			d := x4data.PerHourFor(q.Amount, workers)
 			wfDemand[q.Ware] += d
@@ -259,7 +258,7 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 	for ware := range seen {
 		p, c := produced[ware], consumed[ware]
 		w := db[ware]
-		b := wareBalance{
+		b := WareBalance{
 			Ware: ware, Name: w.Name, Modules: prodModules[ware],
 			ProducedPerH: round1(p), ConsumedPerH: round1(c), NetPerH: round1(p - c),
 		}
@@ -301,7 +300,7 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 		case b.NetPerH < 0:
 			out.Imports = append(out.Imports, b)
 			if strings.HasPrefix(b.Verdict, "RAW") {
-				out.RawNeeds = append(out.RawNeeds, rateLine{
+				out.RawNeeds = append(out.RawNeeds, RateLine{
 					Ware: b.Ware, Name: b.Name, PerHour: round1(-b.NetPerH),
 					AvgPrice: db[b.Ware].PriceAvg, CostPerHour: round1(-b.NetPerH * float64(db[b.Ware].PriceAvg)),
 				})
@@ -315,7 +314,7 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 	// The direct answer to "have I got enough food and medical supplies?".
 	for ware, demand := range wfDemand {
 		w := db[ware]
-		n := workforceNeed{
+		n := WorkforceNeed{
 			Ware: ware, Name: w.Name,
 			DemandPerH: round1(demand), ProducedPerH: round1(produced[ware]),
 			NetPerH: round1(produced[ware] - demand),
@@ -356,7 +355,7 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 	}
 	out.Findings = planFindings(&out)
 	out.Note = "Rates are unstaffed base rates: workforce scales throughput roughly uniformly, so it changes the SCALE of this design, not the ratios. modules_needed_to_balance is the fractional extra count that would close each deficit. Energy Cells output is scaled by sunlight."
-	return ok2(out)
+	return out, nil
 }
 
 // planRace decides whose diet to charge the workforce. The habitats decide it
@@ -364,7 +363,7 @@ func (a *app) analyzePlan(ctx context.Context, _ *mcp.CallToolRequest, in analyz
 // intent through the race of its food modules (a Teladi food chain is not there
 // to feed Argons). Falls back to argon — the "default" workunit method — and
 // always reports which of the three it used, because the answer changes with it.
-func (a *app) planRace(explicit string, counts map[string]int, mods map[string]x4data.Module) (race, basis string) {
+func (s *Service) planRace(explicit string, counts map[string]int, mods map[string]x4data.Module) (race, basis string) {
 	if r := strings.ToLower(strings.TrimSpace(explicit)); r != "" {
 		return r, "given in the request"
 	}
@@ -395,7 +394,7 @@ func (a *app) planRace(explicit string, counts map[string]int, mods map[string]x
 }
 
 // planFindings turns the numbers into the handful of things worth saying first.
-func planFindings(out *analyzePlanOut) []string {
+func planFindings(out *AnalyzePlanOut) []string {
 	var f []string
 	if out.WorkforceJobs > 0 && out.WorkforceHoused == 0 {
 		f = append(f, fmt.Sprintf(
