@@ -4,3 +4,7 @@
 # the repo (see scripts/distill-save and docs/parse-baseline.md).
 !internal/x4save/testdata/real/*.xml.gz
 baselines/
+# Frontend. web/dist is deliberately NOT ignored: web/embed.go embeds it, so the
+# built board is part of the source tree (docs/tech-design.md D6).
+web/node_modules/
+web/.vite/

@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: go vet + test + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet ./...
+      - run: go test ./...
+      # Last, and from the same checkout Node never touched: this is the D6
+      # promise — a clone with only a Go toolchain builds the whole product,
+      # embedded UI included.
+      - run: go build ./...
+
+  web:
+    name: svelte-check + build + dist freshness
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm run build
+      - name: committed dist matches a fresh build
+        working-directory: .
+        run: |
+          if ! git diff --exit-code -- web/dist; then
+            echo "::error::web/dist is stale — run 'npm run build' in web/ and commit the result"
+            exit 1
+          fi
+          # A build that adds a new hashed asset without removing one shows up
+          # as untracked, which `git diff` alone would happily ignore.
+          untracked=$(git ls-files --others --exclude-standard -- web/dist)
+          if [ -n "$untracked" ]; then
+            echo "::error::web/dist has uncommitted build output:"
+            echo "$untracked"
+            exit 1
+          fi
+
+  types:
+    name: wire type drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go tool tygo generate
+      - name: types.gen.ts matches internal/wire
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::run 'go tool tygo generate' and commit web/src/lib/types.gen.ts"
+            exit 1
+          fi
+
+  scripts:
+    name: shell tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The archiver's own test suite builds its fixtures under mktemp: no game
+      # install, no real save. Skipped rather than failed while it does not
+      # exist, so this workflow can land before or after it.
+      - name: scripts/archive-saves_test.sh
+        run: |
+          if [ -f scripts/archive-saves_test.sh ]; then
+            bash scripts/archive-saves_test.sh
+          else
+            echo "scripts/archive-saves_test.sh not present — nothing to run"
+          fi

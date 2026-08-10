@@ -1,0 +1,97 @@
+/* x4cue token layer — copied verbatim from docs/design.md §2 (tokens) and §3
+ * (type system). The design doc is normative: change it there first, then here.
+ * Nothing in this file is a component; the F11 chrome kit is the component
+ * library and it lands with the panels. */
+
+:root {
+  --bg-0:#0B0D10; --bg-1:#10141A; --bg-2:#171C24; --bg-3:#1E2530;
+  --line-0:#222A35; --line-1:#35404E;
+  --text-hi:#E6EDF3; --text-mid:#9AA7B4; --text-dim:#707C89; --text-ghost:#3D4650;
+  --sev-red-text:#FF5C57; --sev-red-core:#E5484D; --sev-red-fill:#2A1214; --sev-red-line:#7F2D2B;
+  --sev-red-acked:#B0574F; /* explicit acked token — never an opacity trick; contrast audited */
+  --sev-amber-text:#FFB224; --sev-amber-fill:#2A2113; --sev-amber-line:#6E5523;
+  --ok-dot:#2ED483; --accent:#1CACF5;
+  --prov-computed:#1CACF5; --prov-save:#75818E; --prov-canon:#C08A2E; /* cooled toward bronze so canon
+      metadata never reads as warning amber; re-verify against the CVD validator at chip size */
+  --prov-memory:#F2AEE8;
+  --unknown-border:#4A5560; /* dotted, and only ever dotted */
+  --font-mono:'JetBrains Mono',ui-monospace,'Cascadia Mono','Roboto Mono',Menlo,Consolas,monospace;
+  --font-sans:'IBM Plex Sans',system-ui,'Segoe UI',Roboto,sans-serif;
+}
+/* the motion law, actually enforced (transitions alone would not block keyframe animations): */
+* { transition: none; animation: none; scroll-behavior: auto; }
+.alert-red-arrival { animation: red-decay .8s ease-out 1; } /* sanctioned exception #1 */
+.locate-highlight  { animation: locate-fade .5s ease-out 1; } /* sanctioned exception #2 */
+/* the two 1 Hz tickers (parse blocks, tool elapsed) are JS text swaps, not CSS animation */
+
+/* design §8: reduced motion suppresses even the two sanctioned exceptions. The
+ * keyframes themselves (red-decay, locate-fade) ship with the chrome kit. */
+@media (prefers-reduced-motion: reduce) {
+  .alert-red-arrival, .locate-highlight { animation: none; }
+}
+
+/* Type system — docs/design.md §3. Sizes are absolute px on purpose: this is an
+ * instrument read at a fixed 60–90 cm, not a document that reflows. */
+.t-glance  { font: 700 34px/36px var(--font-mono); }
+.t-num-l   { font: 600 22px/28px var(--font-mono); }
+.t-emph    { font: 600 15px/20px var(--font-mono); }
+.t-body    { font: 400 13px/20px var(--font-mono); }
+.t-prose   { font: 400 15px/22px var(--font-sans); } /* advisor message bodies only */
+.t-caption { font: 400 12px/16px var(--font-mono); }
+.t-micro   { font: 500 11px/16px var(--font-mono); text-transform: uppercase; letter-spacing: .06em; }
+
+/* Base page. The board owns the viewport; it never scrolls as a whole. */
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg-0);
+  color: var(--text-hi);
+  font: 400 13px/20px var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+#app { height: 100%; }
+
+/* --- scaffold frame -------------------------------------------------------
+ * The fixed spatial slots of docs/design.md §4, empty. Panels land in S4b; the
+ * point of this frame is that the slots exist and never move once they do. */
+.board {
+  display: grid;
+  height: 100%;
+  /* The §4 slots as ratios rather than constants: at 2560×1440 they resolve to
+   * exactly 12 / 1868 / 680 across and 96 / 1344 down, and a smaller screen
+   * shrinks every slot proportionally instead of pushing one off the edge. */
+  grid-template-columns: 12px minmax(0, 1868fr) minmax(0, 680fr);
+  grid-template-rows: 96px minmax(0, 1fr);
+  grid-template-areas:
+    'beacon vitals  advisor'
+    'beacon content advisor';
+  background: var(--bg-0);
+}
+.beacon { grid-area: beacon; background: var(--text-ghost); }
+.vitals { grid-area: vitals; }
+.content {
+  grid-area: content;
+  display: grid;
+  grid-template-columns: minmax(0, 976fr) minmax(0, 892fr);
+  grid-template-rows: minmax(0, 560fr) minmax(0, 560fr) minmax(0, 224fr);
+  grid-template-areas: 'lane tiles-a' 'lane tiles-b' 'lane threats';
+  min-height: 0;
+}
+.advisor { grid-area: advisor; }
+.slot {
+  border: 1px solid var(--line-0);
+  background: var(--bg-1);
+  margin: 4px;
+  padding: 8px 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+.slot > .t-micro { color: var(--text-mid); }
+.slot-note { color: var(--text-dim); margin-top: 6px; }
+.slot-lane { grid-area: lane; }
+.slot-tiles-a { grid-area: tiles-a; }
+.slot-tiles-b { grid-area: tiles-b; }
+.slot-threats { grid-area: threats; }
+.vitals-line { display: flex; align-items: baseline; gap: 16px; }
+.stamp { color: var(--text-dim); }

@@ -1,0 +1,18 @@
+# Go -> TypeScript DTOs. internal/wire is the source of truth; regenerate with
+#
+#   go tool tygo generate
+#
+# and commit the result. CI runs the same command and fails on any diff, so the
+# client can never compile against a shape the server stopped sending.
+packages:
+  - path: "github.com/pequalsnp/x4mcp/internal/wire"
+    output_path: "web/src/lib/types.gen.ts"
+    indent: "\t"
+    # Union types rather than const declarations: the client wants
+    # `FreshnessState = "startup" | ...` so a typo in a switch is a compile error.
+    enum_style: "union"
+    frontmatter: |
+      // Source of truth: internal/wire (Go). Regenerate with `go tool tygo generate`.
+      // Timestamps are RFC 3339 strings; see the package comment for the int64 rule.
+    type_mappings:
+      time.Time: "string"
