@@ -1,0 +1,49 @@
+{
+  "jsonrpc": "2.0",
+  "id": 20,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"blueprints\":[\"module_gen_prod_energycells_01\"],\"producible_wares\":[\"advancedcomposites\",\"advancedelectronics\",\"antimattercells\",\"claytronics\",\"dronecomponents\",\"energycells\",\"engineparts\",\"fieldcoils\",\"graphene\",\"hullparts\",\"meat\",\"medicalsupplies\",\"microchips\",\"nostropoil\",\"plasmaconductors\",\"quantumtubes\",\"refinedmetals\",\"scanningarrays\",\"scrap_recycler\",\"shieldcomponents\",\"siliconcarbide\",\"siliconwafers\",\"smartchips\",\"spices\",\"sunriseflowers\",\"superfluidcoolant\",\"turretcomponents\",\"water\",\"weaponcomponents\"],\"total\":141}"
+      }
+    ],
+    "structuredContent": {
+      "blueprints": [
+        "module_gen_prod_energycells_01"
+      ],
+      "producible_wares": [
+        "advancedcomposites",
+        "advancedelectronics",
+        "antimattercells",
+        "claytronics",
+        "dronecomponents",
+        "energycells",
+        "engineparts",
+        "fieldcoils",
+        "graphene",
+        "hullparts",
+        "meat",
+        "medicalsupplies",
+        "microchips",
+        "nostropoil",
+        "plasmaconductors",
+        "quantumtubes",
+        "refinedmetals",
+        "scanningarrays",
+        "scrap_recycler",
+        "shieldcomponents",
+        "siliconcarbide",
+        "siliconwafers",
+        "smartchips",
+        "spices",
+        "sunriseflowers",
+        "superfluidcoolant",
+        "turretcomponents",
+        "water",
+        "weaponcomponents"
+      ],
+      "total": 141
+    }
+  }
+}

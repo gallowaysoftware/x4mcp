@@ -39,7 +39,10 @@ func runStations(args []string) {
 		fmt.Fprintln(os.Stderr, "using latest save:", path)
 	}
 
-	svc := api.New(api.LoadGameData(""), nil)
+	// Lazy: the save parse and the game-data load then overlap instead of
+	// queueing, and a CLI run that only prints storage numbers never waits for
+	// databases it does not use.
+	svc := api.NewLazy("", nil)
 	snap, err := svc.Snapshot(context.Background(), path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "parse error:", err)

@@ -238,7 +238,7 @@ func (s *Service) ListClaimableShips(ctx context.Context, in ListClaimableIn) (L
 			}
 		}
 	}
-	gates := s.effectiveGates(snap)
+	gates := effectiveGates(s.Data(), snap)
 
 	var matched []x4save.ClaimableShip
 	for _, c := range snap.ClaimableShips {
@@ -417,10 +417,13 @@ func DiagnoseStationData(st *x4save.Station, rawHigh, rawLow, accum int64) Diagn
 	}
 
 	// --- SHORTAGES ---
+	// Every ware map below is walked in sorted order, so two findings with the
+	// same buy-want (or the same storage) always come out the same way round.
+	//
 	// (a) feeder deficit: station makes a ware yet still posts a buy offer for it
 	// AND isn't sitting on a comfortable buffer (a big stockpile means it isn't
 	// actually starving — the buy offer is just topping off).
-	for ware := range produced {
+	for _, ware := range sortedKeys(produced) {
 		if buyWant[ware] > 0 && storage[ware] < accum {
 			out.Shortages = append(out.Shortages, StationFinding{
 				Ware: ware, Kind: "feeder_deficit", Storage: storage[ware], BuyWant: buyWant[ware],
@@ -431,7 +434,8 @@ func DiagnoseStationData(st *x4save.Station, rawHigh, rawLow, accum int64) Diagn
 		}
 	}
 	// (b) raw under-mined / (c) imported input running low.
-	for ware, want := range buyWant {
+	for _, ware := range sortedKeys(buyWant) {
+		want := buyWant[ware]
 		if produced[ware] {
 			continue // already covered by feeder_deficit
 		}
@@ -454,7 +458,8 @@ func DiagnoseStationData(st *x4save.Station, rawHigh, rawLow, accum int64) Diagn
 	}
 
 	// --- SURPLUSES ---
-	for ware, amt := range storage {
+	for _, ware := range sortedKeys(storage) {
+		amt := storage[ware]
 		switch {
 		case rawWares[ware] && amt > rawHigh:
 			out.Surpluses = append(out.Surpluses, StationFinding{
@@ -471,8 +476,8 @@ func DiagnoseStationData(st *x4save.Station, rawHigh, rawLow, accum int64) Diagn
 		}
 	}
 
-	sort.Slice(out.Shortages, func(i, j int) bool { return out.Shortages[i].BuyWant > out.Shortages[j].BuyWant })
-	sort.Slice(out.Surpluses, func(i, j int) bool { return out.Surpluses[i].Storage > out.Surpluses[j].Storage })
+	sort.SliceStable(out.Shortages, func(i, j int) bool { return out.Shortages[i].BuyWant > out.Shortages[j].BuyWant })
+	sort.SliceStable(out.Surpluses, func(i, j int) bool { return out.Surpluses[i].Storage > out.Surpluses[j].Storage })
 	if out.Shortages == nil {
 		out.Shortages = []StationFinding{}
 	}
@@ -639,7 +644,15 @@ func (s *Service) FindMiningSectors(ctx context.Context, in FindMiningIn) (FindM
 			})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Weight > out[j].Weight })
+	// Gases carry no weight at all, so without the macro tie-break every gas
+	// sector ties with every other and the "ranking" is whatever order the sort
+	// happened to leave them in.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Weight != out[j].Weight {
+			return out[i].Weight > out[j].Weight
+		}
+		return out[i].Sector < out[j].Sector
+	})
 	limit := in.Limit
 	if limit <= 0 {
 		limit = 15
@@ -657,13 +670,18 @@ type WareRef struct {
 }
 
 // resolveWare finds a ware by exact id, then by id/name substring.
-func (s *Service) resolveWare(q string) (x4data.Ware, bool) {
-	db := s.wareDB()
+//
+// The substring pass walks the ware ids IN ORDER rather than ranging the map:
+// several ids can contain the same query ("ore" is in "ore" and "orehauler"),
+// and picking whichever one Go's map walk reached first made the answer differ
+// between two runs of the same binary on the same data.
+func resolveWare(db map[string]x4data.Ware, q string) (x4data.Ware, bool) {
 	if w, ok := db[q]; ok {
 		return w, true
 	}
 	ql := strings.ToLower(q)
-	for _, w := range db {
+	for _, id := range sortedKeys(db) {
+		w := db[id]
 		if strings.Contains(strings.ToLower(w.ID), ql) || strings.Contains(strings.ToLower(w.Name), ql) {
 			return w, true
 		}
@@ -671,11 +689,26 @@ func (s *Service) resolveWare(q string) (x4data.Ware, bool) {
 	return x4data.Ware{}, false
 }
 
+// sortedKeys is the standard cure for "ranked out of a Go map": every ranking in
+// this package that starts from a map walks it through this, so equal-scoring
+// entries come out in a fixed order instead of a fresh one each run. The wire
+// gate compares bytes, and a shuffled tie is indistinguishable from a ranking
+// regression when it does.
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (s *Service) GetRecipe(ctx context.Context, in WareRef) (x4data.Ware, error) {
-	if len(s.wareDB()) == 0 {
+	d := s.Data()
+	if len(d.Wares) == 0 {
 		return x4data.Ware{}, fmt.Errorf("ware database unavailable; set X4MCP_GAME_DIR to the X4 install")
 	}
-	w, ok := s.resolveWare(in.Ware)
+	w, ok := resolveWare(d.Wares, in.Ware)
 	if !ok {
 		return x4data.Ware{}, fmt.Errorf("no ware matching %q", in.Ware)
 	}
@@ -696,7 +729,7 @@ type GetModuleOut struct {
 }
 
 func (s *Service) GetModule(ctx context.Context, in ModuleRef) (GetModuleOut, error) {
-	db := s.moduleDB()
+	db := s.Data().Modules
 	if len(db) == 0 {
 		return GetModuleOut{}, fmt.Errorf("module database unavailable; set X4MCP_GAME_DIR to the X4 install")
 	}
@@ -759,9 +792,9 @@ type PlanWorkforceOut struct {
 }
 
 // resolveProductionModule finds a production module by macro, or by the ware it
-// produces (falling back to a substring match on the produced ware).
-func (s *Service) resolveProductionModule(q string) (x4data.Module, bool) {
-	db := s.moduleDB()
+// produces (falling back to a substring match on the produced ware). Ties are
+// broken on the macro so the same query always names the same module.
+func resolveProductionModule(db map[string]x4data.Module, q string) (x4data.Module, bool) {
 	ql := strings.ToLower(strings.TrimSpace(q))
 	if m, ok := db[ql]; ok && m.Class == "production" {
 		return m, true
@@ -770,7 +803,8 @@ func (s *Service) resolveProductionModule(q string) (x4data.Module, bool) {
 	// (gen) variant and lowest workforce as a stable default.
 	var best x4data.Module
 	found := false
-	for _, m := range db {
+	for _, macro := range sortedKeys(db) {
+		m := db[macro]
 		if m.Class != "production" || m.Produces == "" {
 			continue
 		}
@@ -784,7 +818,8 @@ func (s *Service) resolveProductionModule(q string) (x4data.Module, bool) {
 }
 
 func (s *Service) PlanWorkforce(ctx context.Context, in PlanWorkforceIn) (PlanWorkforceOut, error) {
-	wfDB := s.workforceDB()
+	d := s.Data()
+	wfDB := d.Workforce
 	if len(wfDB) == 0 {
 		return PlanWorkforceOut{}, fmt.Errorf("workforce database unavailable; set X4MCP_GAME_DIR to the X4 install")
 	}
@@ -811,7 +846,7 @@ func (s *Service) PlanWorkforce(ctx context.Context, in PlanWorkforceIn) (PlanWo
 	workforce := in.Workforce
 	var fromMods []ModuleCount
 	for _, q := range in.ProductionModules {
-		m, ok := s.resolveProductionModule(q)
+		m, ok := resolveProductionModule(d.Modules, q)
 		if !ok {
 			fromMods = append(fromMods, ModuleCount{Ware: q, Name: "(no production module found)", Modules: 0})
 			continue
@@ -823,7 +858,7 @@ func (s *Service) PlanWorkforce(ctx context.Context, in PlanWorkforceIn) (PlanWo
 		return PlanWorkforceOut{}, fmt.Errorf("no workforce: pass workforce=N or production_modules to derive it")
 	}
 
-	wareDB := s.wareDB()
+	wareDB := d.Wares
 	var lines []WfConsumeLine
 	for _, q := range consume {
 		kind := "food"
@@ -847,7 +882,7 @@ func (s *Service) PlanWorkforce(ctx context.Context, in PlanWorkforceIn) (PlanWo
 	}
 
 	// Habitats that house this workforce, by size (largest first).
-	habitats := s.habitatsFor(race, workforce)
+	habitats := habitatsFor(d.Modules, race, workforce)
 
 	note := fmt.Sprintf("Consumption is authoritative (game workunit data), per %d workers/%ds, scaled to %d workers at the %s rate. "+
 		"Module counts are ceil'd at each food/medical module's BASE (unstaffed) output, so they slightly over-provision — staffing those modules raises output further. "+
@@ -862,19 +897,28 @@ func (s *Service) PlanWorkforce(ctx context.Context, in PlanWorkforceIn) (PlanWo
 
 // habitatsFor returns how many of each habitat size (of the given race) houses
 // `workforce`, largest size first.
-func (s *Service) habitatsFor(race string, workforce int) []ModuleCount {
-	db := s.moduleDB()
+//
+// Habitats are de-duplicated by capacity, so WHICH of two same-size modules
+// gets named ("Argon S Habitat" or "Argon S Dormitory") is a tie — broken on the
+// name, because the alternative is a field that changes every run.
+func habitatsFor(db map[string]x4data.Module, race string, workforce int) []ModuleCount {
 	type hab struct {
 		name string
 		cap  int
 	}
 	var habs []hab
-	for _, m := range db {
+	for _, macro := range sortedKeys(db) {
+		m := db[macro]
 		if m.Class == "habitation" && strings.EqualFold(m.Race, race) && m.WorkforceCapacity > 0 && m.Size != "" {
 			habs = append(habs, hab{m.Name, m.WorkforceCapacity})
 		}
 	}
-	sort.Slice(habs, func(i, j int) bool { return habs[i].cap > habs[j].cap })
+	sort.Slice(habs, func(i, j int) bool {
+		if habs[i].cap != habs[j].cap {
+			return habs[i].cap > habs[j].cap
+		}
+		return habs[i].name < habs[j].name
+	})
 	var out []ModuleCount
 	seen := map[int]bool{}
 	for _, h := range habs {
@@ -957,12 +1001,14 @@ func stripWareVariant(s string) string {
 }
 
 // moduleWareFor finds the production-module ware (module_<faction>_prod_<output>_NN)
-// that outputs `output`, preferring the cheapest variant. It carries the module's
-// build price and construction recipe.
+// that outputs `output`, preferring the cheapest variant (lowest id among equally
+// priced ones, so a build cost does not depend on map-walk order). It carries the
+// module's build price and construction recipe.
 func moduleWareFor(db map[string]x4data.Ware, output string) (x4data.Ware, bool) {
 	var best x4data.Ware
 	found := false
-	for id, w := range db {
+	for _, id := range sortedKeys(db) {
+		w := db[id]
 		i := strings.Index(id, "_prod_")
 		if !strings.HasPrefix(id, "module_") || i < 0 {
 			continue
@@ -997,11 +1043,11 @@ func perHour(m x4data.Method) float64 {
 }
 
 func (s *Service) PlanProduction(ctx context.Context, in PlanProductionIn) (PlanProductionOut, error) {
-	db := s.wareDB()
+	db := s.Data().Wares
 	if len(db) == 0 {
 		return PlanProductionOut{}, fmt.Errorf("ware database unavailable; set X4MCP_GAME_DIR")
 	}
-	w, ok := s.resolveWare(in.Ware)
+	w, ok := resolveWare(db, in.Ware)
 	if !ok {
 		return PlanProductionOut{}, fmt.Errorf("no ware matching %q", in.Ware)
 	}
@@ -1061,15 +1107,15 @@ func (s *Service) PlanProduction(ctx context.Context, in PlanProductionIn) (Plan
 	// full vertical expansion
 	modsByWare := map[string]float64{}
 	rawByWare := map[string]float64{}
-	s.expand(w.ID, outRate, modsByWare, rawByWare, 0)
+	expand(db, w.ID, outRate, modsByWare, rawByWare, 0)
 
-	d := s.designFrom(modsByWare, rawByWare, sun)
-	out.IntegratedModules = d.IntegratedModules
-	out.BuildModules = d.BuildModules
-	out.Bottleneck = d.Bottleneck
-	out.BuildCostCredits = d.BuildCostCredits
-	out.BuildWares = d.BuildWares
-	out.RawResources = d.RawResources
+	design := designFrom(db, modsByWare, rawByWare, sun)
+	out.IntegratedModules = design.IntegratedModules
+	out.BuildModules = design.BuildModules
+	out.Bottleneck = design.Bottleneck
+	out.BuildCostCredits = design.BuildCostCredits
+	out.BuildWares = design.BuildWares
+	out.RawResources = design.RawResources
 
 	if out.GrossMarginPerHour > 0 && out.BuildCostCredits > 0 {
 		out.PaybackHours = round1(float64(out.BuildCostCredits) / out.GrossMarginPerHour)
@@ -1094,11 +1140,13 @@ func (s *Service) PlanProduction(ctx context.Context, in PlanProductionIn) (Plan
 
 // expand accumulates module counts and raw-resource rates to produce `rate`
 // units/hr of `ware`, recursing through its inputs. Wares with no recipe are raw.
-func (s *Service) expand(ware string, rate float64, mods, raw map[string]float64, depth int) {
+// It takes the ware DB rather than re-reading it per node: one recursion must
+// see ONE bundle even if a reload lands halfway down the tree.
+func expand(db map[string]x4data.Ware, ware string, rate float64, mods, raw map[string]float64, depth int) {
 	if depth > 12 || rate <= 0 {
 		return
 	}
-	w := s.wareDB()[ware]
+	w := db[ware]
 	m, has := w.DefaultMethod()
 	if !has {
 		raw[ware] += rate // mined/raw resource
@@ -1109,7 +1157,7 @@ func (s *Service) expand(ware string, rate float64, mods, raw map[string]float64
 		mods[ware] += rate / per
 	}
 	for _, in := range m.Inputs {
-		s.expand(in.Ware, rate*float64(in.Amount)/float64(m.Amount), mods, raw, depth+1)
+		expand(db, in.Ware, rate*float64(in.Amount)/float64(m.Amount), mods, raw, depth+1)
 	}
 }
 
@@ -1151,7 +1199,8 @@ func macroFaction(macro string) string {
 var buyableFactions = map[string]bool{"arg": true, "tel": true, "par": true, "gen": true}
 
 func (s *Service) PlanFleet(ctx context.Context, in PlanFleetIn) (PlanFleetOut, error) {
-	w, ok := s.resolveWare(in.Ware)
+	d := s.Data()
+	w, ok := resolveWare(d.Wares, in.Ware)
 	if !ok {
 		return PlanFleetOut{}, fmt.Errorf("no ware matching %q", in.Ware)
 	}
@@ -1166,18 +1215,20 @@ func (s *Service) PlanFleet(ctx context.Context, in PlanFleetIn) (PlanFleetOut, 
 	if vol <= 0 {
 		vol = 1
 	}
-	ships := s.shipDB()
+	ships := d.Ships
 	if len(ships) == 0 {
 		return PlanFleetOut{}, fmt.Errorf("ship database unavailable; set X4MCP_GAME_DIR")
 	}
 
 	// Choose the hull: explicit override, else the biggest cargo hold of the
-	// ware's transport type (buyable factions unless all_factions).
+	// ware's transport type (buyable factions unless all_factions). Walked in
+	// macro order so two hulls with the same hold do not swap between runs.
 	var pick x4data.Ship
 	found := false
 	if in.Ship != "" {
 		q := strings.ToLower(in.Ship)
-		for _, s := range ships {
+		for _, macro := range sortedKeys(ships) {
+			s := ships[macro]
 			if strings.Contains(strings.ToLower(s.Macro), q) || strings.Contains(strings.ToLower(s.Name), q) {
 				if !found || s.Cargo > pick.Cargo {
 					pick, found = s, true
@@ -1188,7 +1239,8 @@ func (s *Service) PlanFleet(ctx context.Context, in PlanFleetIn) (PlanFleetOut, 
 			return PlanFleetOut{}, fmt.Errorf("no hull matching %q", in.Ship)
 		}
 	} else {
-		for _, s := range ships {
+		for _, macro := range sortedKeys(ships) {
+			s := ships[macro]
 			if s.CargoType != w.Transport || s.Cargo <= 0 {
 				continue
 			}
@@ -1273,13 +1325,21 @@ func (s *Service) FindSupplyGaps(ctx context.Context, in SupplyGapsIn) (SupplyGa
 		}
 	}
 	var gaps []SupplyGap
-	for ware, g := range byWare {
+	for _, ware := range sortedKeys(byWare) {
+		g := byWare[ware]
 		gaps = append(gaps, SupplyGap{
 			Ware: ware, Buyers: g.buyers, TotalDemand: g.demand,
 			MaxBuyPrice: g.maxPrice, DemandValue: g.demand * g.maxPrice,
 		})
 	}
-	sort.Slice(gaps, func(i, j int) bool { return gaps[i].DemandValue > gaps[j].DemandValue })
+	// Ranking IS the product here ("the core opportunity-finder"), so the order
+	// is fully determined: demand value first, ware name to break the tie.
+	sort.Slice(gaps, func(i, j int) bool {
+		if gaps[i].DemandValue != gaps[j].DemandValue {
+			return gaps[i].DemandValue > gaps[j].DemandValue
+		}
+		return gaps[i].Ware < gaps[j].Ware
+	})
 	limit := in.Limit
 	if limit <= 0 {
 		limit = 25
@@ -1460,12 +1520,16 @@ func (s *Service) FindEnergySites(ctx context.Context, in EnergySitesIn) (Energy
 		}
 		sites = append(sites, es)
 	}
-	// Rank by sunlight, then by local demand.
+	// Rank by sunlight, then by local demand, then by macro so the order is
+	// total (two identical sites must not swap places between runs).
 	sort.Slice(sites, func(i, j int) bool {
 		if sites[i].Sunlight != sites[j].Sunlight {
 			return sites[i].Sunlight > sites[j].Sunlight
 		}
-		return sites[i].LocalECDemand > sites[j].LocalECDemand
+		if sites[i].LocalECDemand != sites[j].LocalECDemand {
+			return sites[i].LocalECDemand > sites[j].LocalECDemand
+		}
+		return sites[i].Sector < sites[j].Sector
 	})
 	limit := in.Limit
 	if limit <= 0 {
@@ -1502,7 +1566,7 @@ func (s *Service) SectorDistance(ctx context.Context, in SectorDistIn) (SectorDi
 	if from == "" || to == "" {
 		return SectorDistOut{}, fmt.Errorf("could not resolve sector(s): from=%q to=%q", in.From, in.To)
 	}
-	hops := x4data.Hops(s.effectiveGates(snap), from, to)
+	hops := x4data.Hops(effectiveGates(s.Data(), snap), from, to)
 	return SectorDistOut{From: fromName, To: toName, Hops: hops}, nil
 }
 

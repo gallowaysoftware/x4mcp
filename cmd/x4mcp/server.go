@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -38,7 +40,12 @@ func tool[I, O any](f func(context.Context, I) (O, error)) func(
 // beyond localhost only on a network you trust, and remember the tools
 // expose your savegame contents plus the plan-write tools.
 func runServer(ctx context.Context, addr, connect string) error {
-	s := newServer(api.New(api.LoadGameData(""), nil))
+	// NewLazy, not New: nothing in initialize/tools-list touches the install,
+	// so the ten game databases load behind the handshake instead of in front
+	// of it (2.7 s cold, 0.4 s warm, on every client launch).
+	svc := api.NewLazy("", nil)
+	reloadOnSIGHUP(ctx, svc)
+	s := newServer(svc)
 
 	if addr == "" && connect == "" {
 		return s.Run(ctx, &mcp.StdioTransport{})
@@ -71,6 +78,37 @@ func runServer(ctx context.Context, addr, connect string) error {
 		return err
 	}
 	return nil
+}
+
+// reloadOnSIGHUP rebuilds the game-data bundle when the process is HUP'd.
+//
+// This is what makes api.ReloadGameData a feature rather than a capability:
+// X4 patches while the server is up, and until now the only way to stop serving
+// pre-patch prices and module stats was to kill the client's MCP session and
+// start a new one. `kill -HUP $(pgrep x4mcp)` now does it, under live readers —
+// the swap is a single pointer store of an already-complete bundle, so no
+// in-flight tool call ever sees half a patch.
+//
+// SIGHUP because it is the signal a long-lived process is expected to reload
+// on, it needs no transport (stdio servers have no endpoint to POST to), and
+// its default disposition is to kill the process — which is exactly what would
+// happen today.
+func reloadOnSIGHUP(ctx context.Context, svc *api.Service) {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGHUP)
+	go func() {
+		defer signal.Stop(ch)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ch:
+				d := svc.ReloadGameData()
+				fmt.Fprintf(os.Stderr, "x4mcp: reloaded game data from %q (%d wares, %d modules, %d ships)\n",
+					d.InstallDir, len(d.Wares), len(d.Modules), len(d.Ships))
+			}
+		}
+	}()
 }
 
 // newServer registers every tool against a Service. It is separate from

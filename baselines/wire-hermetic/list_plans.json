@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "no construction plans found (looked in 0 file(s))"
+      }
+    ],
+    "isError": true
+  }
+}

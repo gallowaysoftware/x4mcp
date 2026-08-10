@@ -69,14 +69,19 @@ type FitOut struct {
 }
 
 func (s *Service) EstimateShipCost(ctx context.Context, in FitIn) (FitOut, error) {
-	db := s.wareDB()
-	ships := s.shipDB()
+	// Hull prices, hull stats and equipment slots all come out of ONE bundle:
+	// this used to read the slots straight from x4data.LoadShipSlots(""), which
+	// ignored the Service's InstallDir and would happily price a /mnt/x4-beta
+	// hull with the Steam install's slot layout.
+	d := s.Data()
+	db := d.Wares
+	ships := d.Ships
 	if len(db) == 0 || len(ships) == 0 {
 		return FitOut{}, fmt.Errorf("game database unavailable; set X4MCP_GAME_DIR")
 	}
-	slots, err := x4data.LoadShipSlots("")
-	if err != nil || len(slots) == 0 {
-		return FitOut{}, fmt.Errorf("ship slot data unavailable: %w", err)
+	slots := d.ShipSlots
+	if len(slots) == 0 {
+		return FitOut{}, fmt.Errorf("ship slot data unavailable; set X4MCP_GAME_DIR to the X4 install")
 	}
 
 	macro, sh, ok := resolveShip(ships, in.Ship)

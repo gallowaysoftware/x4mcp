@@ -25,20 +25,15 @@ func complexWares() map[string]x4data.Ware {
 	}
 }
 
-// testService seeds the ware DB without touching the installed game.
-func testService(db map[string]x4data.Ware) *Service {
-	return New(&GameData{Wares: db}, nil)
-}
-
 func TestDesignFromMergesSharedTiers(t *testing.T) {
-	s := testService(complexWares())
+	db := complexWares()
 
 	// What plan_complex does: expand every target into ONE pair of maps.
 	mods := map[string]float64{}
 	raw := map[string]float64{}
-	s.expand("wareA", 10, mods, raw, 0)
-	s.expand("wareB", 10, mods, raw, 0)
-	d := s.designFrom(mods, raw, 1.0)
+	expand(db, "wareA", 10, mods, raw, 0)
+	expand(db, "wareB", 10, mods, raw, 0)
+	d := designFrom(db, mods, raw, 1.0)
 
 	// The shared tier must appear exactly once, carrying the combined demand.
 	var ecEntries int
@@ -81,15 +76,15 @@ func TestDesignFromMergesSharedTiers(t *testing.T) {
 }
 
 func TestDesignFromScalesEnergyBySunlight(t *testing.T) {
-	s := testService(complexWares())
+	db := complexWares()
 
 	base := map[string]float64{}
-	s.expand("wareA", 100, base, map[string]float64{}, 0)
+	expand(db, "wareA", 100, base, map[string]float64{}, 0)
 	sunny := map[string]float64{}
-	s.expand("wareA", 100, sunny, map[string]float64{}, 0)
+	expand(db, "wareA", 100, sunny, map[string]float64{}, 0)
 
-	d1 := s.designFrom(base, map[string]float64{}, 1.0)
-	d2 := s.designFrom(sunny, map[string]float64{}, 2.0)
+	d1 := designFrom(db, base, map[string]float64{}, 1.0)
+	d2 := designFrom(db, sunny, map[string]float64{}, 2.0)
 
 	get := func(d stationDesign, ware string) float64 {
 		for _, m := range d.IntegratedModules {

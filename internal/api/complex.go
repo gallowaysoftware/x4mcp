@@ -38,8 +38,13 @@ type stationDesign struct {
 
 // designFrom turns accumulated module ratios + raw rates into a buildable plan.
 // sun scales energy-cell modules only (see plan_production).
-func (s *Service) designFrom(modsByWare, rawByWare map[string]float64, sun float64) stationDesign {
-	db := s.wareDB()
+//
+// Every list it emits is accumulated in a map and then ranked, so every one of
+// them walks the map in ware order and breaks its ranking ties on the ware id.
+// Without that, two wares needing the same module count swap places between
+// runs of the same binary — which makes the wire gate blind to real reordering,
+// because a gate that has to tolerate shuffling tolerates reversal too.
+func designFrom(db map[string]x4data.Ware, modsByWare, rawByWare map[string]float64, sun float64) stationDesign {
 	var d stationDesign
 
 	// Energy cells are raw-fed solar: scale ONLY their module count by 1/sunlight
@@ -47,10 +52,15 @@ func (s *Service) designFrom(modsByWare, rawByWare map[string]float64, sun float
 	if v, ok := modsByWare["energycells"]; ok && sun > 0 {
 		modsByWare["energycells"] = v / sun
 	}
-	for ware, mods := range modsByWare {
-		d.IntegratedModules = append(d.IntegratedModules, ModuleCount{Ware: ware, Name: db[ware].Name, Modules: round2(mods)})
+	for _, ware := range sortedKeys(modsByWare) {
+		d.IntegratedModules = append(d.IntegratedModules, ModuleCount{Ware: ware, Name: db[ware].Name, Modules: round2(modsByWare[ware])})
 	}
-	sort.Slice(d.IntegratedModules, func(i, j int) bool { return d.IntegratedModules[i].Modules > d.IntegratedModules[j].Modules })
+	sort.Slice(d.IntegratedModules, func(i, j int) bool {
+		if d.IntegratedModules[i].Modules != d.IntegratedModules[j].Modules {
+			return d.IntegratedModules[i].Modules > d.IntegratedModules[j].Modules
+		}
+		return d.IntegratedModules[i].Ware < d.IntegratedModules[j].Ware
+	})
 
 	// Whole-module buildable plan: ceil each ratio so the chain never starves, then
 	// report per-ware headroom and the tightest (bottleneck) input module.
@@ -66,7 +76,8 @@ func (s *Service) designFrom(modsByWare, rawByWare map[string]float64, sun float
 		}
 	}
 	bottleneckRatio := math.Inf(1)
-	for ware, mods := range modsByWare {
+	for _, ware := range sortedKeys(modsByWare) {
+		mods := modsByWare[ware]
 		whole := int(math.Ceil(mods))
 		md, _ := db[ware].DefaultMethod()
 		capacity := float64(whole) * perHour(md)
@@ -83,7 +94,12 @@ func (s *Service) designFrom(modsByWare, rawByWare map[string]float64, sun float
 			d.Bottleneck = ware
 		}
 	}
-	sort.Slice(d.BuildModules, func(i, j int) bool { return d.BuildModules[i].WholeModules > d.BuildModules[j].WholeModules })
+	sort.Slice(d.BuildModules, func(i, j int) bool {
+		if d.BuildModules[i].WholeModules != d.BuildModules[j].WholeModules {
+			return d.BuildModules[i].WholeModules > d.BuildModules[j].WholeModules
+		}
+		return d.BuildModules[i].Ware < d.BuildModules[j].Ware
+	})
 
 	// One-off build cost: sum each build-module's ware price + its construction
 	// wares, over the whole-module counts.
@@ -101,19 +117,30 @@ func (s *Service) designFrom(modsByWare, rawByWare map[string]float64, sun float
 			}
 		}
 	}
-	for ware, amt := range buildWareTot {
-		d.BuildWares = append(d.BuildWares, BuildWare{Ware: ware, Name: db[ware].Name, Amount: amt})
+	for _, ware := range sortedKeys(buildWareTot) {
+		d.BuildWares = append(d.BuildWares, BuildWare{Ware: ware, Name: db[ware].Name, Amount: buildWareTot[ware]})
 	}
-	sort.Slice(d.BuildWares, func(i, j int) bool { return d.BuildWares[i].Amount > d.BuildWares[j].Amount })
+	sort.Slice(d.BuildWares, func(i, j int) bool {
+		if d.BuildWares[i].Amount != d.BuildWares[j].Amount {
+			return d.BuildWares[i].Amount > d.BuildWares[j].Amount
+		}
+		return d.BuildWares[i].Ware < d.BuildWares[j].Ware
+	})
 
-	for ware, rate := range rawByWare {
+	for _, ware := range sortedKeys(rawByWare) {
 		rw := db[ware]
+		rate := rawByWare[ware]
 		d.RawResources = append(d.RawResources, RateLine{
 			Ware: ware, Name: rw.Name, PerHour: round1(rate),
 			AvgPrice: rw.PriceAvg, CostPerHour: round1(rate * float64(rw.PriceAvg)),
 		})
 	}
-	sort.Slice(d.RawResources, func(i, j int) bool { return d.RawResources[i].PerHour > d.RawResources[j].PerHour })
+	sort.Slice(d.RawResources, func(i, j int) bool {
+		if d.RawResources[i].PerHour != d.RawResources[j].PerHour {
+			return d.RawResources[i].PerHour > d.RawResources[j].PerHour
+		}
+		return d.RawResources[i].Ware < d.RawResources[j].Ware
+	})
 	return d
 }
 
@@ -155,7 +182,7 @@ type PlanComplexOut struct {
 }
 
 func (s *Service) PlanComplex(ctx context.Context, in PlanComplexIn) (PlanComplexOut, error) {
-	db := s.wareDB()
+	db := s.Data().Wares
 	if len(db) == 0 {
 		return PlanComplexOut{}, fmt.Errorf("ware database unavailable; set X4MCP_GAME_DIR")
 	}
@@ -186,7 +213,7 @@ func (s *Service) PlanComplex(ctx context.Context, in PlanComplexIn) (PlanComple
 		}
 	}
 	for _, q := range in.Wares {
-		w, ok := s.resolveWare(q)
+		w, ok := resolveWare(db, q)
 		if !ok {
 			out.Unresolved = append(out.Unresolved, q)
 			continue
@@ -236,14 +263,14 @@ func (s *Service) PlanComplex(ctx context.Context, in PlanComplexIn) (PlanComple
 		out.Targets = append(out.Targets, ComplexTarget{
 			Ware: id, Name: w.Name, Modules: modules, OutputPerHour: round1(rate),
 		})
-		s.expand(id, rate, modsByWare, rawByWare, 0)
+		expand(db, id, rate, modsByWare, rawByWare, 0)
 	}
 	out.TargetCount = len(out.Targets)
 	if out.TargetCount == 0 {
 		return PlanComplexOut{}, fmt.Errorf("no producible target wares resolved")
 	}
 
-	d := s.designFrom(modsByWare, rawByWare, sun)
+	d := designFrom(db, modsByWare, rawByWare, sun)
 	out.IntegratedModules = d.IntegratedModules
 	out.BuildModules = d.BuildModules
 	out.Bottleneck = d.Bottleneck

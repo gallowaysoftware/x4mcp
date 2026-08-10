@@ -3,7 +3,14 @@
 # The distilled, scrubbed savegame fixture is the one *.xml.gz that belongs in
 # the repo (see scripts/distill-save and docs/parse-baseline.md).
 !internal/x4save/testdata/real/*.xml.gz
-baselines/
+# Baselines are machine-specific EXCEPT the hermetic wire baseline, which is the
+# gate itself: it holds no absolute path, no clock and no savegame contents, so
+# it is committed and `scripts/wire-parity.sh --check` works in a fresh clone and
+# in CI. A gate nobody else can run is not a gate. (Note `baselines/*` rather
+# than `baselines/`: git will not descend into an excluded DIRECTORY, so a
+# re-include under it would never be seen.)
+baselines/*
+!baselines/wire-hermetic/
 # Frontend. web/dist is deliberately NOT ignored: web/embed.go embeds it, so the
 # built board is part of the source tree (docs/tech-design.md D6).
 web/node_modules/

@@ -10,6 +10,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -45,6 +46,7 @@ type GameData struct {
 	Ships        map[string]x4data.Ship            // lower(macro) -> hull stats
 	Modules      map[string]x4data.Module          // lower(macro) -> module stats
 	Workforce    map[string]x4data.WorkforceDemand // race -> food/medical consumption
+	ShipSlots    map[string]x4data.ShipSlots       // lower(macro) -> purchasable equipment slots
 }
 
 // LoadGameData reads every database out of the install at once. dir may be ""
@@ -55,8 +57,13 @@ type GameData struct {
 // install"), which tells the user what to do, where a startup failure would
 // take down the save-only tools that need no install at all.
 //
-// The nine decodes are independent and each walks the .cat archives, so they
-// run concurrently — this is startup latency on every `x4mcp serve`.
+// The ten decodes are independent and each walks the .cat archives, so they run
+// concurrently. It still costs ~2.7 s against a cold cache, which is why the
+// server builds its Service with NewLazy and pays this off the startup path.
+//
+// EVERY install-derived table belongs here, ShipSlots included: a Service built
+// with an explicit InstallDir must not price a hull from one install and its
+// equipment slots from another.
 func LoadGameData(dir string) *GameData {
 	d := &GameData{InstallDir: dir, LoadedAt: time.Now()}
 	var wg sync.WaitGroup
@@ -76,6 +83,7 @@ func LoadGameData(dir string) *GameData {
 	load(func() { d.Ships, _ = x4data.LoadShips(dir) })
 	load(func() { d.Modules, _ = x4data.LoadModules(dir) })
 	load(func() { d.Workforce, _ = x4data.LoadWorkforce(dir) })
+	load(func() { d.ShipSlots, _ = x4data.LoadShipSlots(dir) })
 	wg.Wait()
 	return d
 }
@@ -87,6 +95,14 @@ func LoadGameData(dir string) *GameData {
 // on its own schedule, and having each tool call re-read 100 MB of gzip to
 // reach the same answer is both slow and a different answer, since the file may
 // have rotated mid-conversation.
+//
+// It seals the SAVE CONTENTS, not the save directory. Two handlers deliberately
+// go round it and they are the only two: ListSaves enumerates the save folders
+// on disk (there is nothing in a parsed snapshot that could answer "what else
+// could I open?"), and RefreshSave forces a re-parse past the cache, which is
+// the one thing a provider is allowed to short-circuit. Any other handler
+// touching x4save directly is a bug — TestEverySaveBackedHandlerUsesTheProvider
+// fails on it.
 type SnapshotProvider interface {
 	Snapshot(ctx context.Context, savePath string) (*x4save.Snapshot, error)
 }
@@ -94,18 +110,58 @@ type SnapshotProvider interface {
 // Service holds everything the tools need: the game-data bundle and wherever
 // savegames come from. It is safe for concurrent use.
 type Service struct {
-	data  atomic.Pointer[GameData]
-	snaps SnapshotProvider
+	data atomic.Pointer[GameData]
+	// ready is closed once a real bundle has been published. NewLazy loads in
+	// the background, so a Data() caller that arrives first waits here rather
+	// than reading the empty placeholder and reporting "database unavailable".
+	ready     chan struct{}
+	readyOnce sync.Once
+	snaps     SnapshotProvider
 }
 
 // New builds a Service over an already-loaded bundle. A nil provider gets the
 // load-on-demand default, which is what the MCP server has always done.
 func New(data *GameData, snaps SnapshotProvider) *Service {
-	s := &Service{}
+	s := &Service{ready: make(chan struct{})}
 	if data == nil {
 		data = &GameData{}
 	}
 	s.data.Store(data)
+	s.markReady()
+	return s.withProvider(snaps)
+}
+
+// NewLazy builds a Service whose game-data bundle loads in the BACKGROUND, and
+// is what every entry point that is not a test should use.
+//
+// Loading the ten databases eagerly put ~2.7 s (cold cache) / ~0.4 s (warm) in
+// front of every `x4mcp serve` and every CLI invocation — paid by an MCP client
+// before it sees `initialize`, and paid in full by users who only ever call
+// save-backed tools. Nothing in the startup handshake needs the install, so the
+// load overlaps with it: the empty bundle is published immediately and Data()
+// blocks on the first genuine use, which is exactly where the cost sat before
+// D13 replaced the sync.Once fields.
+func NewLazy(dir string, snaps SnapshotProvider) *Service {
+	return newLazy(dir, snaps, LoadGameData)
+}
+
+// newLazy is NewLazy with the loader injected, so a test can hold the load open
+// and prove the constructor did not wait for it.
+func newLazy(dir string, snaps SnapshotProvider, load func(string) *GameData) *Service {
+	s := &Service{ready: make(chan struct{})}
+	placeholder := &GameData{InstallDir: dir}
+	s.data.Store(placeholder)
+	go func() {
+		d := load(dir)
+		// CAS, not Store: SetGameData may have landed a real bundle while this
+		// was running, and a startup load must never clobber it.
+		s.data.CompareAndSwap(placeholder, d)
+		s.markReady()
+	}()
+	return s.withProvider(snaps)
+}
+
+func (s *Service) withProvider(snaps SnapshotProvider) *Service {
 	if snaps == nil {
 		snaps = &fileProvider{svc: s}
 	}
@@ -113,27 +169,45 @@ func New(data *GameData, snaps SnapshotProvider) *Service {
 	return s
 }
 
+func (s *Service) markReady() { s.readyOnce.Do(func() { close(s.ready) }) }
+
 // Data returns the current game-data bundle. Call it ONCE per handler and pass
 // the result around: two calls can straddle a reload and hand back maps from
-// different bundles, each consistent, together not.
-func (s *Service) Data() *GameData { return s.data.Load() }
+// different bundles, each consistent, together not. Nothing in this package
+// reads a database any other way — there are deliberately no per-map accessors,
+// because an accessor per database is an invitation to call this three times.
+//
+// It BLOCKS until a bundle exists (see NewLazy); after that it is an atomic
+// load and a receive on a closed channel.
+func (s *Service) Data() *GameData {
+	<-s.ready
+	return s.data.Load()
+}
 
-// SetGameData swaps in a bundle built elsewhere (tests, and anything that wants
-// to load the databases itself). Returns the bundle it replaced.
+// SetGameData swaps in a bundle built elsewhere and returns the one it
+// replaced. This is a test/embedding seam — the server itself never calls it —
+// and it also releases anyone blocked in Data() waiting on a background load.
 func (s *Service) SetGameData(d *GameData) *GameData {
 	if d == nil {
 		d = &GameData{}
 	}
-	return s.data.Swap(d)
+	old := s.data.Swap(d)
+	s.markReady()
+	return old
 }
 
 // ReloadGameData re-reads the install and swaps the result in, returning the
 // new bundle. This is the answer to "X4 patched while the server was up": no
 // restart, and no reader ever sees a half-built bundle, because the swap is a
 // single pointer store of an already-complete one.
+//
+// Wired to SIGHUP in cmd/x4mcp (runServer): `kill -HUP $(pidof x4mcp)` after a
+// patch is the whole recovery. S3's save watcher will call it on its own when
+// it notices the install fingerprint move.
 func (s *Service) ReloadGameData() *GameData {
 	d := LoadGameData(s.Data().InstallDir)
 	s.data.Store(d)
+	s.markReady()
 	return d
 }
 
@@ -174,6 +248,12 @@ func (s *Service) Snapshot(ctx context.Context, savePath string) (*x4save.Snapsh
 // be resolved the same way or half the tools answer in raw macros. Idempotent:
 // every step assigns rather than accumulates, so applying it twice (to a
 // snapshot the provider already enriched, say) changes nothing.
+//
+// It MUTATES snap in place, so the caller must own it exclusively. That is the
+// one qualification on "Service is safe for concurrent use": a provider that
+// hands the same *Snapshot to two handlers must enrich it once before it
+// publishes the pointer and never again, or the second Enrich races the first
+// handler's reads.
 func (s *Service) Enrich(snap *x4save.Snapshot) {
 	if snap == nil {
 		return
@@ -183,6 +263,18 @@ func (s *Service) Enrich(snap *x4save.Snapshot) {
 	snap.ApplySectorGases(d.SectorGases)
 	snap.ApplyEnvironment(d.Sunlight, effectiveGates(d, snap))
 	snap.ApplyReputationNames(d.FactionNames)
+	// ApplyReputationNames builds the list out of a map and ranks it on the
+	// reputation alone, so two factions at the same rank swap places between
+	// two calls on the SAME save — get_player_overview's reputation list was
+	// genuinely different each time it was asked. Re-rank on the faction name
+	// as well; the total order is what makes the answer, and the wire gate,
+	// reproducible. (The map walk itself is in internal/x4save.)
+	sort.SliceStable(snap.Reputations, func(i, j int) bool {
+		if snap.Reputations[i].Reputation != snap.Reputations[j].Reputation {
+			return snap.Reputations[i].Reputation > snap.Reputations[j].Reputation
+		}
+		return snap.Reputations[i].Faction < snap.Reputations[j].Faction
+	})
 	// Resolve hull display names (e.g. "Elite Sport") from the ship-stat DB.
 	if len(d.Ships) > 0 {
 		for i := range snap.ClaimableShips {
@@ -212,19 +304,6 @@ func effectiveGates(d *GameData, snap *x4save.Snapshot) map[string][]string {
 	}
 	return d.Gates
 }
-
-func (s *Service) effectiveGates(snap *x4save.Snapshot) map[string][]string {
-	return effectiveGates(s.Data(), snap)
-}
-
-// ---- the game-data accessors the tools read through ----
-//
-// Each one takes the current bundle, so a reload is picked up by the next call.
-
-func (s *Service) wareDB() map[string]x4data.Ware                 { return s.Data().Wares }
-func (s *Service) moduleDB() map[string]x4data.Module             { return s.Data().Modules }
-func (s *Service) shipDB() map[string]x4data.Ship                 { return s.Data().Ships }
-func (s *Service) workforceDB() map[string]x4data.WorkforceDemand { return s.Data().Workforce }
 
 // planFor resolves the plan store for the playthrough behind savePath (or the
 // latest save). The store is keyed by the save's stable game guid so each

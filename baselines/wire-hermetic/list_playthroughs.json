@@ -1,0 +1,15 @@
+{
+  "jsonrpc": "2.0",
+  "id": 8,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"playthroughs\":null}"
+      }
+    ],
+    "structuredContent": {
+      "playthroughs": null
+    }
+  }
+}

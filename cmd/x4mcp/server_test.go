@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pequalsnp/x4mcp/internal/api"
@@ -158,5 +161,38 @@ func TestCallToolErrorSurfaces(t *testing.T) {
 	text, _ := res.Content[0].(*mcp.TextContent)
 	if text == nil || !strings.Contains(text.Text, "ware database unavailable") {
 		t.Errorf("content = %+v, want the handler's own message", res.Content)
+	}
+}
+
+// The D13 bundle was sold as the fix for "X4 patched and the server went on
+// serving pre-patch prices until someone restarted it". Rebuilding it was only
+// half of that: until this handler existed, ReloadGameData had no caller
+// outside its own test, so the user-facing bug was still 100% present and only
+// the capability to fix it had been added.
+func TestSIGHUPReloadsTheGameData(t *testing.T) {
+	install := t.TempDir() // a valid install with nothing in it
+	svc := api.New(&api.GameData{InstallDir: install}, fixtureSaves{snap: &x4save.Snapshot{}})
+	before := svc.Data()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	reloadOnSIGHUP(ctx, svc)
+
+	// signal.Notify is registered by the time reloadOnSIGHUP returns, so this
+	// is delivered to the handler rather than killing the test binary.
+	if err := syscall.Kill(os.Getpid(), syscall.SIGHUP); err != nil {
+		t.Fatalf("kill -HUP: %v", err)
+	}
+
+	deadline := time.After(10 * time.Second)
+	for svc.Data() == before {
+		select {
+		case <-deadline:
+			t.Fatal("SIGHUP did not swap in a new bundle: the server is still serving pre-patch data")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	if got := svc.Data().InstallDir; got != install {
+		t.Errorf("reloaded from %q, want the install the service was built with (%q)", got, install)
 	}
 }

@@ -128,13 +128,18 @@ func (s *Service) PlanMiningSupply(ctx context.Context, in MiningPlanIn) (Mining
 		limit = 5
 	}
 
+	// ONE bundle for the whole request: the recipe walk, the gate graph and the
+	// refinery hint must all describe the same install even if a reload lands
+	// mid-flight.
+	d := s.Data()
+
 	// Which raw resources matter, and what wanted them.
-	wanted, neededFor, via, err := s.rawInputs(in.Resources, in.Produces)
+	wanted, neededFor, via, err := rawInputs(d.Wares, in.Resources, in.Produces)
 	if err != nil {
 		return MiningPlanOut{}, err
 	}
 
-	dist := hopsFrom(s.effectiveGates(snap), snap, strings.ToLower(target), maxHops)
+	dist := hopsFrom(effectiveGates(d, snap), snap, strings.ToLower(target), maxHops)
 	byMacro := map[string]x4save.Sector{}
 	for _, s := range snap.Sectors {
 		byMacro[strings.ToLower(s.Macro)] = s
@@ -161,7 +166,10 @@ func (s *Service) PlanMiningSupply(ctx context.Context, in MiningPlanIn) (Mining
 		kind := minables[res]
 		plan := ResourcePlan{Resource: res, Kind: kind, NeededFor: neededFor[res]}
 
-		for macro, hops := range dist {
+		// Walked in macro order: the sources are RANKED below, and a ranking
+		// seeded by a Go map walk reorders its ties on every run.
+		for _, macro := range sortedKeys(dist) {
+			hops := dist[macro]
 			sec, ok := byMacro[macro]
 			if !ok {
 				continue
@@ -224,7 +232,7 @@ func (s *Service) PlanMiningSupply(ctx context.Context, in MiningPlanIn) (Mining
 			}
 		}
 
-		plan.Refinery = s.refineryHintFor(res, via[res])
+		plan.Refinery = pickRefinery(d.Wares, res, via[res])
 		plan.Verdict = verdictFor(res, plan)
 		out.Plans = append(out.Plans, plan)
 	}
@@ -235,7 +243,7 @@ func (s *Service) PlanMiningSupply(ctx context.Context, in MiningPlanIn) (Mining
 
 // rawInputs resolves the raw minables to plan for: an explicit list, or
 // whatever the requested wares bottom out in, or everything.
-func (s *Service) rawInputs(explicit, produces []string) ([]string, map[string][]string, map[string]string, error) {
+func rawInputs(db map[string]x4data.Ware, explicit, produces []string) ([]string, map[string][]string, map[string]string, error) {
 	neededFor := map[string][]string{}
 	via := map[string]string{}
 
@@ -252,13 +260,12 @@ func (s *Service) rawInputs(explicit, produces []string) ([]string, map[string][
 	}
 
 	if len(produces) > 0 {
-		db := s.wareDB()
 		if len(db) == 0 {
 			return nil, nil, nil, fmt.Errorf("ware database unavailable, so recipes cannot be walked; pass 'resources' explicitly or set X4MCP_GAME_DIR")
 		}
 		var out []string
 		for _, q := range produces {
-			w, ok := s.resolveWare(strings.TrimSpace(q))
+			w, ok := resolveWare(db, strings.TrimSpace(q))
 			if !ok {
 				return nil, nil, nil, fmt.Errorf("no ware matching %q", q)
 			}
@@ -331,16 +338,13 @@ func rawsOf(db map[string]x4data.Ware, id string, seen map[string]bool) []rawPat
 	return out
 }
 
-// refineryHintFor computes what refining this raw resource does to its
-// bulk, which is the argument for or against a satellite refinery at the
-// field rather than at the complex. Read from the recipe, because the
-// ratios differ per resource and change between patches.
-func (s *Service) refineryHintFor(res, preferred string) *RefineryHint {
-	return pickRefinery(s.wareDB(), res, preferred)
-}
-
-// pickRefinery is the pure half, so the selection rule can be tested
-// against hand-built recipes instead of a 90MB savegame.
+// pickRefinery computes what refining this raw resource does to its bulk,
+// which is the argument for or against a satellite refinery at the field
+// rather than at the complex. Read from the recipe, because the ratios
+// differ per resource and change between patches.
+//
+// It takes the ware DB rather than a *Service so the selection rule can be
+// tested against hand-built recipes instead of a 90MB savegame.
 func pickRefinery(db map[string]x4data.Ware, res, preferred string) *RefineryHint {
 	if len(db) == 0 {
 		return nil
@@ -660,12 +664,21 @@ const (
 const adequateWeight = 5_000_000
 
 // sortSources orders mining sources by the requested preference.
+//
+// Both orders end on the sector macro. Gas sources score purely on distance, so
+// every gas field at the same hop count ties exactly — leaving that tie to the
+// sort meant "which sector is nearest for methane" came back in a different
+// order on each call, and made a genuine re-ranking indistinguishable from
+// noise on the wire.
 func sortSources(src []MiningSource, prefer string) {
 	byAbundance := func(i, j int) bool {
 		if src[i].Score != src[j].Score {
 			return src[i].Score > src[j].Score
 		}
-		return src[i].Hops < src[j].Hops
+		if src[i].Hops != src[j].Hops {
+			return src[i].Hops < src[j].Hops
+		}
+		return src[i].Sector < src[j].Sector
 	}
 	if strings.EqualFold(strings.TrimSpace(prefer), preferAbundance) {
 		sort.Slice(src, byAbundance)
@@ -682,6 +695,9 @@ func sortSources(src []MiningSource, prefer string) {
 		if a.Hops != b.Hops {
 			return a.Hops < b.Hops // then: closest wins
 		}
-		return a.Score > b.Score // then: the richer of two equals
+		if a.Score != b.Score {
+			return a.Score > b.Score // then: the richer of two equals
+		}
+		return a.Sector < b.Sector
 	})
 }

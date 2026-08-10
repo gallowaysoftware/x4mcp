@@ -126,11 +126,14 @@ type AnalyzePlanOut struct {
 }
 
 func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePlanOut, error) {
-	db := s.wareDB()
+	// One bundle, three databases: wares, modules and workforce have to agree
+	// with each other or the balance is charged against two different installs.
+	gd := s.Data()
+	db := gd.Wares
 	if len(db) == 0 {
 		return AnalyzePlanOut{}, fmt.Errorf("ware database unavailable; set X4MCP_GAME_DIR")
 	}
-	mods := s.moduleDB()
+	mods := gd.Modules
 	if len(mods) == 0 {
 		return AnalyzePlanOut{}, fmt.Errorf("module database unavailable; set X4MCP_GAME_DIR")
 	}
@@ -176,7 +179,10 @@ func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePla
 	storage := map[string]int64{}
 	unknown := map[string]bool{}
 
-	for macro, n := range counts {
+	// Sorted: Groups is ranked by count below, and the ware tallies feed
+	// rankings of their own.
+	for _, macro := range sortedKeys(counts) {
+		n := counts[macro]
 		mod, ok := mods[macro]
 		if !ok {
 			unknown[macro] = true
@@ -216,7 +222,12 @@ func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePla
 			}
 		}
 	}
-	sort.Slice(out.Groups, func(i, j int) bool { return out.Groups[i].Count > out.Groups[j].Count })
+	sort.Slice(out.Groups, func(i, j int) bool {
+		if out.Groups[i].Count != out.Groups[j].Count {
+			return out.Groups[i].Count > out.Groups[j].Count
+		}
+		return out.Groups[i].Macro < out.Groups[j].Macro
+	})
 	for m := range unknown {
 		out.UnknownMacros = append(out.UnknownMacros, m)
 	}
@@ -235,11 +246,11 @@ func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePla
 		workers = out.WorkforceJobs
 	}
 	out.WorkforceFed = workers
-	race, basis := s.planRace(in.Race, counts, mods)
+	race, basis := planRace(in.Race, counts, mods)
 	out.WorkforceRace, out.RaceBasis = race, basis
 
 	wfDemand := map[string]float64{}
-	if wf, ok := s.workforceDB()[race]; ok && workers > 0 {
+	if wf, ok := gd.Workforce[race]; ok && workers > 0 {
 		for _, q := range wf.Busy {
 			d := x4data.PerHourFor(q.Amount, workers)
 			wfDemand[q.Ware] += d
@@ -255,7 +266,7 @@ func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePla
 	for w := range consumed {
 		seen[w] = true
 	}
-	for ware := range seen {
+	for _, ware := range sortedKeys(seen) {
 		p, c := produced[ware], consumed[ware]
 		w := db[ware]
 		b := WareBalance{
@@ -293,7 +304,15 @@ func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePla
 		}
 		out.Balance = append(out.Balance, b)
 	}
-	sort.Slice(out.Balance, func(i, j int) bool { return out.Balance[i].NetPerH < out.Balance[j].NetPerH })
+	// Worst deficit first; the ware id settles the many exact ties (every ware
+	// that nets to zero, for one), so must_import and sellable_surplus below
+	// inherit a fixed order too.
+	sort.Slice(out.Balance, func(i, j int) bool {
+		if out.Balance[i].NetPerH != out.Balance[j].NetPerH {
+			return out.Balance[i].NetPerH < out.Balance[j].NetPerH
+		}
+		return out.Balance[i].Ware < out.Balance[j].Ware
+	})
 
 	for _, b := range out.Balance {
 		switch {
@@ -309,10 +328,16 @@ func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePla
 			out.Surplus = append(out.Surplus, b)
 		}
 	}
-	sort.Slice(out.Surplus, func(i, j int) bool { return out.Surplus[i].NetPerH > out.Surplus[j].NetPerH })
+	sort.Slice(out.Surplus, func(i, j int) bool {
+		if out.Surplus[i].NetPerH != out.Surplus[j].NetPerH {
+			return out.Surplus[i].NetPerH > out.Surplus[j].NetPerH
+		}
+		return out.Surplus[i].Ware < out.Surplus[j].Ware
+	})
 
 	// The direct answer to "have I got enough food and medical supplies?".
-	for ware, demand := range wfDemand {
+	for _, ware := range sortedKeys(wfDemand) {
+		demand := wfDemand[ware]
 		w := db[ware]
 		n := WorkforceNeed{
 			Ware: ware, Name: w.Name,
@@ -340,7 +365,10 @@ func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePla
 		out.WorkforceNeeds = append(out.WorkforceNeeds, n)
 	}
 	sort.Slice(out.WorkforceNeeds, func(i, j int) bool {
-		return out.WorkforceNeeds[i].NetPerH < out.WorkforceNeeds[j].NetPerH
+		if out.WorkforceNeeds[i].NetPerH != out.WorkforceNeeds[j].NetPerH {
+			return out.WorkforceNeeds[i].NetPerH < out.WorkforceNeeds[j].NetPerH
+		}
+		return out.WorkforceNeeds[i].Ware < out.WorkforceNeeds[j].Ware
 	})
 
 	// Deliberately NOT reporting a build cost. A plan names modules by structure
@@ -363,7 +391,7 @@ func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePla
 // intent through the race of its food modules (a Teladi food chain is not there
 // to feed Argons). Falls back to argon — the "default" workunit method — and
 // always reports which of the three it used, because the answer changes with it.
-func (s *Service) planRace(explicit string, counts map[string]int, mods map[string]x4data.Module) (race, basis string) {
+func planRace(explicit string, counts map[string]int, mods map[string]x4data.Module) (race, basis string) {
 	if r := strings.ToLower(strings.TrimSpace(explicit)); r != "" {
 		return r, "given in the request"
 	}

@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "module database unavailable; set X4MCP_GAME_DIR to the X4 install"
+      }
+    ],
+    "isError": true
+  }
+}

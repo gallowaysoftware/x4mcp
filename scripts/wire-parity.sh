@@ -10,21 +10,31 @@
 # tools/list, then a spread of tools/call — and records each response verbatim.
 # `--check` replays the same script against the current tree and diffs.
 #
-#   scripts/wire-parity.sh --save  [dir]   record a baseline (default baselines/wire)
+#   scripts/wire-parity.sh --save  [dir]   record a baseline
 #   scripts/wire-parity.sh --check [dir]   compare the current build against it
 #
-# Hermetic by default: HOME and X4MCP_GAME_DIR are pointed at an empty
-# throwaway dir, so no game install and no savegame are needed and every
-# data-backed tool returns its ERROR shape — which is itself wire surface, and
-# is the part CI can check. Point the two env vars below at a real install and
-# a specific save to capture the fully populated responses as well; the calls
-# chosen here deliberately return no timings or clocks, so the same save gives
-# the same bytes every run.
+# The default dir depends on the mode. Hermetic runs use baselines/wire-hermetic,
+# which is COMMITTED: it contains no absolute paths and no clocks, so any clone
+# on any machine can run `scripts/wire-parity.sh --check` and get the same
+# answer, and re-blessing it is a reviewable diff. Live runs use
+# baselines/wire-live, which is gitignored because it is full of one machine's
+# paths and one save's contents.
 #
-# Three responses are compared order-insensitively rather than byte-for-byte
-# (see UNSTABLE below): they rank equal-scoring entries out of a Go map, so
-# their arrays shuffle between runs of the SAME binary. Everything else — every
-# schema, every description, every other payload — is a byte comparison.
+# Hermetic by default: HOME and X4MCP_GAME_DIR are pointed at an empty
+# throwaway dir, so no game install is needed and every install-backed tool
+# returns its ERROR shape — which is itself wire surface. The save-backed tools
+# answer from the committed, scrubbed savegame fixture, so their real output
+# (rankings included) is under the gate too. Point the two env vars below at a
+# real install and a specific save to capture the fully populated responses as
+# well; the calls chosen here deliberately return no timings, so the same save
+# gives the same bytes every run.
+#
+# Every response is compared BYTE FOR BYTE, ordering included. It used to sort
+# every array in the four ranking tools before comparing, on the grounds that
+# they rank ties out of a Go map — which also meant a build that fully REVERSED
+# find_supply_gaps passed the gate. Those tie-breaks are now decided in Go (see
+# internal/api/determinism_test.go), so the tolerance is gone. The only filter
+# left is for a clock, not a ranking (see VOLATILE below).
 #
 # Env overrides (all optional):
 #   X4MCP_PARITY_SAVE   absolute path to ONE .xml.gz save; save-backed calls use it
@@ -74,46 +84,67 @@ done
 	usage >&2
 	exit 2
 }
-dir=${dir:-$REPO_DIR/baselines/wire}
+# Hermetic unless a real save or a real install was named: that decides which
+# baseline is the default, because the two are not comparable.
+if [[ -n $PARITY_SAVE || -n $PARITY_GAME ]]; then
+	HERMETIC=0
+	dir=${dir:-$REPO_DIR/baselines/wire-live}
+else
+	HERMETIC=1
+	dir=${dir:-$REPO_DIR/baselines/wire-hermetic}
+	# The distilled, scrubbed savegame fixture is committed (S2), so the
+	# hermetic run can answer from a REAL save without needing one on the
+	# machine. That is what puts handler output — rankings included — under the
+	# CI-able half of the gate instead of 22 error strings; a build that
+	# reversed find_supply_gaps used to pass a hermetic check unnoticed.
+	#
+	# Passed RELATIVE, and the server is run from the repo root (see capture),
+	# because get_player_overview echoes the save path back: an absolute one
+	# would bake this machine's home directory into a committed baseline.
+	FIXTURE_SAVE=internal/x4save/testdata/real/distilled-quicksave.xml.gz
+	[[ -f $REPO_DIR/$FIXTURE_SAVE ]] && PARITY_SAVE=$FIXTURE_SAVE
+fi
 command -v jq >/dev/null || die "jq is required"
 
-# A few responses do not reproduce byte-for-byte between two runs of the SAME
-# binary, all for the same pre-existing reason: the handler ranks entries it
-# accumulated in a Go MAP, so entries that tie on the ranking key come out in
-# whatever order the map was walked in. Comparing those verbatim would cry
-# regression on every run; dropping them would take the biggest handlers out of
-# the gate. Each gets the loosest filter that still catches a renamed field, a
-# moved value or a dropped entry:
-#
-#   plan_production, plan_complex,    tied entries swap places
-#   plan_mining_supply,               → compare with every array sorted
-#   find_supply_gaps
-#   plan_workforce                    habitats are de-duplicated by capacity, so
-#                                     WHICH of two same-size modules is named
-#                                     ("Argon S Habitat" / "Argon S Dormitory")
-#                                     is arbitrary → blank that one field first
+# Two responses carry a CLOCK, and no amount of determinism in Go will fix that:
+# list_saves reports each savegame's mtime, absolute path and size, and
+# list_playthroughs reports when the plan store was last written. In live mode
+# that makes the gate fail the moment X4 writes an autosave between --save and
+# --check — during exactly the play session the tool exists to support — and it
+# is why a live baseline can never be committed. Blank those fields and compare
+# everything else, ordering included: the shape, the count and the field names
+# stay under the gate, only the clock drops out. (Hermetic runs find no saves at
+# all, so this is a no-op there.)
 DECODE='def dec: if type == "string" then (try fromjson catch .) else . end;
         (.result.content[]?.text) |= dec'
-SORTED='walk(if type == "array" then sort else . end)'
-declare -A LOOSE=(
-	[plan_production]="$SORTED"
-	[plan_complex]="$SORTED"
-	[plan_mining_supply]="$SORTED"
-	[find_supply_gaps]="$SORTED"
-	[plan_workforce]='(.. | objects | select(has("habitats")) | .habitats[]?.name) = "«arbitrary»" | '"$SORTED"
+CLOCK='(.. | objects | select(has("modified")) | .modified) = "«mtime»"
+     | (.. | objects | select(has("updated")) | .updated) = 0
+     | (.. | objects | select(has("size")) | .size) = 0
+     | (.. | objects | select(has("path")) | .path) |= (tostring | split("/") | last)'
+# get_player_overview is the tool the server tells models to START at, and it
+# was outside the gate for one reason: it reports how many milliseconds the
+# parse took. That is the same problem, so it gets the same treatment — blank
+# the stopwatch and the absolute save path, keep every other field of the
+# biggest save-derived payload under the gate.
+PARSED='(.. | objects | select(has("parse_ms")) | .parse_ms) = 0
+      | (.. | objects | select(has("save_path")) | .save_path) |= (tostring | split("/") | last)'
+declare -A VOLATILE=(
+	[list_saves]="$CLOCK"
+	[list_playthroughs]="$CLOCK"
+	[get_player_overview]="$PARSED"
 )
 
-# canon renders a response through its label's tolerance filter.
+# canon renders a response with its clock fields blanked.
 canon() { # label file
-	jq -S "$DECODE | ${LOOSE[$1]}" "$2"
+	jq -S "$DECODE | ${VOLATILE[$1]}" "$2"
 }
 
 # ---- the script of requests ----------------------------------------------
 #
-# Every call here is chosen to be REPRODUCIBLE: no parse timings, no wall
-# clocks, no "most recent save" lookups (an explicit save_path is passed when
-# one is configured). get_player_overview and refresh_save are deliberately
-# absent — both report parse_ms, which differs on every run.
+# Every call here is chosen to be REPRODUCIBLE: no wall clocks and no "most
+# recent save" lookups (an explicit save_path is passed when one is configured).
+# The handful of fields that cannot be — a parse stopwatch, a file mtime — are
+# blanked by VOLATILE above rather than the whole tool being dropped.
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -160,7 +191,9 @@ call list_playthroughs list_playthroughs '{}'
 
 # Save-backed tools.
 call list_saves list_saves '{}'
+call get_player_overview get_player_overview "$(withsave '{}')"
 call list_ships list_ships "$(withsave '{"role":"miner","limit":3}')"
+call find_trade_offers find_trade_offers "$(withsave '{"ware":"energycells","player_wants":"sell","limit":5}')"
 call list_known_sectors list_known_sectors "$(withsave '{"owner":"xenon"}')"
 call sector_distance sector_distance "$(withsave '{"from":"Argon Prime","to":"Black Hole Sun"}')"
 call find_mining_sectors find_mining_sectors "$(withsave '{"resource":"ore","limit":5}')"
@@ -202,7 +235,7 @@ capture() { # binary outdir
 	mkfifo "$fin" "$fout"
 
 	local home=$HOME game=${PARITY_GAME:-}
-	if [[ -z $PARITY_SAVE && -z $PARITY_GAME ]]; then
+	if [[ $HERMETIC == 1 ]]; then
 		# Hermetic: an empty HOME finds no saves and no plan store; a
 		# nonexistent game dir finds no ware/module/ship database.
 		home="$pipes/home"
@@ -213,7 +246,9 @@ capture() { # binary outdir
 	local n
 	n=$(grep -c '"id"' "$REQS")
 
-	HOME="$home" X4MCP_GAME_DIR="$game" "$bin" serve --stdio <"$fin" >"$fout" 2>"$pipes/stderr" &
+	# From the repo root, so the hermetic run's relative fixture path resolves
+	# wherever the script was invoked from.
+	(cd "$REPO_DIR" && HOME="$home" X4MCP_GAME_DIR="$game" exec "$bin" serve --stdio) <"$fin" >"$fout" 2>"$pipes/stderr" &
 	local pid=$!
 	exec 3>"$fin" 4<"$fout"
 	cat "$REQS" >&3
@@ -271,7 +306,7 @@ check)
 			moved=$((moved + 1))
 			continue
 		fi
-		if [[ -n ${LOOSE[$label]:-} ]]; then
+		if [[ -n ${VOLATILE[$label]:-} ]]; then
 			diff -q <(canon "$label" "$f") <(canon "$label" "$now") >/dev/null && continue
 		else
 			cmp -s "$f" "$now" && continue
@@ -284,8 +319,8 @@ check)
 		printf 'wire-parity: FAIL — %d of %d responses moved\n' "$moved" "$checked" >&2
 		exit 1
 	fi
-	printf 'wire-parity: PASS — %d responses match %s (%d compared with a tolerance filter)\n' \
-		"$checked" "$dir" "${#LOOSE[@]}"
+	printf 'wire-parity: PASS — %d responses match %s byte for byte (%d compared with their clock fields blanked)\n' \
+		"$checked" "$dir" "${#VOLATILE[@]}"
 	exit 0
 	;;
 esac

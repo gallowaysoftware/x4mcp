@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pequalsnp/x4mcp/internal/x4data"
 	"github.com/pequalsnp/x4mcp/internal/x4save"
@@ -265,4 +266,178 @@ func TestEnrichPrefersTheSaveGateGraph(t *testing.T) {
 // A nil snapshot is what a failed parse hands back; enriching it must not panic.
 func TestEnrichNilSnapshot(t *testing.T) {
 	New(enrichData(), nil).Enrich(nil)
+}
+
+// ---- the bundle loads OFF the startup path (D13 without the 2.7 s bill) ----
+
+// Loading the ten databases in the constructor put ~2.7 s (cold cache) in front
+// of every `x4mcp serve` and every CLI run, paid before an MCP client sees its
+// initialize response and paid in full by users who only call save-backed tools.
+//
+// The shape of the fix is what this pins: the constructor RETURNS while the
+// install is still being read, save-backed work proceeds meanwhile, and Data()
+// waits for the real bundle instead of handing back the empty placeholder.
+func TestGameDataLoadsOffTheStartupPath(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	release := make(chan struct{})
+	loads := make(chan string, 1)
+
+	// A loader that will not finish until this test says so. If the constructor
+	// waited for it — as api.New(api.LoadGameData(dir), …) did — nothing below
+	// would ever run.
+	svc := newLazy("/mnt/x4-beta", &fakeProvider{snap: fixtureSnapshot()}, func(dir string) *GameData {
+		<-release
+		loads <- dir
+		return &GameData{InstallDir: dir, Wares: map[string]x4data.Ware{"ore": {ID: "ore", PriceAvg: 100}}}
+	})
+
+	// A save-backed tool answers while the databases are still loading.
+	ships, err := svc.ListShips(context.Background(), ListShipsIn{Role: "miner"})
+	if err != nil {
+		t.Fatalf("ListShips during the background load: %v", err)
+	}
+	if len(ships.Ships) != 1 {
+		t.Fatalf("ships = %+v, want the fixture's miner", ships.Ships)
+	}
+
+	// Data() must not hand back the empty placeholder: a handler that asked
+	// early would report "database unavailable" for an install that is there.
+	got := make(chan *GameData, 1)
+	go func() { got <- svc.Data() }()
+	select {
+	case d := <-got:
+		t.Fatalf("Data() returned %+v before the load finished; it must wait for a real bundle", d)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(release)
+	d := <-got
+	if d.Wares["ore"].PriceAvg != 100 {
+		t.Errorf("bundle = %+v, want the one the loader built", d)
+	}
+	if dir := <-loads; dir != "/mnt/x4-beta" {
+		t.Errorf("loader was given %q, want the dir the Service was built with", dir)
+	}
+}
+
+// A bundle set explicitly beats a background load that has not landed yet —
+// otherwise a slow startup read would silently clobber it moments later.
+func TestSetGameDataWinsOverAnInFlightLoad(t *testing.T) {
+	release := make(chan struct{})
+	svc := newLazy("", nil, func(string) *GameData {
+		<-release
+		return &GameData{Wares: map[string]x4data.Ware{"ore": {ID: "ore", PriceAvg: 999}}}
+	})
+	svc.SetGameData(&GameData{Wares: map[string]x4data.Ware{"ore": {ID: "ore", PriceAvg: 7}}})
+	// SetGameData also releases Data(): there is a bundle now, so nobody waits.
+	if got := svc.Data().Wares["ore"].PriceAvg; got != 7 {
+		t.Fatalf("ore price = %d, want the explicitly set bundle (7)", got)
+	}
+	close(release)
+	for range 100 {
+		if svc.Data().Wares["ore"].PriceAvg != 7 {
+			t.Fatalf("the startup load clobbered the explicitly set bundle")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// ---- ship slots are IN the bundle (the tenth dataset) ----
+
+// EstimateShipCost used to read equipment slots straight from
+// x4data.LoadShipSlots(""), ignoring the Service's own InstallDir: a Service
+// built against /mnt/x4-beta priced hulls from there and slots from whatever
+// $X4MCP_GAME_DIR or the Steam autodiscovery pointed at. With X4MCP_GAME_DIR
+// pointed at an empty dir, the only way this can answer is from the bundle.
+func TestShipSlotsComeFromTheBundle(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("X4MCP_GAME_DIR", t.TempDir()) // an install with nothing in it
+	svc := New(fitData(), &fakeProvider{snap: fixtureSnapshot()})
+
+	out, err := svc.EstimateShipCost(context.Background(), FitIn{Ship: "Testship"})
+	if err != nil {
+		t.Fatalf("EstimateShipCost: %v", err)
+	}
+	if len(out.Lines) != 1 || out.Lines[0].Kind != "shield" {
+		t.Fatalf("equipment = %+v, want the one shield slot the bundle declares", out.Lines)
+	}
+	if out.HullPrice != 1000 || out.EquipAvg != 200 {
+		t.Errorf("hull %d + equipment %d, want 1000 + 200 from the bundle's own wares", out.HullPrice, out.EquipAvg)
+	}
+}
+
+// fitData is a two-ware install: one hull, one shield that fits its slot.
+func fitData() *GameData {
+	return &GameData{
+		InstallDir: "/mnt/x4-beta",
+		Wares: map[string]x4data.Ware{
+			"ship_arg_s_hull_01_a": {ID: "ship_arg_s_hull_01_a", Name: "Testship", PriceAvg: 1000},
+			// A produced ware, so the plan_* handlers get past their recipe check.
+			"energycells": {ID: "energycells", Name: "Energy Cells", PriceAvg: 16,
+				Methods: []x4data.Method{{Method: "default", Time: 3600, Amount: 100}}},
+			"shield_arg_s_standard_01_mk1": {ID: "shield_arg_s_standard_01_mk1", Name: "S Shield",
+				PriceMin: 100, PriceAvg: 200, PriceMax: 300},
+		},
+		Ships: map[string]x4data.Ship{
+			"ship_arg_s_hull_01_a_macro": {Macro: "ship_arg_s_hull_01_a_macro", Name: "Testship", Size: "S"},
+		},
+		ShipSlots: map[string]x4data.ShipSlots{
+			"ship_arg_s_hull_01_a_macro": {Macro: "ship_arg_s_hull_01_a_macro",
+				Slots: []x4data.Slot{{Kind: x4data.SlotShield, Size: "S", Count: 1}}},
+		},
+	}
+}
+
+// ---- the provider seam, checked against EVERY save-backed handler ----
+
+// The seam is only a seam if nothing slips past it. This drives every handler
+// that answers from a savegame through the fake provider and fails the moment
+// one of them reaches for the disk instead — with HOME empty, a handler that
+// did would read nothing rather than quietly reading the developer's own save.
+//
+// ListSaves and RefreshSave are the two documented exceptions (see
+// SnapshotProvider): one enumerates the save DIRECTORY, which no parsed
+// snapshot can answer, and the other exists to force a re-parse past the cache.
+func TestEverySaveBackedHandlerUsesTheProvider(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("X4MCP_GAME_DIR", t.TempDir())
+	ctx := context.Background()
+	fake := &fakeProvider{snap: fixtureSnapshot()}
+	svc := New(fitData(), fake)
+
+	// Every handler that takes a save. The error return is deliberately ignored:
+	// what is under test is that the SNAPSHOT came from the provider, not
+	// whether the fixture happens to satisfy the query.
+	calls := map[string]func(){
+		"get_player_overview":  func() { _, _ = svc.GetPlayerOverview(ctx, SaveSel{}) },
+		"list_ships":           func() { _, _ = svc.ListShips(ctx, ListShipsIn{}) },
+		"list_claimable_ships": func() { _, _ = svc.ListClaimableShips(ctx, ListClaimableIn{}) },
+		"list_stations":        func() { _, _ = svc.ListStations(ctx, SaveSel{}) },
+		"get_station":          func() { _, _ = svc.GetStation(ctx, GetStationIn{Ref: "ABC-001"}) },
+		"diagnose_station":     func() { _, _ = svc.DiagnoseStation(ctx, DiagnoseStationIn{Ref: "ABC-001"}) },
+		"list_known_sectors":   func() { _, _ = svc.ListKnownSectors(ctx, ListSectorsIn{}) },
+		"find_trade_offers":    func() { _, _ = svc.FindTradeOffers(ctx, FindTradeIn{}) },
+		"find_mining_sectors":  func() { _, _ = svc.FindMiningSectors(ctx, FindMiningIn{Resource: "ore"}) },
+		"find_supply_gaps":     func() { _, _ = svc.FindSupplyGaps(ctx, SupplyGapsIn{}) },
+		"find_energy_sites":    func() { _, _ = svc.FindEnergySites(ctx, EnergySitesIn{}) },
+		"sector_distance":      func() { _, _ = svc.SectorDistance(ctx, SectorDistIn{From: "Argon Prime", To: "The Void"}) },
+		"list_blueprints":      func() { _, _ = svc.ListBlueprints(ctx, ListBlueprintsIn{}) },
+		"plot_progress":        func() { _, _ = svc.PlotProgress(ctx, PlotProgressIn{}) },
+		"plan_mining_supply":   func() { _, _ = svc.PlanMiningSupply(ctx, MiningPlanIn{Sector: "Argon Prime"}) },
+		"estimate_ship_cost":   func() { _, _ = svc.EstimateShipCost(ctx, FitIn{Ship: "Testship"}) },
+		"plan_production":      func() { _, _ = svc.PlanProduction(ctx, PlanProductionIn{Ware: "energycells"}) },
+		"plan_complex":         func() { _, _ = svc.PlanComplex(ctx, PlanComplexIn{Wares: []string{"energycells"}}) },
+		"get_plan":             func() { _, _ = svc.GetPlan(ctx, SaveSel{}) },
+		"set_strategy":         func() { _, _ = svc.SetStrategy(ctx, SetStrategyIn{Strategy: "grow"}) },
+		"add_objective":        func() { _, _ = svc.AddObjective(ctx, AddObjectiveIn{Title: "build a wharf"}) },
+		"update_objective":     func() { _, _ = svc.UpdateObjective(ctx, UpdateObjectiveIn{ID: 1, Status: "done"}) },
+		"add_journal_entry":    func() { _, _ = svc.AddJournal(ctx, AddJournalIn{Note: "first blood"}) },
+	}
+	for name, call := range calls {
+		before := len(fake.asked)
+		call()
+		if len(fake.asked) == before {
+			t.Errorf("%s answered without asking the provider for a snapshot — it reached past the seam", name)
+		}
+	}
 }
