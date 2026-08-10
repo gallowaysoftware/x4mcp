@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/gallowaysoftware/x4mcp/internal/x4save"
+	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
 
 // The real family that broke it: "Hatikvah's Choice I" is a literal prefix of

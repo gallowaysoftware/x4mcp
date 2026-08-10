@@ -8,8 +8,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/gallowaysoftware/x4mcp/internal/x4data"
-	"github.com/gallowaysoftware/x4mcp/internal/x4save"
+	"github.com/pequalsnp/x4mcp/internal/x4data"
+	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
 
 // Siting an industrial complex around its raw materials.

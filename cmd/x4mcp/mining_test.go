@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gallowaysoftware/x4mcp/internal/x4data"
-	"github.com/gallowaysoftware/x4mcp/internal/x4save"
+	"github.com/pequalsnp/x4mcp/internal/x4data"
+	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
 
 // testWares mirrors the real recipe shapes this logic got wrong on the

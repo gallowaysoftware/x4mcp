@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/gallowaysoftware/x4mcp/internal/x4data"
+	"github.com/pequalsnp/x4mcp/internal/x4data"
 )
 
 // complexWares: two targets that share an input tier, sized so that rounding the

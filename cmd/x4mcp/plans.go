@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gallowaysoftware/x4mcp/internal/x4data"
-	"github.com/gallowaysoftware/x4mcp/internal/x4save"
+	"github.com/pequalsnp/x4mcp/internal/x4data"
+	"github.com/pequalsnp/x4mcp/internal/x4save"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
