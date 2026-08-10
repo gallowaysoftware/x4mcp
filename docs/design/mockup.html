@@ -1,0 +1,479 @@
+<title>x4cue — design mockup</title>
+<style>
+  :root {
+    --bg-0:#0B0D10; --bg-1:#10141A; --bg-2:#171C24; --bg-3:#1E2530;
+    --line-0:#222A35; --line-1:#35404E;
+    --text-hi:#E6EDF3; --text-mid:#9AA7B4; --text-dim:#707C89; --text-ghost:#3D4650;
+    --sev-red-text:#FF5C57; --sev-red-core:#E5484D; --sev-red-fill:#2A1214; --sev-red-line:#7F2D2B;
+    --sev-red-acked:#B0574F;
+    --sev-amber-text:#FFB224; --sev-amber-fill:#2A2113; --sev-amber-line:#6E5523;
+    --ok-dot:#2ED483; --accent:#1CACF5;
+    --prov-computed:#1CACF5; --prov-save:#75818E; --prov-canon:#C08A2E; --prov-memory:#F2AEE8;
+    --unknown-border:#4A5560;
+    --font-mono:'JetBrains Mono',ui-monospace,'Cascadia Mono','Roboto Mono',Menlo,Consolas,monospace;
+    --font-sans:'IBM Plex Sans',system-ui,'Segoe UI',Roboto,sans-serif;
+  }
+  body { background:var(--bg-0); color:var(--text-hi); font-family:var(--font-mono); margin:0; }
+  .board *, .board { transition:none; animation:none; scroll-behavior:auto; }
+  .board ::-webkit-scrollbar { width:8px; } .board ::-webkit-scrollbar-thumb { background:var(--line-1); }
+  .mockbar { background:#dfe5ec; color:#1a2027; font:12px/1.5 var(--font-sans); padding:8px 16px;
+             display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .mockbar strong { letter-spacing:.08em; }
+  .mockbar button { font:600 12px var(--font-sans); padding:4px 10px; border:1px solid #9aa5b1;
+                    background:#fff; color:#1a2027; cursor:pointer; border-radius:2px; }
+  .mockbar button[aria-pressed="true"] { background:#1a2027; color:#fff; border-color:#1a2027; }
+  .mockbar .cap { color:#454f5b; font-style:italic; flex-basis:100%; }
+  .wrap { overflow-x:auto; }
+  .board { min-width:1280px; max-width:1720px; margin:0 auto; display:grid;
+           grid-template-columns:12px minmax(0,38fr) minmax(0,34fr) minmax(0,28fr);
+           grid-template-rows:104px minmax(680px,1fr); height:calc(100vh - 56px); min-height:760px; }
+
+  /* ---- beacon: gray nominal; amber only for NEW ambers; red for unacked reds ---- */
+  .beacon { grid-row:1/3; grid-column:1; background:var(--line-0); }
+  .board[data-sev="amber"] .beacon { background:var(--sev-amber-text); }
+  .board[data-sev="red"] .beacon { background:var(--sev-red-core); }
+
+  /* ---- vitals ---- */
+  .vitals { grid-column:2/4; grid-row:1; border-bottom:1px solid var(--line-0); background:var(--bg-0);
+            display:flex; flex-direction:column; justify-content:center; gap:6px; padding:0 16px; overflow:hidden; }
+  .v1 { display:flex; align-items:baseline; gap:22px; white-space:nowrap; }
+  .v1 .lbl { font:500 11px var(--font-mono); letter-spacing:.06em; color:var(--text-dim); }
+  .credits { font:700 34px/1 var(--font-mono); }
+  .delta { font:600 15px var(--font-mono); color:var(--text-hi); }
+  .count { font:600 22px/1 var(--font-mono); }
+  .count .g { font-size:15px; }
+  .war { font:500 11px var(--font-mono); letter-spacing:.06em; color:var(--text-mid); }
+  .v2 { display:flex; align-items:center; gap:20px; font:400 12px var(--font-mono); color:var(--text-dim); white-space:nowrap; }
+  .spark { display:inline-block; vertical-align:-4px; }
+  .g-red { color:var(--sev-red-text); } .g-amber { color:var(--sev-amber-text); }
+  .g-ok { color:var(--ok-dot); } .g-acc { color:var(--accent); }
+  .muted-badge { color:var(--sev-amber-text); border:1px solid var(--sev-amber-line); padding:0 6px;
+                 font:500 11px var(--font-mono); letter-spacing:.06em; }
+
+  .fresh { color:var(--text-dim); }
+  .fresh.parsing { color:var(--accent); }
+  .fresh.pcoff { color:var(--sev-amber-text); border:1px solid var(--sev-amber-line); padding:1px 8px; }
+  .legchip .dot { color:var(--ok-dot); } .legchip.down { color:var(--sev-amber-text); }
+  .legchip.down .dot { color:var(--sev-amber-text); }
+  .health-link { color:var(--text-dim); text-decoration:none; letter-spacing:.06em; font:500 11px var(--font-mono); }
+
+  /* ---- panels shared ---- */
+  section.panel { background:var(--bg-1); border-right:1px solid var(--line-0); display:flex; flex-direction:column; min-height:0; }
+  .phead { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 14px 6px;
+           font:500 11px var(--font-mono); letter-spacing:.06em; color:var(--text-dim); text-transform:uppercase; }
+  .phead .stamp { text-transform:none; letter-spacing:0; }
+  .ackall { font:500 11px var(--font-mono); letter-spacing:.06em; color:var(--text-mid); background:var(--bg-2);
+            border:1px solid var(--line-1); padding:2px 8px; cursor:pointer; text-transform:uppercase; }
+  .prule { border-bottom:1px solid var(--line-0); margin:0 14px; }
+  .rows { overflow-y:auto; padding:4px 0 10px; }
+
+  /* ---- alert lane: glyph · RULE · subject · detail | right meta ---- */
+  .lane { grid-column:2; grid-row:2; }
+  .arow { display:grid; grid-template-columns:26px 100px 1fr auto; gap:8px; align-items:baseline;
+          padding:6px 14px; font:400 13px/1.5 var(--font-mono); color:var(--text-mid); cursor:pointer; }
+  .arow:hover { background:var(--bg-2); }
+  .arow .gl { text-align:center; }
+  .arow .rule { font:500 11px var(--font-mono); letter-spacing:.06em; color:var(--text-dim); }
+  .arow .subj { color:var(--text-hi); font-weight:600; font-size:15px; }
+  .arow .meta { color:var(--text-dim); font-size:12px; text-align:right; }
+  .arow .detail { grid-column:3/5; color:var(--text-mid); }
+  .arow.amber .gl, .arow.amber .subj { color:var(--sev-amber-text); }
+  .arow.red { background:var(--sev-red-fill); border-left:2px solid var(--sev-red-core); padding-left:12px; }
+  .arow.red .subj, .arow.red .gl { color:var(--sev-red-text); }
+  .arow.gray .subj { font-weight:400; color:var(--text-mid); }
+  .ackbtn { font:600 11px var(--font-mono); letter-spacing:.06em; color:var(--text-hi);
+            border:1px solid var(--sev-red-line); background:transparent; padding:3px 12px; cursor:pointer; }
+  .ackbtn:hover { background:var(--sev-red-line); }
+  .pinrule { border-bottom:1px solid var(--sev-red-line); margin:2px 14px 6px; }
+  .arow.acked .gl, .arow.acked .subj { color:var(--sev-red-acked); }
+  @keyframes reddecay { from { background:#5C1E22; } to { background:var(--sev-red-fill); } }
+  @media (prefers-reduced-motion: no-preference) {
+    .board.flash .arow.red { animation:reddecay .8s ease-out 1; }
+  }
+  .syscard { margin:6px 14px; border:1px solid var(--sev-amber-line); background:var(--bg-2); padding:10px 14px;
+             font:400 13px/1.7 var(--font-mono); color:var(--text-mid); }
+  .syscard .hd { font:500 11px var(--font-mono); letter-spacing:.08em; color:var(--sev-amber-text); text-transform:uppercase; }
+  .syscard button { font:600 11px var(--font-mono); letter-spacing:.06em; color:var(--text-hi); background:var(--bg-3);
+                    border:1px solid var(--line-1); padding:3px 10px; cursor:pointer; }
+
+  /* ---- tiles ---- */
+  .tiles { grid-column:3; grid-row:2; display:grid; grid-template-rows:38fr 38fr 20fr; min-height:0; }
+  .trow { display:flex; gap:10px; align-items:baseline; padding:5px 14px; font:400 13px/1.5 var(--font-mono);
+          color:var(--text-mid); cursor:pointer; white-space:nowrap; overflow:hidden; }
+  .trow:hover { background:var(--bg-2); }
+  .trow .code { color:var(--text-hi); font-weight:600; font-size:15px; }
+  .trow .cls { color:var(--text-dim); }
+  .trow .dur { color:var(--text-hi); font-weight:600; margin-left:auto; }
+  .why { color:var(--text-mid); }
+  .failed { font:500 11px var(--font-mono); letter-spacing:.06em; color:var(--sev-amber-text);
+            border:1px solid var(--sev-amber-line); padding:0 4px; }
+  .unknown { color:var(--text-dim); border:1px dotted var(--unknown-border); padding:0 5px; }
+  .srow { display:grid; grid-template-columns:20px minmax(150px,1.3fr) 1fr 1.3fr 1fr; gap:10px; align-items:baseline;
+          padding:5px 14px; font:400 13px/1.5 var(--font-mono); color:var(--text-mid); cursor:pointer; white-space:nowrap; }
+  .srow:hover { background:var(--bg-2); }
+  .srow .nm { color:var(--text-hi); font-weight:600; font-size:15px; }
+  .srow.amber .gl { color:var(--sev-amber-text); }
+  .srow .num-amber { color:var(--sev-amber-text); }
+  .thr { display:grid; grid-template-columns:20px 110px minmax(150px,1fr) 76px 1fr; gap:10px; align-items:baseline;
+         padding:6px 14px; font:400 13px/1.5 var(--font-mono); color:var(--text-mid); white-space:nowrap; }
+  .thr .hops { font:600 22px/1 var(--font-mono); color:var(--text-hi); }
+  .thr.amber .gl, .thr.amber .cls { color:var(--sev-amber-text); }
+  .thr .sect { color:var(--text-hi); font-weight:600; }
+
+  .chip { display:inline-block; font:500 11px var(--font-mono); letter-spacing:.06em; color:var(--text-mid);
+          border:1px solid var(--line-0); background:var(--bg-2); padding:1px 7px; margin-right:6px; cursor:pointer; }
+  .chip .sig { font-weight:700; }
+  .chip .sig.c { color:var(--prov-computed); } .chip .sig.s { color:var(--prov-save); }
+  .chip .sig.k { color:var(--prov-canon); } .chip .sig.m { color:var(--prov-memory); }
+  .chip .warn { color:var(--sev-amber-text); }
+
+  /* ---- advisor ---- */
+  .advisor { grid-column:4; grid-row:1/3; background:var(--bg-0); border-left:1px solid var(--line-0);
+             display:flex; flex-direction:column; min-height:0; }
+  .ahead { padding:12px 16px 8px; border-bottom:1px solid var(--line-0);
+           font:500 11px var(--font-mono); letter-spacing:.06em; color:var(--text-dim); text-transform:uppercase;
+           display:flex; gap:14px; align-items:center; }
+  .amem { padding:8px 16px; font:400 12px var(--font-mono); color:var(--text-mid); border-bottom:1px solid var(--line-0); }
+  .athread { overflow-y:auto; padding:14px 16px; flex:1; min-height:0; }
+  .seedcard { border-left:2px solid var(--accent); background:var(--bg-1); padding:8px 12px; margin-bottom:10px;
+              font:400 12px/1.6 var(--font-mono); color:var(--text-mid); }
+  .seedcard .hd { font:500 11px var(--font-mono); letter-spacing:.08em; color:var(--accent); text-transform:uppercase; }
+  .sugg { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 16px; }
+  .sugg button { font:400 12px var(--font-mono); color:var(--text-mid); background:var(--bg-2);
+                 border:1px solid var(--line-0); padding:4px 10px; cursor:pointer; }
+  .sugg button:hover { border-color:var(--accent); color:var(--text-hi); }
+  .umsg { font:400 13px var(--font-mono); color:var(--text-hi); margin:14px 0 10px; }
+  .umsg::before { content:"> "; color:var(--text-dim); }
+  .tool { font:400 12px var(--font-mono); color:var(--text-dim); margin:4px 0; cursor:pointer; }
+  .tool .g { color:var(--accent); }
+  .amsg { font:400 15px/1.6 var(--font-sans); color:var(--text-hi); margin:10px 0 4px; max-width:60ch; }
+  .amsg .n { font-family:var(--font-mono); font-size:14px; color:var(--text-hi); }
+  .claim { margin:8px 0 2px; font:400 14px/1.6 var(--font-sans); color:var(--text-mid); }
+  .claim::before { content:"▸ "; font-family:var(--font-mono); color:var(--text-dim); }
+  .claim .n { font-family:var(--font-mono); font-size:13px; }
+  .chips { margin:2px 0 10px 16px; }
+  .afoot { border-top:1px solid var(--line-0); padding:10px 16px; display:flex; gap:12px; align-items:center;
+           font:400 13px var(--font-mono); color:var(--text-dim); }
+  .afoot .esc { font:500 11px var(--font-mono); letter-spacing:.06em; color:var(--text-mid);
+                border:1px solid var(--line-0); padding:2px 8px; cursor:pointer; }
+  .afoot .esc:hover { border-color:var(--accent); color:var(--text-hi); }
+
+  /* ---- digest ---- */
+  .digest { grid-column:2/4; grid-row:2; background:var(--bg-3); z-index:3; padding:34px 44px; overflow-y:auto; display:none; }
+  .digest h2 { font:500 12px var(--font-mono); letter-spacing:.08em; color:var(--text-dim); text-transform:uppercase; margin:0 0 26px; }
+  .dstats { display:flex; gap:70px; margin-bottom:32px; }
+  .dstat .k { font:500 11px var(--font-mono); letter-spacing:.06em; color:var(--text-dim); text-transform:uppercase; }
+  .dstat .v { font:700 34px/1.3 var(--font-mono); }
+  .dstat .v .g { font-size:22px; }
+  .dstat .v.small { font-size:20px; line-height:2.2; }
+  .drow { display:flex; gap:12px; align-items:baseline; padding:7px 0; font:400 14px var(--font-mono); color:var(--text-mid); }
+  .drow .gl { width:20px; text-align:center; }
+  .drow.red .gl, .drow.red .s { color:var(--sev-red-text); }
+  .drow.red .s { font-weight:600; }
+  .drow.amber .gl, .drow.amber .s { color:var(--sev-amber-text); }
+  .drow .ackbtn { margin-left:auto; }
+  .dmem { margin-top:26px; font:400 13px var(--font-mono); color:var(--text-mid); }
+  .dact { margin-top:30px; display:flex; gap:14px; }
+  .dact button { font:600 12px var(--font-mono); letter-spacing:.04em; padding:8px 18px; cursor:pointer;
+                 background:var(--bg-2); color:var(--text-hi); border:1px solid var(--line-1); }
+  .dact button:hover { border-color:var(--accent); }
+
+  [data-when] { display:none; }
+  .board[data-scenario="nominal"]  [data-when~="nominal"],
+  .board[data-scenario="red"]      [data-when~="red"],
+  .board[data-scenario="parsing"]  [data-when~="parsing"],
+  .board[data-scenario="pcoff"]    [data-when~="pcoff"],
+  .board[data-scenario="firstrun"] [data-when~="firstrun"],
+  .board[data-scenario="digest"]   [data-when~="digest"] { display:revert; }
+  .board[data-scenario="digest"] .digest { display:block; }
+  .board[data-scenario="pcoff"] .lane .rows, .board[data-scenario="pcoff"] .tiles { opacity:.92; }
+</style>
+
+<div class="mockbar" role="toolbar" aria-label="mockup scenario switcher">
+  <strong>X4CUE · DESIGN MOCKUP</strong>
+  <span>scenario:</span>
+  <button data-s="nominal" aria-pressed="true">nominal</button>
+  <button data-s="red" aria-pressed="false">red alarm</button>
+  <button data-s="parsing" aria-pressed="false">parsing</button>
+  <button data-s="pcoff" aria-pressed="false">connection lost</button>
+  <button data-s="firstrun" aria-pressed="false">first run</button>
+  <button data-s="digest" aria-pressed="false">re-entry digest</button>
+  <span class="cap" id="cap"></span>
+</div>
+
+<div class="wrap">
+<div class="board" id="board" data-scenario="nominal" data-sev="none">
+  <div class="beacon" title="severity beacon — gray is the all-clear"></div>
+
+  <!-- ═══ VITALS ═══ -->
+  <div class="vitals">
+    <div class="v1">
+      <span><span class="lbl">CREDITS </span><span class="credits">12 405 882 <span style="font-size:20px">Cr</span></span></span>
+      <span class="delta">Δ +1 204 116</span>
+      <span><span class="lbl">CR </span><svg class="spark" width="120" height="26" viewBox="0 0 120 26" aria-label="credits trend, last 48 saves">
+        <polyline fill="none" stroke="#9AA7B4" stroke-width="2"
+          points="0,22 12,21 24,19 36,19 48,16 60,14 72,13 84,10 96,9 108,6 120,4"/>
+        <circle cx="120" cy="4" r="2.5" fill="#E6EDF3"/></svg></span>
+      <span class="count"><span class="lbl">FLEET </span><span data-when="nominal parsing pcoff firstrun digest">94</span><span data-when="red">93<span class="g g-red">■</span></span></span>
+      <span class="count"><span class="lbl">STN </span>17</span>
+      <span class="count"><span class="lbl">IDLE </span>6</span>
+      <span class="count"><span class="lbl">THREAT </span>2</span>
+      <span class="war">ARG↔XEN · 7 offers&nbsp;&nbsp;PAR↔HOP · 2</span>
+    </div>
+    <div class="v2">
+      <span class="fresh" data-when="nominal red">quicksave · 4m ago</span>
+      <span class="fresh parsing" data-when="parsing">parsing new save <span id="ticks">▮▮▯▯▯</span> <span id="tsec">4s</span></span>
+      <span class="fresh pcoff" data-when="pcoff">connection lost — gaming PC off? · last seen 21:58 · alert intake paused</span>
+      <span class="fresh" data-when="firstrun">watching ~/.config/EgoSoft/X4/…/save — no save seen yet</span>
+      <span class="fresh" data-when="digest">quicksave · just now · parsed 11s</span>
+      <span class="legchip" data-when="nominal red parsing firstrun digest"><span class="dot">●</span> save</span>
+      <span class="legchip down" data-when="pcoff"><span class="dot">○</span> save</span>
+      <span class="legchip"><span class="dot">●</span> hum</span>
+      <span class="legchip"><span class="dot">●</span> canon</span>
+      <span class="legchip down"><span class="dot">○</span> refrain off 21:58</span>
+      <span class="muted-badge" data-when="firstrun">MUTED</span>
+      <a class="health-link" href="#" onclick="return false">HEALTH</a>
+      <span style="margin-left:auto; color:var(--text-mid)">WATCHTOWER</span>
+    </div>
+  </div>
+
+  <!-- ═══ ALERT LANE ═══ -->
+  <section class="panel lane">
+    <div class="phead"><span>ALERTS</span><span style="display:flex;gap:10px;align-items:center">
+      <button class="ackall" title="press and hold to acknowledge all reds">ack all · hold</button>
+      <span class="stamp">s@4m</span></span></div>
+    <div class="prule"></div>
+    <div class="rows" id="lanerows">
+      <div class="syscard" data-when="firstrun">
+        <div class="hd">first run — arming</div>
+        watching ~/.config/EgoSoft/X4/…/save <span class="g-ok">✓</span><br>
+        chime — <button>enable + test</button> <span class="g-amber">blocked by browser — click to arm</span><br>
+        browser notifications — <button>enable</button>
+      </div>
+      <div class="arow red" data-when="red" id="redrow" tabindex="0">
+        <span class="gl">■</span><span class="rule">DESTROYED</span>
+        <span class="subj">SN-MIN-04 Magnetar</span>
+        <span class="meta"><button class="ackbtn" id="ack">ACK</button></span>
+        <span class="detail">mineral miner — Silent Witness XII — by Kha'ak; 3rd miner lost there this week</span>
+        <span class="meta" style="grid-column:3/5">d17 08:12 · quicksave 21:12 · 21:14</span>
+      </div>
+      <div class="pinrule" data-when="red" id="pinrule"></div>
+      <div class="arow amber" tabindex="0" data-when="nominal red parsing pcoff digest">
+        <span class="gl">▲</span><span class="rule">BUILD STALL</span>
+        <span class="subj">Windfall III complex</span>
+        <span class="meta">d17 07:41 · autosave · 20:58</span>
+        <span class="detail">build not progressing 32m — builder waiting on wares (detail lands v1.1)</span>
+      </div>
+      <div class="arow amber" tabindex="0" data-when="nominal red parsing pcoff digest">
+        <span class="gl">▲</span><span class="rule">NEW IDLE</span>
+        <span class="subj">SN-TRD-11 Vulture</span>
+        <span class="meta">d17 07:02 · autosave · 20:44</span>
+      </div>
+      <div class="arow amber" tabindex="0" data-when="nominal red parsing pcoff digest">
+        <span class="gl">▲</span><span class="rule">SIGHTING</span>
+        <span class="subj">Xenon K — Silent Witness XI</span>
+        <span class="meta">2 hops from Windfall III · autosave · 20:31</span>
+      </div>
+      <div class="arow gray" tabindex="0" data-when="nominal red parsing pcoff digest">
+        <span class="gl">·</span><span class="rule">BUILD DONE</span>
+        <span class="subj">ANT Hull Forge — L storage module</span>
+        <span class="meta">d17 06:12 · autosave · 20:19</span>
+      </div>
+      <div class="arow acked" tabindex="0" id="ackedslot" data-when="nominal parsing pcoff digest">
+        <span class="gl">□</span><span class="rule">DESTROYED</span>
+        <span class="subj">SN-SCT-02 Pegasus</span>
+        <span class="meta">acked 20:03 · d16 22:47</span>
+      </div>
+      <div class="arow gray" tabindex="0" data-when="nominal red parsing pcoff digest">
+        <span class="gl">·</span><span class="rule">LOGBOOK</span>
+        <span class="subj">reputation +1 ANT <span style="color:var(--text-dim)">(guild name from {page,id} — placeholder)</span></span>
+        <span class="meta">d17 05:47 · autosave · 20:03</span>
+      </div>
+      <div class="arow gray" tabindex="0" data-when="nominal red parsing pcoff digest">
+        <span class="gl">·</span><span class="rule">LICENCE</span>
+        <span class="subj">PIO capital ship licence acquired</span>
+        <span class="meta">d17 05:02 · autosave · 19:41</span>
+      </div>
+      <div class="arow gray" tabindex="0" data-when="nominal red parsing pcoff digest">
+        <span class="gl">·</span><span class="rule">LOGBOOK</span>
+        <span class="subj">station-defence reward +86 400 Cr</span>
+        <span class="meta">d17 04:40 · autosave · 19:22</span>
+      </div>
+      <div class="arow gray" tabindex="0" data-when="firstrun">
+        <span class="gl">·</span><span class="rule">SYSTEM</span>
+        <span class="subj">no alerts yet — 14 rules armed · watching quicksave + autosave</span>
+        <span class="meta">—</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ TILES ═══ -->
+  <div class="tiles">
+    <section class="panel">
+      <div class="phead"><span data-when="nominal red parsing pcoff digest">IDLE SHIPS &amp; WHY · 6 of 94</span>
+        <span data-when="firstrun">IDLE SHIPS &amp; WHY</span><span class="stamp">longest first · s@4m</span></div>
+      <div class="prule"></div>
+      <div class="rows" data-when="nominal red parsing pcoff digest">
+        <div class="trow" tabindex="0"><span class="code">SN-MIN-07</span><span class="cls">gas</span>
+          <span class="why">no buyer in range · methane ≤ 44 Cr · cap 2.1</span><span class="dur">2h41m</span></div>
+        <div class="trow" tabindex="0"><span class="code">SN-MIN-09</span><span class="cls">min</span>
+          <span class="failed">FAILED</span><span class="why">mining order — 9.x moves resource fields; check probe coverage</span><span class="dur" style="margin-left:auto">1h58m</span></div>
+        <div class="trow" tabindex="0"><span class="code">SN-TRD-11</span><span class="cls">cont</span>
+          <span class="why"><span class="unknown">∅ unknown</span> — order queue empty, no error logged</span><span class="dur">40m</span></div>
+        <div class="trow" tabindex="0"><span class="code">SN-TRD-02</span><span class="cls">cont</span>
+          <span class="why">no order — captain 1★ qualifies for Local Autotrade (Advanced needs 3★)</span><span class="dur">36m</span></div>
+        <div class="trow" tabindex="0"><span class="code">SN-SCT-05</span><span class="cls">scout</span>
+          <span class="why">docked at PHQ — no standing order</span><span class="dur">22m</span></div>
+        <div class="trow" tabindex="0"><span class="code">SN-MIN-12</span><span class="cls">min</span>
+          <span class="why">cargo full · nearest ore buyer 6 hops · captain range 5</span><span class="dur">12m</span></div>
+      </div>
+      <div class="rows" data-when="firstrun"><div class="trow"><span class="why" style="color:var(--text-dim)">waiting for first save</span></div></div>
+    </section>
+    <section class="panel">
+      <div class="phead"><span>STATION HEALTH · 17 stations</span><span class="stamp">worst first · s@4m</span></div>
+      <div class="prule"></div>
+      <div class="rows" data-when="nominal red parsing pcoff digest">
+        <div class="srow amber" tabindex="0"><span class="gl">▲</span><span class="nm">WINDFALL III COMPLEX</span>
+          <span>acct <span class="num-amber">2.1M/8.4M▲</span></span><span>silicon 12% — dry in 3h10m</span><span>hull −41/h</span></div>
+        <div class="srow amber" tabindex="0"><span class="gl">▲</span><span class="nm">ANT HULL FORGE</span>
+          <span>acct 7.7M/8.0M</span><span>e-cells 26% — dry in 6h</span><span>workforce 61%, growing</span></div>
+        <div class="srow" tabindex="0"><span class="gl">·</span><span class="nm">HERETIC'S END REFINERY</span>
+          <span>acct 3.2M/3.5M</span><span>ore 64% — dry in 14h</span><span>nominal</span></div>
+        <div class="srow" tabindex="0"><span class="gl">·</span><span class="nm">TELADI TRADE POST</span>
+          <span>acct 4.0M/4.0M</span><span>storage 71% — full in 9h</span><span>nominal</span></div>
+        <div class="srow" tabindex="0"><span class="gl">·</span><span class="nm">PHQ — GRAND EXCHANGE</span>
+          <span>acct 1.1M/1.0M</span><span>e-cells 74% — dry in 5h</span><span>research: teleport III</span></div>
+        <div class="srow" tabindex="0"><span class="gl">·</span><span class="nm">NOPILEOS FORTUNE</span>
+          <span>acct 2.4M/2.2M</span><span>graphene 91% — full in ~4h</span><span>sales lag 1.8k/h</span></div>
+      </div>
+      <div class="rows" data-when="firstrun"><div class="trow"><span class="why" style="color:var(--text-dim)">waiting for first save</span></div></div>
+    </section>
+    <section class="panel">
+      <div class="phead"><span>THREATS · 2 · known space only</span><span class="stamp">by proximity · s@4m</span></div>
+      <div class="prule"></div>
+      <div class="rows" data-when="nominal red parsing pcoff digest">
+        <div class="thr amber" tabindex="0"><span class="gl">▲</span><span class="cls">KHA'AK NEST</span>
+          <span class="sect">Silent Witness XII</span><span class="hops">1<span style="font-size:12px;color:var(--text-dim)"> hop</span></span>
+          <span>seen 19:40 · <span class="chip"><span class="sig k">¶</span> canon · hive sector</span></span></div>
+        <div class="thr amber" tabindex="0"><span class="gl">▲</span><span class="cls">XENON K</span>
+          <span class="sect">Silent Witness XI</span><span class="hops">2<span style="font-size:12px;color:var(--text-dim)"> hops</span></span>
+          <span>seen 20:31 · nearest owned: Windfall III</span></div>
+      </div>
+      <div class="rows" data-when="firstrun"><div class="trow"><span class="why" style="color:var(--text-dim)">coverage unknown until first save</span></div></div>
+    </section>
+  </div>
+
+  <!-- ═══ RE-ENTRY DIGEST ═══ -->
+  <div class="digest">
+    <h2>While you were away · 3d 2h · d14 06:12 → d17 08:53</h2>
+    <div class="dstats">
+      <div class="dstat"><div class="k">Losses</div><div class="v">2<span class="g g-red">■</span></div></div>
+      <div class="dstat"><div class="k">Credits</div><div class="v">+4 812 400</div></div>
+      <div class="dstat"><div class="k">Builds done</div><div class="v">3</div></div>
+      <div class="dstat"><div class="k">Wars</div><div class="v small">ARG↔XEN offers 4→7</div></div>
+    </div>
+    <div class="drow red"><span class="gl">■</span><span class="s">SN-MIN-04 Magnetar</span> — Kha'ak · Silent Witness XII · d15 11:02 <button class="ackbtn">ACK</button></div>
+    <div class="drow red"><span class="gl">■</span><span class="s">SN-TRD-07 Boa</span> — Xenon K · Silent Witness XI · d16 22:47 <button class="ackbtn">ACK</button></div>
+    <div class="drow amber"><span class="gl">▲</span><span class="s">Xenon K sighted</span> Silent Witness XI — 2 hops from Windfall III</div>
+    <div class="drow"><span class="gl">·</span>builds: Windfall III dock · ANT forge L-storage · PHQ research lab</div>
+    <div class="drow"><span class="gl">·</span>new threats beyond the sighting above: none</div>
+    <div class="dmem"><span class="chip"><span class="sig m">~</span> memory</span> refrain: "phase 2 — Windfall closed loop; next: fund L miners"</div>
+    <div class="dact"><button id="openboard">open board</button><button>ask advisor about the losses</button></div>
+  </div>
+
+  <!-- ═══ ADVISOR ═══ -->
+  <aside class="advisor">
+    <div class="ahead"><span>ADVISOR · qwen3.6-35b <span class="g-ok">●</span> <span style="color:var(--text-ghost)">(configured default)</span></span><span style="margin-left:auto">⟨ collapse</span></div>
+    <div class="amem"><span class="chip"><span class="sig m">~</span> memory</span> resuming Emry Sloan — phase 2: Windfall closed loop <span style="color:var(--sev-amber-text)">(refrain ○ off — cached digest)</span></div>
+    <div class="athread">
+      <div data-when="nominal parsing pcoff firstrun digest">
+        <div class="sugg">
+          <button>why is Windfall III stalled?</button>
+          <button>6 idle ships — triage them</button>
+          <button>fund plan for L miners</button>
+        </div>
+        <div style="color:var(--text-ghost); font:400 12px var(--font-mono); margin-top:30px">
+          &gt; _<br><br>suggestions seed from the current board.<br>numbers in answers come from tools, never from the model.</div>
+      </div>
+      <div data-when="red">
+        <div class="seedcard">
+          <div class="hd">context — from alert · destroyed</div>
+          SN-MIN-04 Magnetar · mineral miner (L) · Silent Witness XII<br>
+          crew 6 · cap 2.1 · killed by Kha'ak d17 08:12 · quicksave 21:12<br>
+          history: 3rd miner lost in this sector this week
+        </div>
+        <div class="sugg"><button>what killed it?</button><button>is the sector safe to re-mine?</button></div>
+        <div class="umsg">what killed it, and do I keep mining there?</div>
+        <div class="tool"><span class="g">⛭</span> get_ship SN-MIN-04 · 0.4s</div>
+        <div class="tool"><span class="g">⛭</span> threat_sites Silent Witness XII · 0.2s</div>
+        <div class="tool"><span class="g">⛭</span> search_claims "khaak hive respawn" · 1.1s</div>
+        <div class="tool"><span class="g">⛭</span> reasoning · 812 tokens · 3.2s <span style="color:var(--text-ghost)">▸</span></div>
+        <div class="amsg">A Kha'ak raid — there is an active <span class="n">nest 1 hop</span> away and your save shows this is the <span class="n">3rd miner</span> lost in Silent Witness XII this week. Mining there keeps feeding attack ticks until the nest (and its hive) die.</div>
+        <div class="claim">nest at Silent Witness XII, first seen <span class="n">d16 20:11</span>; the corpus marks this a hive sector
+          <div class="chips"><span class="chip"><span class="sig s">s</span> save · 4m</span><span class="chip"><span class="sig k">¶</span> canon · 2026-03-18</span></div></div>
+        <div class="claim">respawn: <span class="n">7–9h</span> nests / <span class="n">24h</span> hives per 4.x-era claims; 7.10+ reports say destroyed hives may not respawn; 9.x adds inactive scrap-hives — version-dependent, treat with care
+          <div class="chips"><span class="chip"><span class="sig k">¶</span> canon · 2021–2026 <span class="warn">▲ version-fuzzy</span></span></div></div>
+        <div class="claim">L miners resist Kha'ak raids far better than M hulls, but post-9.0 they are no longer safe to ignore
+          <div class="chips"><span class="chip"><span class="sig k">¶</span> canon · 2026-04-02</span></div></div>
+        <div class="amsg">Why-first: kill the nest before replacing the ship — a destroyer clears it in one pass, and your <span class="n">SN-DST-01</span> is <span class="n">4 hops</span> out with no current orders.</div>
+        <div class="chips"><span class="chip"><span class="sig c">ƒ</span> computed · x4 9.00</span><span class="chip"><span class="sig s">s</span> save · 4m</span></div>
+      </div>
+    </div>
+    <div class="afoot"><span>&gt; _</span><span style="margin-left:auto">qwen3.6-35b</span><span class="esc">↑ kimi-k3</span></div>
+  </aside>
+</div>
+</div>
+
+<script>
+  const board = document.getElementById('board');
+  const cap = document.getElementById('cap');
+  const caps = {
+    nominal: 'The resting state is genuinely dark-cockpit: gray beacon, no count glyphs, no chroma beyond two leg dots — the standing ambers live in their panels, already "seen". System mono stands in for JetBrains Mono; where mockup and spec tables disagree, the tables are normative.',
+    red: 'A red arrives: beacon, tab title and row flip instantly; the row fill decays once over 800ms (half the animation budget). The detail line carries the deterministic recurrence clause from history. Click ACK: the row sinks into the chronology. Chat is pre-seeded from the alert — staged, never auto-sent; note the collapsed reasoning line and per-claim chips.',
+    parsing: 'A new save landed: the board keeps the previous snapshot fully visible; the freshness block ticks in discrete 1Hz characters. Accent cyan = machine activity, never a warning.',
+    pcoff: 'SSE silent 60s: last-known data stays at full brightness — it is not wrong, it is old; the save leg hollows, intake is marked paused. Reds would stay pinned.',
+    firstrun: 'First launch: the arming checklist owns the lane until chime + notifications are green (the MUTED badge confesses the blocked chime), and every panel proves liveness instead of rendering blank.',
+    digest: 'Re-entry after 3 days: four glance numerals answer "am I safe?", losses are real ack-able rows, refrain speaks last. Vitals, beacon and Advisor stay live behind it; the two away-period reds stay pinned in the lane beneath.'
+  };
+  let sev = { nominal:'none', red:'red', parsing:'none', pcoff:'none', firstrun:'none', digest:'red' };
+  let acked = false;
+  function setScenario(s) {
+    document.querySelectorAll('.mockbar button[data-s]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.s===s)));
+    board.dataset.scenario = s;
+    board.dataset.sev = (s==='red'||s==='digest') && acked ? 'none' : sev[s];
+    cap.textContent = caps[s];
+    board.classList.remove('flash');
+    if (s === 'red' && !acked) { void board.offsetWidth; board.classList.add('flash'); document.title = '■1 · x4cue'; }
+    else { document.title = (board.dataset.sev==='red' ? '■2 ' : '') + '· x4cue'; }
+    if (s === 'parsing') startTicks(); else stopTicks();
+  }
+  document.querySelectorAll('.mockbar button[data-s]').forEach(b => b.addEventListener('click', () => setScenario(b.dataset.s)));
+  document.getElementById('ack').addEventListener('click', e => {
+    e.stopPropagation();
+    const r = document.getElementById('redrow');
+    r.classList.remove('red'); r.classList.add('acked');
+    r.querySelector('.gl').textContent = '□';
+    r.querySelector('.meta').textContent = 'acked 21:19 · d17 08:12';
+    r.querySelectorAll('.detail, .meta')[1].textContent = "mineral miner — Silent Witness XII — by Kha'ak";
+    document.getElementById('pinrule').style.display = 'none';
+    // sink to chronology: move below the newer amber/gray rows (after the BUILD DONE row)
+    const lane = document.getElementById('lanerows');
+    const anchor = lane.querySelectorAll('.arow.gray')[0];
+    anchor.after(r);
+    acked = true; board.dataset.sev = 'none'; document.title = '· x4cue';
+  });
+  document.getElementById('openboard').addEventListener('click', () => setScenario('nominal'));
+  let tickTimer = null;
+  function startTicks() {
+    const el = document.getElementById('ticks'), ts = document.getElementById('tsec');
+    let n = 2; stopTicks();
+    tickTimer = setInterval(() => {
+      n = n >= 9 ? 2 : n + 1;
+      const filled = Math.min(5, Math.round(n / 2));
+      el.textContent = '▮'.repeat(filled) + '▯'.repeat(5 - filled);
+      ts.textContent = n + 's';
+    }, 1000);
+  }
+  function stopTicks() { if (tickTimer) { clearInterval(tickTimer); tickTimer = null; } }
+  setScenario('nominal');
+</script>
