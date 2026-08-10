@@ -141,6 +141,27 @@ By default the server finds saves under:
 Most tools take an optional `save_path`; omit it to use the most recently
 modified save.
 
+### Save archiving
+
+X4 rotates autosaves and quicksaves in place, so a play session's history is
+gone within the hour — and that history is the corpus everything offline is
+mined from. `scripts/archive-saves.sh` copies each **new** save (identity =
+source mtime + size, encoded in the archive file name) into `~/x4-save-archive`,
+keeping the newest 200 files and staying under 20 GiB.
+
+```sh
+./scripts/install-archiver.sh     # symlink + systemd user timer, every 5 min
+journalctl --user -u x4mcp-archive-saves -f
+./scripts/archive-saves_test.sh   # no game install or real save needed
+```
+
+It is strictly read-then-copy — it never writes to the game's save
+directories, and the unit enforces that with `ReadOnlyPaths=%h`. Copies are
+staged under a temp name and `gzip -t`'d before they count as archived, and a
+save touched in the last 30 s is left alone in case the game is still writing
+it. Override `X4_SAVE_DIRS`, `X4_ARCHIVE_DIR`, `X4_ARCHIVE_KEEP`,
+`X4_ARCHIVE_MAX_BYTES`, `X4_ARCHIVE_MIN_AGE` (see `--help`).
+
 ## Tools
 
 **Read the galaxy (read-only):**
@@ -220,6 +241,8 @@ installed game's `.cat/.dat` archives (`internal/x4data`) and cached. Set
 cmd/x4mcp/         main.go (CLI + subcommands), server.go (MCP tools)
 internal/x4save/   locate.go, parse.go (streaming), model.go, macro.go, cache.go
 internal/plan/     plan.go (persistent goals + journal)
+scripts/           archive-saves.sh (+ test), install-archiver.sh
+deploy/systemd/    user service + timer for the archiver
 ```
 
 ## Configuration

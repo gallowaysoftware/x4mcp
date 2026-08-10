@@ -1,0 +1,26 @@
+[Unit]
+Description=x4mcp save archiver — copy new X4 savegames into ~/x4-save-archive
+Documentation=https://github.com/pequalsnp/x4mcp
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/x4-archive-saves
+
+# This runs while the game is running. Copying half a gigabyte must never be
+# the reason a frame drops, so the archiver yields on both CPU and disk.
+Nice=15
+IOSchedulingClass=idle
+
+# The archiver is read-then-copy by design; this makes it read-then-copy by
+# enforcement. Everything in $HOME is read-only to it except the archive, so a
+# bug here cannot damage a savegame. The '-' tolerates a missing archive dir
+# (install-archiver.sh creates it) rather than failing the unit at start.
+ReadOnlyPaths=%h
+ReadWritePaths=-%h/x4-save-archive
+PrivateTmp=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# A save copy that cannot finish in 10 minutes is stuck, not slow.
+TimeoutStartSec=10min
