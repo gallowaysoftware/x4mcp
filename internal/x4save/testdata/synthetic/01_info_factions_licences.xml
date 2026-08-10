@@ -4,7 +4,7 @@
      and the player row of each faction's <relations>. -->
 <savegame>
 <info>
-<save date="1786380573" name="Fixture Save"/>
+<save date="1700000000" name="Fixture Save"/>
 <game id="X4" version="900" build="611726" modified="1" time="591711.419" code="0000000" original="900" originalbuild="611726" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
 <player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
 <patches>

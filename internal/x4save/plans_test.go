@@ -148,7 +148,7 @@ func TestFindPlanRefusesAmbiguousMatches(t *testing.T) {
 
 func TestDefaultPlanFilesFindsBothLocations(t *testing.T) {
 	root := t.TempDir()
-	profile := filepath.Join(root, "71052239")
+	profile := filepath.Join(root, "12345678")
 	writePlanFile(t, profile, "constructionplans.xml", planXML)
 	writePlanFile(t, filepath.Join(profile, "constructionplan"), "Everything Station.xml", planXML)
 	// Noise that must be ignored.

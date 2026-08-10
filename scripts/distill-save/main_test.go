@@ -19,7 +19,7 @@ import (
 const fakeSave = `<?xml version="1.0" encoding="UTF-8"?>
 <savegame>
 <info>
-<save date="1786380573" name="Rada's Empire"/>
+<save date="1755555555" name="Rada's Empire"/>
 <game id="X4" version="900" build="611726" time="591711.419" code="8675309" start="x4ep1_gamestart_pirate2" seed="9182736450" guid="7F31C0DE-1111-4222-8333-444455556666"/>
 <player name="Rada Vantai" location="{20004,5010011}" money="5492825"/>
 <patches><patch extension="ego_dlc_split" version="900" name="Split Vendetta"/></patches>
@@ -27,6 +27,8 @@ const fakeSave = `<?xml version="1.0" encoding="UTF-8"?>
 <log>
 <entry time="1248.776" title="Reputation gained" text="Reason: Trade Completed[\012]Current reputation: 7" faction="{20203,901}"/>
 <entry time="2000" title="Ship destroyed" text="Vantai lost a ship" entity="Rada Vantai"/>
+<entry time="3000" title="Ship renamed" text="VANTAI renamed a ship" entity="RADA VANTAI"/>
+<entry time="4000" title="Reputation lost" text="rada vantai was seen doing it" entity="rada vantai"/>
 </log>
 <stats>
 <stat id="time_total" value="591711.419"/>
@@ -160,7 +162,11 @@ func distillFake(t *testing.T, npcStations int) (string, string, distillStats) {
 		t.Fatal(err)
 	}
 	out := filepath.Join(t.TempDir(), "distilled.xml.gz")
-	st, err := distill(in, out, newScrubber(scan, nil), distillConfig{
+	sc, err := newScrubber(scan, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := distill(in, out, sc, distillConfig{
 		npcStations: npcStations,
 		threats:     1,
 		claimable:   5,
@@ -232,13 +238,15 @@ func TestDistillScrubsEveryIdentifyingString(t *testing.T) {
 	_, text, _ := distillFake(t, 3)
 
 	// Not just <info>: the surname also appears in a log entry's text and in a
-	// ship the player named, and "verified" has to mean the whole file.
-	for _, term := range []string{"Rada Vantai", "Rada", "Vantai", "7F31C0DE-1111-4222-8333-444455556666", "9182736450", "8675309"} {
-		if strings.Contains(text, term) {
-			t.Errorf("%q survived the scrub", term)
+	// ship the player named, and "verified" has to mean the whole file. Case is
+	// part of "every": the same name is spelled three ways in this save.
+	lower := strings.ToLower(text)
+	for _, term := range []string{"rada vantai", "rada", "vantai", "7f31c0de-1111-4222-8333-444455556666", "9182736450", "8675309", "1755555555"} {
+		if strings.Contains(lower, term) {
+			t.Errorf("%q survived the scrub (case-insensitively)", term)
 		}
 	}
-	for _, want := range []string{`name="Test Pilot"`, "00000000-0000-4000-8000-000000000000", `seed="1234567890"`} {
+	for _, want := range []string{`name="Test Pilot"`, "00000000-0000-4000-8000-000000000000", `seed="1234567890"`, `date="1700000000"`} {
 		if !strings.Contains(text, want) {
 			t.Errorf("placeholder %q missing from the scrubbed output", want)
 		}
@@ -273,13 +281,17 @@ func TestVerifyFixtureFindsAPlantedTerm(t *testing.T) {
 }
 
 func TestScrubberReplacesLongestFirst(t *testing.T) {
-	sc := newScrubber(&scanResult{
+	sc, err := newScrubber(&scanResult{
 		playerName: "Rada Vantai",
 		guid:       "7F31C0DE-1111-4222-8333-444455556666",
 		seed:       "5566778899",
 		gameCode:   "1234567",
 		saveName:   "Rada's Empire",
+		saveDate:   "1755555555",
 	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	cases := []struct {
 		name string
@@ -292,6 +304,14 @@ func TestScrubberReplacesLongestFirst(t *testing.T) {
 		{"guid", "guid=7F31C0DE-1111-4222-8333-444455556666", "guid=" + placeholderGUID},
 		{"seed", "seed=5566778899", "seed=" + placeholderSeed},
 		{"untouched text", "ware=energycells amount=42", "ware=energycells amount=42"},
+		{"save date", "date=1755555555", "date=" + placeholderDate},
+		// A save spells the player's name however the player typed it in each
+		// place. A byte-exact scrub leaves every other spelling behind — and the
+		// byte-exact verification pass then calls the leak "clean".
+		{"upper-case full name", "RADA VANTAI", placeholderPlayer},
+		{"lower-case full name", "rada vantai", placeholderPlayer},
+		{"upper-case surname alone", "VANTAI", "Pilot"},
+		{"mixed-case surname in text", "vAnTaI lost a ship", "Pilot lost a ship"},
 		// The replacement text must not be re-scanned: the game code "1234567"
 		// is a prefix of the seed placeholder "1234567890", and a per-term
 		// ReplaceAll would chew the placeholder it had just written.
@@ -303,5 +323,128 @@ func TestScrubberReplacesLongestFirst(t *testing.T) {
 				t.Errorf("clean(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+// A term shorter than minTermLen is not an identifier, it is a substring of
+// everything. A one-character save name — which the player is free to type —
+// used to be registered like any other term, and rewrote code="XYZ-123" into
+// code="Distilled FixtureYZ-123". The self-verification then reported "0 hits —
+// clean", because after the substitution the term really was gone: the tool
+// emitted, verified and kept a silently vandalised fixture. Refusing is the
+// only honest answer, since skipping the term would leave the identifier in a
+// file that is about to be public.
+func TestScrubberRefusesTermsTooShortToScrub(t *testing.T) {
+	base := scanResult{
+		playerName: "Rada Vantai",
+		guid:       "7F31C0DE-1111-4222-8333-444455556666",
+		seed:       "5566778899",
+		gameCode:   "1234567",
+		saveName:   "Rada's Empire",
+		saveDate:   "1755555555",
+	}
+	cases := []struct {
+		name     string
+		mutate   func(*scanResult)
+		wantKind string
+	}{
+		{"one-character save name", func(s *scanResult) { s.saveName = "X" }, "save name"},
+		{"two-character save name", func(s *scanResult) { s.saveName = "GO" }, "save name"},
+		{"short player-name token", func(s *scanResult) { s.playerName = "Jo Ng" }, "player-name token"},
+		{"short player name", func(s *scanResult) { s.playerName = "Jo" }, "player name"},
+		{"short -scrub term", nil, "-scrub term"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			scan := base
+			extra := []string(nil)
+			if tc.mutate != nil {
+				tc.mutate(&scan)
+			} else {
+				extra = []string{"abc"}
+			}
+			sc, err := newScrubber(&scan, extra)
+			if err == nil {
+				t.Fatalf("newScrubber accepted a term too short to scrub; clean(%q) = %q",
+					`code="XYZ-123"`, sc.clean(`code="XYZ-123"`))
+			}
+			if !strings.Contains(err.Error(), tc.wantKind) {
+				t.Errorf("error %q does not say which term it refused (want %q in it)", err, tc.wantKind)
+			}
+		})
+	}
+
+	// An absent field is not a short one: the source quicksave has no save name
+	// at all, and that must stay distillable.
+	scan := base
+	scan.saveName = ""
+	if _, err := newScrubber(&scan, nil); err != nil {
+		t.Errorf("an empty save name has nothing to scrub and must not block a distill: %v", err)
+	}
+}
+
+// -verify's whole job is to be trustworthy about privacy. Run with machine
+// terms only it printed "0 hits — clean" and exited 0 while checking a home
+// directory and a username that no savegame ever contains — a green light that
+// proved nothing about the player name, GUID, seed or save date.
+func TestVerifyTermsRequiresPlaythroughTerms(t *testing.T) {
+	if _, _, err := verifyTerms("", nil, 400_000); err == nil {
+		t.Fatal("verify accepted machine terms alone; that reports \"clean\" no matter what is in the file")
+	} else {
+		for _, want := range []string{"-in", "-scrub"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the refusal must say how to fix it; %q does not mention %q", err, want)
+			}
+		}
+	}
+
+	terms, derived, err := verifyTerms("", []string{"Rada Vantai"}, 400_000)
+	if err != nil {
+		t.Fatalf("explicit -scrub terms are enough: %v", err)
+	}
+	if derived {
+		t.Error("terms typed with -scrub are not derived from a save")
+	}
+	if !containsFold(terms, "Rada Vantai") {
+		t.Errorf("terms = %v, want the -scrub term in it", terms)
+	}
+
+	// The better form: hand it the source save and it works out the whole list
+	// itself, so nothing identifying is typed onto a command line.
+	terms, derived, err = verifyTerms(writeFakeSave(t), nil, 400_000)
+	if err != nil {
+		t.Fatalf("verify -in <save>: %v", err)
+	}
+	if !derived {
+		t.Error("terms taken from a save are derived")
+	}
+	for _, want := range []string{"Rada Vantai", "Vantai", "7F31C0DE-1111-4222-8333-444455556666", "9182736450", "8675309", "Rada's Empire", "1755555555"} {
+		if !containsFold(terms, want) {
+			t.Errorf("derived terms are missing %q: %v", want, terms)
+		}
+	}
+}
+
+func containsFold(haystack []string, want string) bool {
+	for _, h := range haystack {
+		if strings.EqualFold(h, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// Verification has to be at least as wide as the scrub, or it becomes the thing
+// that certifies a leak: a name the scrubber would have caught in any casing
+// must also be findable in any casing.
+func TestVerifyFixtureIgnoresCase(t *testing.T) {
+	out, _, _ := distillFake(t, 1)
+
+	hits, err := verifyFixture(out, []string{"ENERGYCELLS"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) == 0 {
+		t.Error("verifyFixture missed a term the file contains in a different case")
 	}
 }

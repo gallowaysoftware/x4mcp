@@ -14,7 +14,12 @@
 //	go run ./scripts/distill-save -in ~/.config/EgoSoft/X4/<profile>/save/quicksave.xml.gz \
 //	    -out internal/x4save/testdata/real/distilled.xml.gz
 //	go run ./scripts/distill-save -in <save> -plan          # report only, write nothing
-//	go run ./scripts/distill-save -verify <fixture.xml.gz> -scrub "Some Name"
+//
+//	# re-verify a committed fixture. Prefer the -in form: it derives the full
+//	# term list from the save itself, so nothing identifying is typed on a
+//	# command line (and into shell history), and nothing is left unchecked.
+//	go run ./scripts/distill-save -verify <fixture.xml.gz> -in <save>
+//	go run ./scripts/distill-save -verify <fixture.xml.gz> -scrub "Some Name,…"
 package main
 
 import (
@@ -49,12 +54,15 @@ func main() {
 	extra := splitList(*extraScrub)
 
 	if *verify != "" {
-		terms := append(machineTerms(), extra...)
+		terms, derived, err := verifyTerms(*in, extra, *scriptMax)
+		if err != nil {
+			fatal(err)
+		}
 		hits, err := verifyFixture(*verify, terms)
 		if err != nil {
 			fatal(err)
 		}
-		reportVerify(*verify, terms, hits)
+		reportVerify(*verify, terms, hits, !derived)
 		if len(hits) > 0 {
 			os.Exit(1)
 		}
@@ -77,7 +85,10 @@ func main() {
 		fatal(fmt.Errorf("-out is required (or pass -plan)"))
 	}
 
-	sc := newScrubber(scan, append(machineTerms(), extra...))
+	sc, err := newScrubber(scan, append(machineTerms(), extra...))
+	if err != nil {
+		fatal(err)
+	}
 	cfg := distillConfig{
 		npcStations: *npcMax,
 		threats:     *threatMax,
@@ -98,7 +109,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	reportVerify(*out, sc.terms(), hits)
+	reportVerify(*out, sc.terms(), hits, true)
 	if len(hits) > 0 {
 		_ = os.Remove(*out)
 		fatal(fmt.Errorf("scrub verification failed; %s removed", *out))
@@ -145,6 +156,7 @@ type scanResult struct {
 	seed        string
 	gameCode    string
 	saveName    string
+	saveDate    string
 	startType   string
 	scriptBytes map[string]int64
 	keepScripts map[string]bool
@@ -216,6 +228,7 @@ func (r *scanResult) readInfo(dec *xml.Decoder, start *xml.StartElement) error {
 	var info struct {
 		Save struct {
 			Name string `xml:"name,attr"`
+			Date string `xml:"date,attr"`
 		} `xml:"save"`
 		Game struct {
 			GUID  string `xml:"guid,attr"`
@@ -232,12 +245,13 @@ func (r *scanResult) readInfo(dec *xml.Decoder, start *xml.StartElement) error {
 	}
 	r.playerName, r.guid, r.seed = info.Player.Name, info.Game.GUID, info.Game.Seed
 	r.gameCode, r.saveName, r.startType = info.Game.Code, info.Save.Name, info.Game.Start
+	r.saveDate = info.Save.Date
 	return nil
 }
 
 func (r *scanResult) report(w io.Writer) {
-	fmt.Fprintf(w, "scan: player=%q guid=%q seed=%q code=%q save=%q start=%q\n",
-		r.playerName, r.guid, r.seed, r.gameCode, r.saveName, r.startType)
+	fmt.Fprintf(w, "scan: player=%q guid=%q seed=%q code=%q save=%q date=%q start=%q\n",
+		r.playerName, r.guid, r.seed, r.gameCode, r.saveName, r.saveDate, r.startType)
 	names := make([]string, 0, len(r.scriptBytes))
 	for n := range r.scriptBytes {
 		names = append(names, n)
@@ -258,9 +272,16 @@ func (r *scanResult) report(w io.Writer) {
 // node on its way to the output. It replaces whole names AND their individual
 // word tokens: the player's full name appears in <info>, but a log entry may
 // only use the surname.
+//
+// Matching is case-INSENSITIVE. A save spells the player's name however the
+// player typed it in each place — "RADA VANTAI" on a ship's code, "rada vantai"
+// in a mod's log line — and a byte-exact scrub would leave those behind while
+// the byte-exact verification pass reported "clean". So terms are stored folded
+// to lower case and compared with strings.EqualFold; the placeholder is written
+// in its own casing.
 type scrubber struct {
-	from []string // longest first
-	to   map[string]string
+	from []string          // folded to lower case, longest first
+	to   map[string]string // folded term -> cased placeholder
 }
 
 const (
@@ -269,55 +290,97 @@ const (
 	placeholderSeed   = "1234567890"
 	placeholderCode   = "0000000"
 	placeholderSave   = "Distilled Fixture"
+	// The real <save date> is wall-clock: it says when the player was sitting at
+	// the machine. Nothing the parser tests care about, so it is pinned.
+	placeholderDate = "1700000000"
 )
 
-func newScrubber(scan *scanResult, extra []string) *scrubber {
+// minTermLen is the shortest string this tool will search-and-replace. Below it
+// a term stops being an identifier and becomes a substring of everything: a
+// save named "X" would rewrite code="XYZ-123" into garbage, and — because the
+// term genuinely is gone afterwards — the verification pass would call the
+// vandalised fixture clean. Case-insensitive matching makes that worse, not
+// better ("Ore" would eat every ware="ore").
+const minTermLen = 4
+
+// tooShortError is what the scrubber returns instead of quietly skipping a term
+// it cannot handle. Silently keeping an identifier is the worst of the three
+// options: the operator believes the file was scrubbed and it was not.
+type tooShortError struct {
+	kind string
+	term string
+}
+
+func (e *tooShortError) Error() string {
+	return fmt.Sprintf("%s %q is only %d character(s) long: refusing to distill.\n"+
+		"  A term shorter than %d characters matches unrelated text all over a savegame, so scrubbing it\n"+
+		"  would corrupt the fixture while still reporting \"clean\" — and skipping it would leave the\n"+
+		"  identifier in a public file. Rename it in-game and re-save, or distill a different save.",
+		e.kind, e.term, len([]rune(e.term)), minTermLen)
+}
+
+func newScrubber(scan *scanResult, extra []string) (*scrubber, error) {
 	s := &scrubber{to: map[string]string{}}
-	add := func(from, to string) {
-		if from == "" || from == to {
-			return
+	add := func(kind, from, to string) error {
+		if from == "" || strings.EqualFold(from, to) {
+			return nil
 		}
-		if _, dup := s.to[from]; dup {
-			return
+		if len([]rune(from)) < minTermLen {
+			return &tooShortError{kind: kind, term: from}
 		}
-		s.to[from] = to
-		s.from = append(s.from, from)
+		key := strings.ToLower(from)
+		if _, dup := s.to[key]; dup {
+			return nil
+		}
+		s.to[key] = to
+		s.from = append(s.from, key)
+		return nil
 	}
-	add(scan.playerName, placeholderPlayer)
+	if err := add("player name", scan.playerName, placeholderPlayer); err != nil {
+		return nil, err
+	}
 	tokens := strings.Fields(scan.playerName)
 	for i, tok := range tokens {
-		if len([]rune(tok)) < 3 {
-			continue
-		}
 		repl := "Anon" + fmt.Sprint(i+1)
 		if i == 0 {
 			repl = "Test"
 		} else if i == 1 {
 			repl = "Pilot"
 		}
-		add(tok, repl)
+		if err := add("player-name token", tok, repl); err != nil {
+			return nil, err
+		}
 	}
-	add(scan.guid, placeholderGUID)
-	add(strings.ToLower(scan.guid), strings.ToLower(placeholderGUID))
-	add(scan.seed, placeholderSeed)
-	add(scan.gameCode, placeholderCode)
-	add(scan.saveName, placeholderSave)
+	for _, t := range []struct{ kind, from, to string }{
+		{"game guid", scan.guid, placeholderGUID},
+		{"game seed", scan.seed, placeholderSeed},
+		{"game code", scan.gameCode, placeholderCode},
+		{"save name", scan.saveName, placeholderSave},
+		{"save date", scan.saveDate, placeholderDate},
+	} {
+		if err := add(t.kind, t.from, t.to); err != nil {
+			return nil, err
+		}
+	}
 	for _, t := range extra {
-		add(t, "redacted")
+		if err := add("-scrub term", t, "redacted"); err != nil {
+			return nil, err
+		}
 	}
 	// Longest first, so a full name is replaced before its own first token is.
 	sort.Slice(s.from, func(i, j int) bool { return len(s.from[i]) > len(s.from[j]) })
-	return s
+	return s, nil
 }
 
 // machineTerms are strings that identify the machine this ran on rather than
 // the playthrough — a save should never contain them, and the verification pass
-// proves it rather than assuming it. Short terms are dropped: a two-letter
-// username matches half the file and would turn the scrub into vandalism.
+// proves it rather than assuming it. Short terms are dropped rather than
+// refused: unlike a player name, a two-letter username is not something the
+// fixture is obliged to have removed, it is an assertion that never applies.
 func machineTerms() []string {
 	var out []string
 	add := func(s string) {
-		if len(s) >= 4 && s != "root" && s != "/" {
+		if len([]rune(s)) >= minTermLen && s != "root" && s != "/" {
 			out = append(out, s)
 		}
 	}
@@ -345,8 +408,11 @@ func (s *scrubber) clean(v string) string {
 	b.Grow(len(v))
 	for i := 0; i < len(v); {
 		hit := ""
-		for _, from := range s.from { // longest first
-			if len(from) <= len(v)-i && v[i:i+len(from)] == from {
+		for _, from := range s.from { // longest first, already folded
+			// EqualFold over equal byte spans: exact for the ASCII identifiers a
+			// savegame carries, and it can only ever miss (never over-match) on the
+			// exotic runes whose case change alters their encoded length.
+			if len(from) <= len(v)-i && strings.EqualFold(v[i:i+len(from)], from) {
 				hit = from
 				break
 			}
@@ -362,9 +428,12 @@ func (s *scrubber) clean(v string) string {
 	return b.String()
 }
 
+// touches is the fast path that keeps clean()'s per-byte loop off the ~775 MB
+// of XML that contains nothing identifying. One fold per value, not per term.
 func (s *scrubber) touches(v string) bool {
+	lower := strings.ToLower(v)
 	for _, from := range s.from {
-		if strings.Contains(v, from) {
+		if strings.Contains(lower, from) {
 			return true
 		}
 	}
@@ -777,10 +846,41 @@ type hit struct {
 	text string
 }
 
+// verifyTerms builds the list -verify searches for, and refuses to run without
+// at least one term from the playthrough itself.
+//
+// Machine terms alone (home directory, OS username, OS full name) are a false
+// assurance: a savegame never contains them, so "0 hits — clean" is guaranteed
+// and proves nothing about the player's name, the GUID, the seed or the save
+// date — exactly the values the fixture exists to have removed. Passing -in
+// derives the whole list from the source save, which also means no identifier
+// has to be typed onto a command line and into shell history.
+func verifyTerms(in string, extra []string, scriptMax int64) (terms []string, derived bool, err error) {
+	if in != "" {
+		scan, err := scanSave(in, scriptMax)
+		if err != nil {
+			return nil, false, err
+		}
+		sc, err := newScrubber(scan, append(machineTerms(), extra...))
+		if err != nil {
+			return nil, false, err
+		}
+		return sc.terms(), true, nil
+	}
+	if len(extra) == 0 {
+		return nil, false, fmt.Errorf("-verify needs the playthrough's own terms, or it only checks machine\n" +
+			"  identifiers a savegame never contains and reports \"clean\" no matter what is in the file.\n" +
+			"  Pass -in <the source save> to derive them (nothing lands in shell history), or list them\n" +
+			"  explicitly with -scrub \"<player name>,<guid>,<seed>,…\".")
+	}
+	return append(machineTerms(), extra...), false, nil
+}
+
 // verifyFixture decompresses a fixture and searches every line for each term.
 // It is deliberately a dumb substring scan over the whole decompressed stream:
 // the point is to prove absence, and anything cleverer could be wrong in a way
-// that looks like success.
+// that looks like success. The one concession is case: matching folds, because
+// the scrubber folds, and a check narrower than the scrub cannot police it.
 func verifyFixture(path string, terms []string) ([]hit, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -793,6 +893,13 @@ func verifyFixture(path string, terms []string) ([]hit, error) {
 	}
 	defer gz.Close()
 
+	folded := make([]string, 0, len(terms))
+	for _, term := range terms {
+		if term != "" {
+			folded = append(folded, strings.ToLower(term))
+		}
+	}
+
 	var hits []hit
 	sc := bufio.NewScanner(gz)
 	sc.Buffer(make([]byte, 0, 1<<20), 1<<24)
@@ -800,11 +907,9 @@ func verifyFixture(path string, terms []string) ([]hit, error) {
 	for sc.Scan() {
 		line++
 		text := sc.Text()
-		for _, term := range terms {
-			if term == "" {
-				continue
-			}
-			if strings.Contains(text, term) {
+		lower := strings.ToLower(text)
+		for _, term := range folded {
+			if strings.Contains(lower, term) {
 				snippet := text
 				if len(snippet) > 160 {
 					snippet = snippet[:160]
@@ -816,8 +921,16 @@ func verifyFixture(path string, terms []string) ([]hit, error) {
 	return hits, sc.Err()
 }
 
-func reportVerify(path string, terms []string, hits []hit) {
-	fmt.Printf("verify: %s against %d term(s): %v\n", filepath.Base(path), len(terms), terms)
+// reportVerify names the terms only when the operator supplied them by hand —
+// they are already in that shell's history. Terms derived from a save with -in
+// are counted, not printed, so re-verifying a fixture does not put the player's
+// name back on a terminal (or in a CI log).
+func reportVerify(path string, terms []string, hits []hit, showTerms bool) {
+	if showTerms {
+		fmt.Printf("verify: %s against %d term(s): %v\n", filepath.Base(path), len(terms), terms)
+	} else {
+		fmt.Printf("verify: %s against %d term(s) derived from the source save\n", filepath.Base(path), len(terms))
+	}
 	if len(hits) == 0 {
 		fmt.Println("verify: 0 hits — clean")
 		return

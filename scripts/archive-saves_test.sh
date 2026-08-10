@@ -87,25 +87,25 @@ test_copies_all_profiles() {
 	t=$(new_tmp)
 	saves="$t/saves"
 	archive="$t/archive"
-	mkdir -p "$saves/71052239/save" "$saves/99999999/save"
-	mk_save "$saves/71052239/save/quicksave.xml.gz" 1754000000 "alpha"
-	mk_save "$saves/71052239/save/autosave_01.xml.gz" 1754000600 "beta"
+	mkdir -p "$saves/12345678/save" "$saves/99999999/save"
+	mk_save "$saves/12345678/save/quicksave.xml.gz" 1754000000 "alpha"
+	mk_save "$saves/12345678/save/autosave_01.xml.gz" 1754000600 "beta"
 	# Same basename in a second profile must not collide.
 	mk_save "$saves/99999999/save/quicksave.xml.gz" 1754001200 "gamma"
 
-	out=$(run "$saves/71052239/save:$saves/99999999/save" "$archive")
+	out=$(run "$saves/12345678/save:$saves/99999999/save" "$archive")
 	assert_eq 0 "$?" "copies: exit status"
 	assert_eq 3 "$(count_archive "$archive")" "copies: all three saves archived"
 
 	local names
 	names=$(ls_archive "$archive")
-	assert_contains "$names" "$(ts 1754000000)_71052239_quicksave_" "copies: name carries mtime+profile+save"
+	assert_contains "$names" "$(ts 1754000000)_12345678_quicksave_" "copies: name carries mtime+profile+save"
 	assert_contains "$names" "_99999999_quicksave_" "copies: second profile's quicksave kept separately"
-	assert_contains "$out" "archived $saves/71052239/save/quicksave.xml.gz" "copies: logs each copy"
+	assert_contains "$out" "archived $saves/12345678/save/quicksave.xml.gz" "copies: logs each copy"
 
 	# Content survives the round trip.
 	local first
-	first=$(find "$archive" -name '*_71052239_quicksave_*' -print -quit)
+	first=$(find "$archive" -name '*_12345678_quicksave_*' -print -quit)
 	assert_eq "alpha" "$(gzip -dc "$first")" "copies: payload intact"
 	rm -rf "$t"
 }
@@ -114,7 +114,7 @@ test_copies_all_profiles() {
 test_dedups_on_rerun() {
 	local t saves archive before after out
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves"
 	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"
@@ -134,7 +134,7 @@ test_dedups_on_rerun() {
 test_detects_changed_save() {
 	local t saves archive
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves"
 	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"
@@ -156,7 +156,7 @@ test_detects_changed_save() {
 test_prunes_by_count() {
 	local t saves archive out names
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves"
 	mk_save "$saves/save_001.xml.gz" 1754000000 "one"
@@ -181,7 +181,7 @@ test_prunes_by_count() {
 test_prunes_by_size() {
 	local t saves archive total after cap
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves"
 	mk_save "$saves/save_001.xml.gz" 1754000000 "$(head -c 4000 /dev/zero | tr '\0' 'a')"
@@ -208,7 +208,7 @@ test_prunes_by_size() {
 test_never_touches_source() {
 	local t saves archive before after
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves"
 	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"
@@ -226,7 +226,7 @@ test_never_touches_source() {
 test_skips_settling_saves() {
 	local t saves archive out
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves"
 	mk_save "$saves/quicksave.xml.gz" "$(date +%s)" "alpha"
@@ -244,7 +244,7 @@ test_skips_settling_saves() {
 test_rejects_bad_gzip() {
 	local t saves archive out
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves"
 	printf 'this is not gzip' >"$saves/quicksave.xml.gz"
@@ -275,7 +275,7 @@ test_tolerates_missing_dirs() {
 test_ignores_non_saves() {
 	local t saves archive
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves"
 	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"
@@ -294,7 +294,7 @@ test_ignores_non_saves() {
 test_refuses_overlapping_archive_dir() {
 	local t saves before out rc
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	mkdir -p "$saves"
 	mk_save "$saves/save_001.xml.gz" 1754000000 "one"
 	mk_save "$saves/save_002.xml.gz" 1754000600 "two"
@@ -342,12 +342,12 @@ test_refuses_overlapping_archive_dir() {
 test_prune_refuses_links_out_of_the_archive() {
 	local t saves archive out
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves" "$archive"
 	mk_save "$saves/quicksave.xml.gz" 1754003600 "alpha"
 	# Sorts first (oldest), so the keep=1 prune reaches it before anything else.
-	ln -s "$saves/quicksave.xml.gz" "$archive/20200101T000000Z_71052239_planted_1.xml.gz"
+	ln -s "$saves/quicksave.xml.gz" "$archive/20200101T000000Z_12345678_planted_1.xml.gz"
 
 	out=$(run "$saves" "$archive" 1)
 	assert_contains "$out" "refusing to delete a symlink" "prune guard: refuses the planted link"
@@ -362,7 +362,7 @@ test_prune_refuses_links_out_of_the_archive() {
 test_retries_transient_copy_failure() {
 	local t saves archive shim out
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	shim="$t/shim"
 	mkdir -p "$saves" "$shim"
@@ -395,11 +395,11 @@ test_retries_transient_copy_failure() {
 test_bad_marker_expires_and_is_never_silent() {
 	local t saves archive marker out
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves" "$archive"
 	mk_save "$saves/quicksave.xml.gz" 1754000000 "still a good save"
-	marker="$archive/$(ts 1754000000)_71052239_quicksave_$(stat -c %s "$saves/quicksave.xml.gz").xml.gz.bad"
+	marker="$archive/$(ts 1754000000)_12345678_quicksave_$(stat -c %s "$saves/quicksave.xml.gz").xml.gz.bad"
 
 	# A fresh marker holds — and says so, every single run.
 	: >"$marker"
@@ -422,13 +422,13 @@ test_bad_marker_expires_and_is_never_silent() {
 test_reaps_orphaned_bad_markers() {
 	local t saves archive out
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves" "$archive"
 	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"
-	: >"$archive/20250101T000000Z_71052239_deleted_save_99.xml.gz.bad"
-	touch -d '@1000000000' -- "$archive/20250101T000000Z_71052239_deleted_save_99.xml.gz.bad"
-	: >"$archive/20250102T000000Z_71052239_recent_save_99.xml.gz.bad" # fresh: kept
+	: >"$archive/20250101T000000Z_12345678_deleted_save_99.xml.gz.bad"
+	touch -d '@1000000000' -- "$archive/20250101T000000Z_12345678_deleted_save_99.xml.gz.bad"
+	: >"$archive/20250102T000000Z_12345678_recent_save_99.xml.gz.bad" # fresh: kept
 
 	out=$(run "$saves" "$archive")
 	assert_eq 1 "$(find "$archive" -name '*.bad' | wc -l)" "reap: expired orphan marker deleted, fresh one kept"
@@ -442,12 +442,12 @@ test_reaps_orphaned_bad_markers() {
 test_reaper_spares_live_temps() {
 	local t saves archive live stale
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves" "$archive"
 	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"
-	live="$archive/.tmp.$$.20250101T000000Z_71052239_inflight_1.xml.gz"
-	stale="$archive/.tmp.$(dead_pid).20250101T000000Z_71052239_abandoned_1.xml.gz"
+	live="$archive/.tmp.$$.20250101T000000Z_12345678_inflight_1.xml.gz"
+	stale="$archive/.tmp.$(dead_pid).20250101T000000Z_12345678_abandoned_1.xml.gz"
 	printf 'in flight' >"$live"
 	printf 'abandoned' >"$stale"
 
@@ -464,7 +464,7 @@ test_reaper_spares_live_temps() {
 test_lock_is_mandatory() {
 	local t saves archive out shim tool
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves" "$archive"
 	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"
@@ -534,7 +534,7 @@ test_concurrent_runs_are_serialized() {
 	local mode t saves archive n names dupes
 	for mode in flock mkdir; do
 		t=$(new_tmp)
-		saves="$t/saves/71052239/save"
+		saves="$t/saves/12345678/save"
 		archive="$t/archive"
 		mkdir -p "$saves"
 		for n in $(seq 1 40); do
@@ -561,7 +561,7 @@ test_concurrent_runs_are_serialized() {
 
 		# "exactly once" — no source archived under two different names.
 		names=$(ls_archive "$archive")
-		dupes=$(printf '%s\n' $names | sed 's/^[0-9TZ]*_71052239_//' | LC_ALL=C sort | uniq -d | wc -l)
+		dupes=$(printf '%s\n' $names | sed 's/^[0-9TZ]*_12345678_//' | LC_ALL=C sort | uniq -d | wc -l)
 		assert_eq 0 "$dupes" "concurrent[$mode]: no save archived twice"
 		rm -rf "$t"
 	done
@@ -571,7 +571,7 @@ test_concurrent_runs_are_serialized() {
 test_paths_with_spaces() {
 	local t saves archive out
 	t=$(new_tmp)
-	saves="$t/my saves (steam)/71052239/save"
+	saves="$t/my saves (steam)/12345678/save"
 	archive="$t/x4 archive \$dir"
 	mkdir -p "$saves"
 	mk_save "$saves/quick save 1.xml.gz" 1754000000 "alpha"
@@ -591,7 +591,7 @@ test_paths_with_spaces() {
 test_future_mtime_is_not_stuck() {
 	local t saves archive out
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves"
 	mk_save "$saves/quicksave.xml.gz" "$(($(date +%s) + 7200))" "alpha"
@@ -611,7 +611,7 @@ test_distinguishes_write_failure_from_vanished_source() {
 		return
 	fi
 	t=$(new_tmp)
-	saves="$t/saves/71052239/save"
+	saves="$t/saves/12345678/save"
 	archive="$t/archive"
 	mkdir -p "$saves" "$archive"
 	mk_save "$saves/quicksave.xml.gz" 1754000000 "alpha"

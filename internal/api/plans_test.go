@@ -53,7 +53,7 @@ func planTestService(t *testing.T, d *GameData, planBody string) *Service {
 	// Plan discovery walks the real save roots, so lay out the same shape
 	// under a temporary HOME: <home>/.config/EgoSoft/X4/<profile>/constructionplan.
 	dir := t.TempDir()
-	profile := filepath.Join(dir, ".config", "EgoSoft", "X4", "71052239", "constructionplan")
+	profile := filepath.Join(dir, ".config", "EgoSoft", "X4", "12345678", "constructionplan")
 	if err := os.MkdirAll(profile, 0o755); err != nil {
 		t.Fatal(err)
 	}

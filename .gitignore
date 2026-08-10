@@ -1,8 +1,11 @@
 /x4mcp
 *.xml.gz
 # The distilled, scrubbed savegame fixture is the one *.xml.gz that belongs in
-# the repo (see scripts/distill-save and docs/parse-baseline.md).
-!internal/x4save/testdata/real/*.xml.gz
+# the repo (see scripts/distill-save and docs/parse-baseline.md). Pinned to the
+# exact filename, not `real/*.xml.gz`: a glob would make that directory the one
+# place a 100 MB unscrubbed save could be staged by `git add -A` after a
+# mistyped -out, and a leak is the one mistake that cannot be taken back.
+!internal/x4save/testdata/real/distilled-quicksave.xml.gz
 # Baselines are machine-specific EXCEPT the hermetic wire baseline, which is the
 # gate itself: it holds no absolute path, no clock and no savegame contents, so
 # it is committed and `scripts/wire-parity.sh --check` works in a fresh clone and
