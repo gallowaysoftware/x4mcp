@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The event log, in the shape X4 actually writes it: colour codes as
+     [\033]#RRGGBBAA# ... [\033]X, line breaks as [\012], faction and player
+     names as {page,id} text refs, and money/component cross-references.
+     Today's parser mines only the "Current reputation:" entries out of this
+     (RawReputations); capturing the log itself is the S6 target. -->
+<savegame>
+<info>
+<save date="1786380573" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<log>
+<entry time="128.116" category="tips" title="Tip" text="[\033]#FFFFFFFF#To learn about missions and other activities, open the 'Tutorials and Help' menu with H.[\033]X"/>
+<entry time="579.594" category="missions" title="Escaping the Clutches of the Ministry of Finance" text="You managed to escape the prison station, together with the Axiom." faction="{1021,1202}"/>
+<entry time="1248.776" title="Reputation gained" text="Reason: Trade Completed[\012]Current reputation: 0" faction="{20203,901}"/>
+<entry time="3012.788" title="Reputation gained: +1" text="Reason: Destroyed Enemy[\012]Current reputation: 1" faction="{20203,601}"/>
+<entry time="3445.336" title="Rewarded for station defence" interact="showonmap" component="[0x1e580]" faction="{20203,601}" money="50000"/>
+<entry time="3454.442" title="Reputation gained: +1" text="Reason: Mission Completed[\012]Current reputation: 3" faction="{20203,601}"/>
+<!-- Out-of-order timestamps: the later value must win per faction, not the
+     last one seen in file order. -->
+<entry time="9000.000" title="Reputation lost: -2" text="Reason: Attacked Faction Ship[\012]Current reputation: -13" faction="{20203,301}"/>
+<entry time="8000.000" title="Reputation gained: +1" text="Reason: Mission Completed[\012]Current reputation: 7" faction="{20203,301}"/>
+<entry time="10500.25" category="upkeep" title="Ship destroyed" text="[\033]#FFAA00FF#Your ship [\033]X Mineral Hauler was destroyed in [\033]#FF3B30FF#Hatikvah's Choice I[\033]X." entity="Mineral Hauler" faction="{20203,201}"/>
+<entry time="11000.5" title="Reputation gained: +1" text="Reason: Destroyed Enemy[\012]Current reputation: 30" faction="{20203,201}"/>
+<!-- A reputation-shaped entry with no faction attr must be ignored, not
+     attributed to whatever faction was seen last. -->
+<entry time="11500.0" title="Reputation gained" text="Reason: Unknown[\012]Current reputation: 99"/>
+<entry time="12000.0" category="tips" title="Tip" text="[\033]#FFFFFFFF#Illegal items can be sold to black market traders.[\033]X"/>
+</log>
+</savegame>

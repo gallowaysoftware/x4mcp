@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A player ship subtree: the order queue (with a temp="1" runtime step that
+     must NOT be reported as a user order), the last failed-order message, the
+     captain's skills, cargo, the ship's own trade wallet, and a fighter docked
+     inside it. Also the two player-owned things that are deliberately not
+     fleet: a lasertower (deployable equipment) and a satellite. -->
+<savegame>
+<info>
+<save date="1786380573" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="argon" id="[0x3]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_01_sector001_macro" connection="sector" id="[0x4]">
+<connections>
+<connection connection="ships">
+<component class="ship_l" macro="ship_arg_l_miner_solid_01_b_macro" connection="space" code="PLY-100" owner="player" name="Mineral Hauler" thruster="thruster_arg_l_travel_01_mk3_macro" id="[0x300]">
+<account amount="1250000"/>
+<people>
+<person role="captain" id="[0x301]"/>
+<person role="service" id="[0x302]"/>
+<person role="marine" id="[0x303]"/>
+</people>
+<cargo>
+<ware ware="ore" amount="4380"/>
+<ware ware="silicon" amount="1200"/>
+<ware ware="energycells" amount="0"/>
+</cargo>
+<orders>
+<order order="MiningRoutine" default="1" state="started">
+<param name="ware" value="ore"/>
+<param name="maxamount" value="4400"/>
+</order>
+<order order="SingleSell">
+<param name="ware" value="ore"/>
+<param name="maxamount" value="4400"/>
+<param name="pricethreshold" value="27200"/>
+</order>
+<!-- A runtime execution step X4 layers on top of the real order. -->
+<order order="DockAndWait" temp="1" state="started"/>
+<failed order="SingleSell" message="No suitable sell offer found"/>
+<failed order="MoveTo" message="Destination unreachable"/>
+</orders>
+<connections>
+<connection connection="cockpit">
+<component class="cockpit" macro="cockpit_arg_l_01_macro" connection="ship" id="[0x304]">
+<connections>
+<connection connection="entities">
+<component class="npc" macro="character_argon_male_macro" connection="room" name="Ilya Rannveig" owner="player" id="[0x305]">
+<traits>
+<skills boarding="3" engineering="9" management="12" morale="6" piloting="7"/>
+</traits>
+<entity post="captain"/>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+<connection connection="dockingbays">
+<component class="dockingbay" macro="dockingbay_arg_s_01_macro" connection="ship" id="[0x306]">
+<connections>
+<connection connection="dock">
+<component class="ship_s" macro="ship_arg_s_fighter_01_a_macro" connection="dock" code="PLY-101" owner="player" name="Escort One" id="[0x307]">
+<people>
+<person role="captain" id="[0x308]"/>
+</people>
+<orders>
+<order order="ProtectShip" default="1"/>
+</orders>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+<connection connection="objects">
+<!-- Deployables and probes: player-owned, but never fleet. -->
+<component class="ship_s" macro="ship_gen_s_lasertower_01_a_macro" connection="space" code="PLY-900" owner="player" id="[0x310]"/>
+<component class="satellite" macro="eq_arg_satellite_02_macro" connection="space" code="PLY-901" owner="player" id="[0x311]"/>
+<component class="satellite" macro="eq_arg_satellite_02_macro" connection="space" code="PLY-902" owner="player" id="[0x312]"/>
+<component class="resourceprobe" macro="eq_arg_resourceprobe_01_macro" connection="space" code="PLY-903" owner="player" id="[0x313]"/>
+<!-- Boring player-owned classes are not counted at all. -->
+<component class="computer" macro="computer_gen_01_macro" connection="space" owner="player" id="[0x314]"/>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</universe>
+</savegame>

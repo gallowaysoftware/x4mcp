@@ -1,3 +1,6 @@
 /x4mcp
 *.xml.gz
+# The distilled, scrubbed savegame fixture is the one *.xml.gz that belongs in
+# the repo (see scripts/distill-save and docs/parse-baseline.md).
+!internal/x4save/testdata/real/*.xml.gz
 baselines/

@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The gate graph, and the three ways it can lie to you.
+     Sectors A and B hold a matched pair of gates: one real edge.
+     Sector C holds a gate with no <connected> child at all — inactive in this
+     playthrough (17 of 323 in the real save), and routing over it invents a
+     jump that cannot be flown.
+     Sector D holds a gate pointing at a connection id that appears nowhere in
+     the save: also not a provable route.
+     The sectors also carry <resourceareas>, including the 9.x per-area yield
+     attribute that Probe C is about. -->
+<savegame>
+<info>
+<save date="1786380573" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="argon" id="[0x10]">
+<resourceareas>
+<area id="[0x11]" yieldid="sphere_large_ore_high_slow" yield="443227" starttime="360455.41">
+<fields>
+<field region="[0x12]" macro="env_ast_ore_l_01_macro" weight="1075059"/>
+<field region="[0x12]" macro="env_ast_ore_l_02_macro" weight="1075059"/>
+<field region="[0x12]" macro="env_ast_crystal_m_01_macro" weight="220000"/>
+<field region="[0x12]" macro="env_ast_ice_m_01_macro" weight="60000"/>
+<field region="[0x12]" macro="env_debris_debris_l_01_macro" weight="12000"/>
+<!-- Not minable: must not appear as a resource. -->
+<field region="[0x12]" macro="env_cloud_neb_01_macro" weight="999999"/>
+</fields>
+</area>
+</resourceareas>
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_01_sector001_macro" connection="sector" id="[0x13]">
+<connections>
+<connection connection="connection_clustergate01to02">
+<component class="gate" macro="props_gates_orb_accelerator_01_macro" connection="space" code="GAA-001" id="[0x14]">
+<connections>
+<connection connection="clustergate01to02" id="[0xA1]">
+<connected connection="[0xB1]"/>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_02_macro" connection="galaxy" id="[0x20]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_02_sector001_macro" connection="cluster" code="BBB-002" owner="player" id="[0x21]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_02_sector001_macro" connection="sector" id="[0x22]">
+<connections>
+<connection connection="connection_clustergate02to01">
+<component class="gate" macro="props_gates_orb_accelerator_01_macro" connection="space" code="GBB-002" id="[0x23]">
+<connections>
+<connection connection="clustergate02to01" id="[0xB1]">
+<connected connection="[0xA1]"/>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_03_macro" connection="galaxy" id="[0x30]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_03_sector001_macro" connection="cluster" code="CCC-003" owner="freesplit" contested="1" id="[0x31]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_03_sector001_macro" connection="sector" id="[0x32]">
+<connections>
+<connection connection="connection_clustergate03">
+<!-- Partnerless: no <connected> element. -->
+<component class="gate" macro="props_gates_anc_gate_macro" connection="space" code="GCC-003" id="[0x33]">
+<connections>
+<connection connection="clustergate03" id="[0xC1]"/>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_04_macro" connection="galaxy" id="[0x40]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_04_sector001_macro" connection="cluster" code="DDD-004" owner="ownerless" id="[0x41]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_04_sector001_macro" connection="sector" id="[0x42]">
+<connections>
+<connection connection="connection_clustergate04">
+<component class="gate" macro="props_gates_orb_accelerator_01_macro" connection="space" code="GDD-004" id="[0x43]">
+<connections>
+<!-- Points at a connection id that is nowhere in this save. -->
+<connection connection="clustergate04" id="[0xD1]">
+<connected connection="[0xFFFF]"/>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</universe>
+</savegame>

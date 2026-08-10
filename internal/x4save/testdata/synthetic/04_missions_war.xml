@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Mission offers and active missions. The war offers are the ones that
+     matter for the war chips: they carry group="<faction>_war_<enemy>", which
+     is how a live faction war is told apart from an ordinary fight mission.
+     Not captured by today's parser — S6 target. -->
+<savegame>
+<info>
+<save date="1786380573" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<missions>
+<offer id="634887" actor="[0x16af44]" name="Argon Vs. Xenon" description="Volunteers wanted to secure our borders and repel Xenon incursions." faction="argon" group="argon_war_xenon" type="fight" level="trivial">
+<briefing>
+<objective step="1" type="destroy" name="Destroy Xenon vessels"/>
+</briefing>
+</offer>
+<offer id="635067" actor="[0x16affc]" name="Holy Order vs. Paranid" description="They are weak, and they must be crushed." faction="holyorder" group="holyorder_war_paranid" type="fight" level="trivial"/>
+<offer id="632746" actor="[0x16a6e6]" name="Split Vs. Argon" description="Reinforce borders. Lead attacks on their turf." faction="split" group="split_war_argon" type="fight" level="trivial"/>
+<!-- A non-war offer: same element, no group attr. -->
+<offer id="11085" component="[0x1e1ba]" distance="50000" actor="[0x1e348]" name="Guerilla Research and Development" description="You look like someone resourceful, would you mind helping me out?" faction="civilian" type="deliver" level="medium" reward="352800"/>
+<!-- A tutorial offer, faction="player": must never be read as a war signal. -->
+<offer id="627187" actor="[0x1d4db]" name="14) Boarding Ships" description="Boarding large ships." faction="player" type="tutorial" level="trivial">
+<briefing>
+<objective step="1" type="custom" name="Training Marines"/>
+<objective step="2" type="custom" name="Finding a Ship"/>
+</briefing>
+</offer>
+<mission id="620901" active="1" priority="13" time="106666.11" name="A Demonstration of Power" description="Destroying a station crucial to their operations should do the trick!" icon="briefing_dagobas_01" caption="Dagobas Lahubasis Yorilos III" faction="player" group="story_thefan" type="plot" level="veryhard" rewardtext="Intimidating the Vigor Syndicate" abortable="0" activation="0">
+<objectives>
+<objective step="1" type="destroy" component="[0x345d6]"/>
+</objectives>
+</mission>
+<mission id="628144" time="114333.854" name="Assign subordinate" description="Assign a trade ship to this station to help in the buying of resources." faction="player" type="upkeep_subordinates" alert="low" abortable="0" activation="0" associated="[0x345d6]"/>
+<mission id="13739" time="80785.692" name="Laser Tower Deployment" description="We seek a contractor to deploy a number of laser towers around a station." faction="split" type="drop" level="medium" reward="352800"/>
+</missions>
+</savegame>

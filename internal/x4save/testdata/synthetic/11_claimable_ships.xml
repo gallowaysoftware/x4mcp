@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Ownerless ships: abandoned derelicts and unclaimed Timelines reward ships,
+     free to take with a spacesuit. Identity comes from the element's own
+     attributes (macro, code, thruster) because the subtree is skipped — these
+     are not the player's, so nothing inside them is worth the tokens. An
+     ownerless STATION is not a claimable ship and must not be listed. -->
+<savegame>
+<info>
+<save date="1786380573" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="argon" id="[0x3]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_01_sector001_macro" connection="sector" id="[0x4]">
+<connections>
+<connection connection="ships">
+<component class="ship_s" macro="ship_par_s_scout_01_a_macro" connection="space" code="OWN-601" owner="ownerless" thruster="thruster_par_s_travel_01_mk1_macro" id="[0x600]">
+<cargo>
+<ware ware="ore" amount="12"/>
+</cargo>
+</component>
+<component class="ship_m" macro="ship_spl_m_fighter_02_a_macro" connection="space" code="OWN-602" owner="ownerless" thruster="thruster_spl_m_travel_01_mk3_macro" id="[0x601]"/>
+<component class="ship_l" macro="ship_arg_l_destroyer_02_a_macro" connection="space" code="OWN-603" owner="ownerless" id="[0x602]"/>
+<!-- Ownerless, but not a ship. -->
+<component class="station" macro="station_gen_default_macro" connection="space" code="OWN-604" owner="ownerless" id="[0x603]"/>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_02_macro" connection="galaxy" id="[0x20]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_02_sector001_macro" connection="cluster" code="BBB-002" owner="teladi" id="[0x21]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_02_sector001_macro" connection="sector" id="[0x22]">
+<connections>
+<connection connection="ships">
+<component class="ship_xs" macro="ship_gen_xs_racer_01_a_macro" connection="space" code="OWN-605" owner="ownerless" thruster="thruster_gen_xs_travel_01_mk2_macro" id="[0x610]"/>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</universe>
+</savegame>

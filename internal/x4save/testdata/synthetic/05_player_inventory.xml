@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The player character component. It is not a top-level element: it is
+     docked in the cockpit of whatever ship the player is flying, which is why
+     the parser has to reach blueprints/research through a ship subtree. The
+     <inventory> beside them (spacesuit gear, mod parts, illegal wares) is the
+     S6 target; blueprints and research are captured today. -->
+<savegame>
+<info>
+<save date="1786380573" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="argon" id="[0x3]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_01_sector001_macro" connection="sector" id="[0x4]">
+<connections>
+<connection connection="ships">
+<component class="ship_s" macro="ship_par_s_scout_01_a_macro" connection="space" code="PLY-001" owner="player" name="Kestrel" id="[0x100]">
+<connections>
+<connection connection="cockpit">
+<component class="cockpit" macro="cockpit_par_s_01_macro" connection="ship" id="[0x101]">
+<connections>
+<connection connection="entities">
+<component class="player" macro="character_player_pirate_gamestart2_macro" connection="room" name="{1021,1202}" code="GYH-661" owner="player" known="1" activity="seta" id="[0x102]">
+<traits flags="remotecommable|subtitlename">
+<skills boarding="15" engineering="15" management="15" morale="15" piloting="15"/>
+</traits>
+<entity post="playerpilot"/>
+<inventory>
+<ware ware="weapon_gen_spacesuit_repairlaser_01_mk1"/>
+<ware ware="software_scannerobjectmk3" amount="2"/>
+<ware ware="inv_bandages" amount="46"/>
+<ware ware="inv_crystalbit" amount="70"/>
+<ware ware="modpart_nividiumcrystallite" amount="218"/>
+<ware ware="modpart_tuningsoftware" amount="226"/>
+<ware ware="inv_advancedtargetingmodule" amount="119"/>
+<ware ware="inv_hallucinogenics" amount="172"/>
+<ware ware="inv_spaceweed" amount="8"/>
+<ware ware="paintmod_0218" amount="8"/>
+</inventory>
+<blueprints>
+<blueprint ware="module_gen_prod_energycells_01"/>
+<blueprint ware="module_arg_prod_hullparts_01"/>
+<blueprint ware="module_gen_stor_container_01"/>
+<blueprint ware="module_gen_dock_m_01"/>
+</blueprints>
+<research>
+<research ware="research_teleportation" method="research"/>
+<research ware="research_mod_engine_pre" method="research"/>
+<research ware="research_mod_engine_mk1" method="research"/>
+<research ware="research_mod_shield_mk2" method="research"/>
+</research>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</universe>
+</savegame>

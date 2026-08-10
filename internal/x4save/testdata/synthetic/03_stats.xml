@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The <stats> block: 103 counters in a real save, a representative dozen
+     here. Nothing in Snapshot reads them yet — this fixture exists so the S6
+     schema bump has a target that already ships with the tests. -->
+<savegame>
+<info>
+<save date="1786380573" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<stats>
+<stat id="time_total" value="591711.419"/>
+<stat id="time_playership" value="426892.897"/>
+<stat id="time_seta_saved" value="352039.282"/>
+<stat id="time_spacesuit" value="9652.45"/>
+<stat id="money_earned_trade" value="1204880000"/>
+<stat id="money_spent_ships" value="642300000"/>
+<stat id="money_spent_stations" value="311050000"/>
+<stat id="ships_lost" value="17"/>
+<stat id="ships_destroyed" value="1284"/>
+<stat id="ships_boarded" value="6"/>
+<stat id="stations_built" value="12"/>
+<stat id="modules_built" value="147"/>
+<stat id="distance_travelled" value="41822730.5"/>
+</stats>
+</savegame>

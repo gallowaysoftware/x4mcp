@@ -1,0 +1,127 @@
+{
+  "snapshot": {
+    "source_path": "09_player_station.xml",
+    "source_size": 0,
+    "source_mtime": 0,
+    "parsed_at": 0,
+    "parse_ms": 0,
+    "save_name": "Fixture Save",
+    "save_date": 1786380573,
+    "game_version": "900",
+    "game_build": "611726",
+    "game_time_s": 591711.419,
+    "start_type": "x4ep1_gamestart_pirate2",
+    "game_guid": "00000000-0000-4000-8000-000000000000",
+    "seed": "1234567890",
+    "player_name": "Test Pilot",
+    "money": 5492825,
+    "location_raw": "{20004,5010011}",
+    "dlcs": null,
+    "relations": null,
+    "ships": [
+      {
+        "id": "[0x450]",
+        "code": "PLY-200",
+        "name": "Freight One",
+        "class": "ship_m",
+        "macro": "ship_arg_m_trans_container_01_a_macro",
+        "faction": "Argon",
+        "size": "M",
+        "role": "Trader/Freighter",
+        "sector": "cluster_01_sector001_macro",
+        "order": "TradeRoutine",
+        "orders": [
+          {
+            "order": "TradeRoutine",
+            "default": true,
+            "state": "started"
+          }
+        ],
+        "crew_count": 0,
+        "cargo": [
+          {
+            "ware": "refinedmetals",
+            "amount": 1500
+          }
+        ],
+        "docked_at": "[0x400]"
+      }
+    ],
+    "stations": [
+      {
+        "id": "[0x400]",
+        "code": "PLS-400",
+        "name": "Ore Refinery Alpha",
+        "macro": "station_gen_default_macro",
+        "sector": "cluster_01_sector001_macro",
+        "produces": [
+          "refinedmetals"
+        ],
+        "module_counts": {
+          "refinedmetals": 2
+        },
+        "storage": [
+          {
+            "ware": "ore",
+            "amount": 48000
+          },
+          {
+            "ware": "energycells",
+            "amount": 9400
+          },
+          {
+            "ware": "refinedmetals",
+            "amount": 9400
+          }
+        ],
+        "trade_offers": [
+          {
+            "ware": "refinedmetals",
+            "sells": true,
+            "price": 176,
+            "amount": 9400
+          },
+          {
+            "ware": "ore",
+            "sells": false,
+            "price": 214,
+            "amount": 12000
+          },
+          {
+            "ware": "energycells",
+            "sells": false,
+            "price": 12,
+            "amount": 30000
+          }
+        ],
+        "workforce": 1700,
+        "subordinates": 3,
+        "money": 18400000,
+        "under_construction": true,
+        "building_modules": [
+          "module_gen_prod_graphene_01_macro"
+        ],
+        "dock_sizes": [
+          "s",
+          "m"
+        ],
+        "dock_sizes_pending": [
+          "l"
+        ]
+      }
+    ],
+    "owned_sectors": [
+      "cluster_01_sector001_macro"
+    ],
+    "blueprints_seen": false,
+    "sectors": [
+      {
+        "macro": "cluster_01_sector001_macro",
+        "code": "AAA-001",
+        "owner": "player",
+        "player_owned": true
+      }
+    ],
+    "other_counts": {}
+  }
+}

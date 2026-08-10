@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Mission Director story scripts. Only the tracked ones are streamed; every
+     other script's subtree is skipped wholesale, which is most of the speed of
+     the parse. Story_Thefan here has the Stranded-start shape: its early
+     chapter boundaries are cancelled even though later chapters were played,
+     so chapter progress has to come from PlotReached, not the boundaries. -->
+<savegame>
+<info>
+<save date="1786380573" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<md>
+<script name="Story_Thefan">
+<cue name="Start" state="complete" time="1200.5"/>
+<cue name="Ch1_Complete" state="cancelled"/>
+<cue name="Ch2_Complete" state="cancelled"/>
+<cue name="Ch3_Complete" state="complete" time="41000.25"/>
+<cue name="Ch4_1_Complete" state="complete" time="52000.75"/>
+<cue name="Ch4_Complete" state="waiting"/>
+<cue name="Ch4_Decision_Sell" state="complete" time="53000"/>
+<cue name="Cleanup_Debug_Reset" state="complete" time="53001"/>
+<cue name="Internal_Timer_Tick" state="active" time="53002"/>
+</script>
+<script name="Story_HQ_Discovery">
+<cue name="Start" state="complete" time="9000"/>
+<cue name="Ch1_Complete" state="complete" time="15000"/>
+<cue name="Ch2_Complete" state="complete" time="26000"/>
+<cue name="Research_Unlocked" state="complete" time="26500"/>
+</script>
+<script name="X4Ep1_Mentor_Subscriptions">
+<cue name="RM_EngineMod" state="complete" time="60000"/>
+<cue name="RM_EngineMod_StartMission" state="complete" time="60500"/>
+<cue name="RM_EngineMod_Delivered" state="complete" time="61000"/>
+<cue name="RM_ShieldMod" state="complete" time="62000"/>
+<cue name="RM_WeaponMod" state="waiting"/>
+</script>
+<!-- An untracked script: skipped wholesale, cues must never surface. -->
+<script name="Order_Trade_Distribute">
+<cue name="Start" state="complete" time="1"/>
+<cue name="Ch9_Complete" state="complete" time="2"/>
+</script>
+</md>
+<!-- The player's completed research is what really decides the mod-research
+     tiers; the RM_ cues above only scaffold the first unlock. -->
+<research>
+<research ware="research_mod_engine_pre" method="research"/>
+<research ware="research_mod_engine_mk1" method="research"/>
+<research ware="research_mod_shield_mk3" method="research"/>
+<research ware="research_teleportation" method="research"/>
+</research>
+</savegame>

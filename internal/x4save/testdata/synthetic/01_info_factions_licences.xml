@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Save metadata, faction relations, and the per-faction licence lists.
+     Licences are the S6 target (F3 schema bump); today's parser reads <info>
+     and the player row of each faction's <relations>. -->
+<savegame>
+<info>
+<save date="1786380573" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" modified="1" time="591711.419" code="0000000" original="900" originalbuild="611726" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+<patches>
+<patch extension="ego_dlc_split" version="900" name="Split Vendetta"/>
+<patch extension="ego_dlc_terran" version="900" name="Cradle of Humanity"/>
+<patch extension="ego_dlc_boron" version="900" name="Kingdom End"/>
+<history>
+<patch extension="ego_dlc_split" version="900" name="Split Vendetta"/>
+</history>
+</patches>
+</info>
+<universe>
+<factions>
+<faction id="argon">
+<relations>
+<relation faction="player" relation="0.42"/>
+<relation faction="xenon" relation="-1"/>
+<relation faction="teladi" relation="0.1"/>
+</relations>
+<licences>
+<licence type="capitalship" factions="player argon"/>
+<licence type="generaluseship" factions="player"/>
+<licence type="station_gen_advanced" factions="player"/>
+<licence type="militaryequipment" factions="antigone"/>
+</licences>
+<boosters>
+<booster type="tradesubscription" factions="player" endtime="612000"/>
+</boosters>
+</faction>
+<faction id="teladi">
+<relations>
+<relation faction="player" relation="-0.06"/>
+<relation faction="argon" relation="0.1"/>
+</relations>
+<licences>
+<licence type="station_gen_basic" factions="player"/>
+</licences>
+</faction>
+<faction id="xenon">
+<relations locked="1">
+<relation faction="player" relation="-1"/>
+<relation faction="argon" relation="-1"/>
+</relations>
+</faction>
+<!-- A faction with no player row at all: it must not become a Relation. -->
+<faction id="visitor001">
+<relations locked="1">
+<relation faction="argon" relation="-1"/>
+</relations>
+</faction>
+<!-- The player's own faction entry is skipped by the parser. -->
+<faction id="player">
+<relations>
+<relation faction="argon" relation="0.42"/>
+</relations>
+</faction>
+</factions>
+</universe>
+</savegame>

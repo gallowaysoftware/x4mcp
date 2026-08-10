@@ -1,0 +1,90 @@
+{
+  "snapshot": {
+    "source_path": "10_npc_station_knownto.xml",
+    "source_size": 0,
+    "source_mtime": 0,
+    "parsed_at": 0,
+    "parse_ms": 0,
+    "save_name": "Fixture Save",
+    "save_date": 1786380573,
+    "game_version": "900",
+    "game_build": "611726",
+    "game_time_s": 591711.419,
+    "start_type": "x4ep1_gamestart_pirate2",
+    "game_guid": "00000000-0000-4000-8000-000000000000",
+    "seed": "1234567890",
+    "player_name": "Test Pilot",
+    "money": 5492825,
+    "location_raw": "{20004,5010011}",
+    "dlcs": null,
+    "relations": null,
+    "ships": [
+      {
+        "id": "[0x510]",
+        "code": "PLY-300",
+        "name": "Scout One",
+        "class": "ship_s",
+        "macro": "ship_arg_s_scout_01_a_macro",
+        "faction": "Argon",
+        "size": "S",
+        "role": "Scout",
+        "sector": "cluster_01_sector001_macro",
+        "order": "Wait",
+        "orders": [
+          {
+            "order": "Wait",
+            "default": true,
+            "state": "started"
+          }
+        ],
+        "crew_count": 0
+      }
+    ],
+    "stations": null,
+    "owned_sectors": null,
+    "blueprints_seen": false,
+    "sectors": [
+      {
+        "macro": "cluster_01_sector001_macro",
+        "code": "AAA-001",
+        "owner": "argon"
+      }
+    ],
+    "trade_stations": [
+      {
+        "id": "[0x500]",
+        "code": "ARG-500",
+        "name": "Argon Trading Station",
+        "owner": "argon",
+        "sector": "cluster_01_sector001_macro",
+        "offers": [
+          {
+            "ware": "energycells",
+            "sells": true,
+            "price": 16,
+            "amount": 18000
+          },
+          {
+            "ware": "hullparts",
+            "sells": true,
+            "price": 1964,
+            "amount": 1200
+          },
+          {
+            "ware": "ore",
+            "sells": false,
+            "price": 248,
+            "amount": 7400
+          },
+          {
+            "ware": "claytronics",
+            "sells": false,
+            "price": 11740,
+            "amount": 240
+          }
+        ]
+      }
+    ],
+    "other_counts": {}
+  }
+}
