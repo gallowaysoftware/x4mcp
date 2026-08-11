@@ -3,8 +3,8 @@ package x4save
 import (
 	"compress/gzip"
 	"io"
-	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -118,9 +118,13 @@ func TestRealFixtureDirHoldsOnlyTheBlessedFixture(t *testing.T) {
 }
 
 // playerNameLiteral matches a player name written down anywhere in the tree:
-// the savegame attribute in a hand-written fixture, and the parsed field in a
-// golden.
-var playerNameLiteral = regexp.MustCompile(`<player name="([^"]*)"|"player_name":\s*"([^"]*)"`)
+// the savegame attribute in a hand-written fixture, the parsed field in a
+// golden, and the "player" key the wire baselines use — the last one both as
+// plain JSON and backslash-escaped, because a tool response embeds its payload
+// as a string inside the envelope.
+var playerNameLiteral = regexp.MustCompile(
+	`<player name="([^"]*)"` + // savegame attribute
+		`|\\?"player(?:_name)?\\?"\s*:\s*\\?"([^"\\]*)`) // JSON, plain or escaped
 
 // The fixture scrub is worth nothing on its own. The real player name spent
 // months in plaintext in a hand-written fixture in this very package while the
@@ -141,34 +145,41 @@ func TestEveryCommittedPlayerNameIsThePlaceholder(t *testing.T) {
 	texts := map[string]bool{
 		".go": true, ".xml": true, ".md": true, ".html": true, ".sh": true, ".json": true,
 		".ts": true, ".tsx": true, ".js": true, ".svelte": true, ".txt": true, ".yml": true, ".yaml": true,
+		// .ndjson is the wire baselines' authority — the pretty .json beside it
+		// is only rendered into failure diffs. An extension list that misses it
+		// scans the copy and not the original.
+		".ndjson": true,
 	}
 
 	root := filepath.Join("..", "..")
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil // an unreadable corner is not this test's business
+
+	// Ask git what is committed rather than walking the filesystem. "Committed"
+	// is the rule's actual subject, and the distinction is load-bearing: the
+	// gitignored baselines a developer captures locally (baselines/wire-live,
+	// baselines/parse) are taken from the real save and legitimately hold the
+	// real name, while baselines/wire-hermetic IS committed and must not. A walk
+	// either skips the whole directory — which is how 532 KB of savegame-derived
+	// JSON ended up outside this guard — or fails on every machine that has ever
+	// run the tool.
+	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
+	if err != nil {
+		t.Skipf("git ls-files: %v (this guard only means anything inside a checkout)", err)
+	}
+
+	for _, rel := range strings.Split(strings.TrimRight(string(out), "\x00"), "\x00") {
+		if rel == "" || !texts[strings.ToLower(filepath.Ext(rel))] {
+			continue
 		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "node_modules", "baselines":
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if !texts[strings.ToLower(filepath.Ext(path))] {
-			return nil
-		}
-		if fi, err := d.Info(); err == nil && fi.Size() > 8<<20 {
-			return nil
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if fi, err := os.Stat(path); err != nil || fi.Size() > 8<<20 {
+			continue
 		}
 		b, err := os.ReadFile(path)
 		if err != nil {
-			return nil
+			continue
 		}
-		rel, _ := filepath.Rel(root, path)
-		rel = filepath.ToSlash(rel)
 		if rel == selfPath {
-			return nil
+			continue
 		}
 		want := placeholder
 		if rel == scrubberTest {
@@ -177,13 +188,9 @@ func TestEveryCommittedPlayerNameIsThePlaceholder(t *testing.T) {
 		for _, m := range playerNameLiteral.FindAllStringSubmatch(string(b), -1) {
 			got := m[1] + m[2] // exactly one group matched
 			if got != want {
-				t.Errorf("%s: player name %q — hand-written fixtures use %q, so a real name cannot hide next to a scrubbed one", rel, got, want)
+				t.Errorf("%s: player name %q — committed fixtures use %q, so a real name cannot hide next to a scrubbed one", rel, got, want)
 			}
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 }
 
