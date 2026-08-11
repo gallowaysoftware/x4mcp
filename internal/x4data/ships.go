@@ -12,11 +12,11 @@ import (
 // planning needs — recipes tell you the wares, this tells you the ships.
 type Ship struct {
 	Macro     string `json:"macro"`
-	Name      string `json:"name,omitempty"`       // resolved display name (e.g. "Magnetar Vanguard")
-	Class     string `json:"class,omitempty"`      // ship_xs/s/m/l/xl
-	Size      string `json:"size,omitempty"`       // XS/S/M/L/XL
-	Purpose   string `json:"purpose,omitempty"`    // mine/trade/fight/build/...
-	Hull      int    `json:"hull,omitempty"`        // hull points
+	Name      string `json:"name,omitempty"`    // resolved display name (e.g. "Magnetar Vanguard")
+	Class     string `json:"class,omitempty"`   // ship_xs/s/m/l/xl
+	Size      string `json:"size,omitempty"`    // XS/S/M/L/XL
+	Purpose   string `json:"purpose,omitempty"` // mine/trade/fight/build/...
+	Hull      int    `json:"hull,omitempty"`    // hull points
 	CrewCap   int    `json:"crew_capacity,omitempty"`
 	Cargo     int    `json:"cargo,omitempty"`      // m³ capacity of the cargo hold
 	CargoType string `json:"cargo_type,omitempty"` // solid / liquid / container
@@ -105,10 +105,18 @@ func LoadShips(dir string) (map[string]Ship, error) {
 				Name       string `xml:"name,attr"`
 				Class      string `xml:"class,attr"`
 				Properties struct {
-					Ident   struct{ Name string `xml:"name,attr"` } `xml:"identification"`
-					Hull    struct{ Max int `xml:"max,attr"` }      `xml:"hull"`
-					Purpose struct{ Primary string `xml:"primary,attr"` } `xml:"purpose"`
-					People  struct{ Capacity int `xml:"capacity,attr"` } `xml:"people"`
+					Ident struct {
+						Name string `xml:"name,attr"`
+					} `xml:"identification"`
+					Hull struct {
+						Max int `xml:"max,attr"`
+					} `xml:"hull"`
+					Purpose struct {
+						Primary string `xml:"primary,attr"`
+					} `xml:"purpose"`
+					People struct {
+						Capacity int `xml:"capacity,attr"`
+					} `xml:"people"`
 				} `xml:"properties"`
 				Connections []struct {
 					Macro struct {

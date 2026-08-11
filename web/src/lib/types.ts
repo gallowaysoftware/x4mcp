@@ -19,8 +19,18 @@ import {
 	EventTypeSnapshotReady,
 } from './types.gen';
 
-/** One SSE event with its payload narrowed by the event name. */
-type Event<T, D> = Omit<Envelope, 'type' | 'data'> & { type: T; data: D };
+/**
+ * One SSE event with its payload narrowed by the event name.
+ *
+ * `data` is optional exactly when the payload can be undefined, because Go's
+ * `json:"data,omitempty"` (internal/wire/event.go) omits the key entirely for a
+ * nil payload — a resync envelope arrives as `{seq, type, at}` with no `data`
+ * member at all, and a required `data` would make the real wire bytes
+ * unassignable. types.typecheck.ts holds the literal that proves it.
+ */
+type Event<T, D> = Omit<Envelope, 'type' | 'data'> &
+	{ type: T } &
+	(undefined extends D ? { data?: D } : { data: D });
 
 /**
  * BoardEvent correlates an event name with its payload. Envelope.data is `any`

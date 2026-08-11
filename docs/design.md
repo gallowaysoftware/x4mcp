@@ -38,10 +38,15 @@ The explored alternative (CALM OPS — a Linear/Grafana-register card surface) s
   --font-mono:'JetBrains Mono',ui-monospace,'Cascadia Mono','Roboto Mono',Menlo,Consolas,monospace;
   --font-sans:'IBM Plex Sans',system-ui,'Segoe UI',Roboto,sans-serif;
 }
-/* the motion law, actually enforced (transitions alone would not block keyframe animations): */
-* { transition: none; animation: none; scroll-behavior: auto; }
-.alert-red-arrival { animation: red-decay .8s ease-out 1; } /* sanctioned exception #1 */
-.locate-highlight  { animation: locate-fade .5s ease-out 1; } /* sanctioned exception #2 */
+/* The motion law, actually enforced. !important is load-bearing, not shouting: a
+ * bare `*` has specificity (0,0,0), so every class rule the chrome kit writes
+ * would outrank it and the law would be a comment. Pseudo-elements are named
+ * because `*` does not match them. The two sanctioned exceptions win it back the
+ * only way anything can — !important at higher specificity — so writing an
+ * exception means declaring yourself one. */
+*, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+.alert-red-arrival { animation: red-decay .8s ease-out 1 !important; } /* sanctioned exception #1 */
+.locate-highlight  { animation: locate-fade .5s ease-out 1 !important; } /* sanctioned exception #2 */
 /* the two 1 Hz tickers (parse blocks, tool elapsed) are JS text swaps, not CSS animation */
 ```
 

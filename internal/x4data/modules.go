@@ -18,10 +18,10 @@ import (
 // them.
 type Module struct {
 	Macro string `json:"macro"`
-	Name  string `json:"name,omitempty"`  // resolved display name
-	Class string `json:"class"`           // production, habitation, storage, dock, buildmodule, defence, ...
-	Race  string `json:"race,omitempty"`  // makerrace (gen=generic) or a habitat's workforce race
-	Size  string `json:"size,omitempty"`  // S/M/L from identification (small/medium/large)
+	Name  string `json:"name,omitempty"` // resolved display name
+	Class string `json:"class"`          // production, habitation, storage, dock, buildmodule, defence, ...
+	Race  string `json:"race,omitempty"` // makerrace (gen=generic) or a habitat's workforce race
+	Size  string `json:"size,omitempty"` // S/M/L from identification (small/medium/large)
 
 	// Production modules: the ware(s) this factory makes (space-separated if more
 	// than one) and the number of workers it employs at full staffing. Workforce

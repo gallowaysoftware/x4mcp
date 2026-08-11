@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Nothing else runs this workflow on a feature branch until a PR exists, and
+  # "CI is green" is not a claim anyone should have to make from their laptop.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,7 +17,7 @@ concurrency:
 
 jobs:
   go:
-    name: go vet + test + build
+    name: go fmt + vet + test + build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -22,12 +25,37 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::run 'gofmt -w .' — these files are not formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
       - run: go vet ./...
+      # go test ./... also carries the privacy guards (internal/x4save/
+      # fixture_privacy_test.go): every committed player name is the placeholder,
+      # and the scrubbed fixture still holds the values it was scrubbed to.
       - run: go test ./...
-      # Last, and from the same checkout Node never touched: this is the D6
-      # promise — a clone with only a Go toolchain builds the whole product,
-      # embedded UI included.
-      - run: go build ./...
+      # D6, and stated as exactly what it checks. web/dist is committed, so the
+      # Go build must never need Node — but ubuntu-latest ships Node, so simply
+      # not calling npm proves nothing. These shims shadow the real binaries: if
+      # anything in the build reaches for Node, it fails loudly here.
+      #
+      # What this does NOT yet prove is that the built binary contains the board:
+      # package web compiles and embeds dist/, but nothing imports it until S3
+      # wires the mux. That gap closes with a test that GETs / from a booted
+      # server, not with this step.
+      - name: go build ./... never invokes Node
+        run: |
+          mkdir -p "$RUNNER_TEMP/no-node"
+          for tool in node npm npx; do
+            printf '#!/bin/sh\necho "::error::the Go build invoked %s — web/dist is committed so that it never has to (D6)" >&2\nexit 127\n' \
+              "$tool" >"$RUNNER_TEMP/no-node/$tool"
+            chmod +x "$RUNNER_TEMP/no-node/$tool"
+          done
+          PATH="$RUNNER_TEMP/no-node:$PATH" go build ./...
 
   web:
     name: svelte-check + build + dist freshness
@@ -43,6 +71,9 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci --ignore-scripts
+      # This also typechecks src/lib/types.typecheck.ts, which is the only
+      # consumer of the hand-kept event union — the half of the wire contract
+      # tygo cannot generate and the drift gate below cannot see.
       - run: npm run check
       - run: npm run build
       - name: committed dist matches a fresh build
@@ -73,10 +104,34 @@ jobs:
       - run: go tool tygo generate
       - name: types.gen.ts matches internal/wire
         run: |
-          if ! git diff --exit-code; then
+          # -uall, not `git diff --exit-code`: a DELETED generated file leaves no
+          # diff at all once tygo has just written it back as an UNTRACKED file,
+          # so the diff-only form passes on a tree where the committed types are
+          # gone. Untracked output is drift too.
+          out=$(git status --porcelain -uall)
+          if [ -n "$out" ]; then
             echo "::error::run 'go tool tygo generate' and commit web/src/lib/types.gen.ts"
+            echo "$out"
             exit 1
           fi
+
+  wire:
+    name: MCP wire parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # The tools ARE the product: a refactor that renames a field, reorders a
+      # schema or drops a description is invisible to `go test` and instantly
+      # visible to every model already pointed at this server. --check speaks
+      # real MCP over stdio to a freshly built binary and diffs 27 responses
+      # byte for byte against baselines/wire-hermetic, which is committed
+      # precisely so this runs anywhere: no game install, no savegame of the
+      # user's, no absolute paths, no clocks. jq ships on ubuntu-latest.
+      - run: scripts/wire-parity.sh --check
 
   scripts:
     name: shell tests
@@ -84,12 +139,39 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The archiver's own test suite builds its fixtures under mktemp: no game
-      # install, no real save. Skipped rather than failed while it does not
-      # exist, so this workflow can land before or after it.
-      - name: scripts/archive-saves_test.sh
+      # install, no real save. Called unconditionally — an `if [ -f … ]` guard
+      # here would mean deleting the suite turns CI green.
+      - run: scripts/archive-saves_test.sh
+
+  privacy:
+    name: no savegame in the index
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The placeholder guards themselves are Go tests and run in the go job
+      # (internal/x4save/fixture_privacy_test.go). What they cannot see is git:
+      # .gitignore keeps raw saves out of the tree, but `git add -f` walks
+      # straight past it, and a 100 MB save pushed once is public forever — a
+      # leak is the one mistake in this repo that cannot be taken back. So this
+      # checks what is in the index, not what is in the working tree.
+      - name: only the scrubbed fixture is a committed savegame
         run: |
-          if [ -f scripts/archive-saves_test.sh ]; then
-            bash scripts/archive-saves_test.sh
-          else
-            echo "scripts/archive-saves_test.sh not present — nothing to run"
+          blessed=internal/x4save/testdata/real/distilled-quicksave.xml.gz
+          stray=$(git ls-files -- '*.xml.gz' | grep -vFx "$blessed" || true)
+          if [ -n "$stray" ]; then
+            echo "::error::committed savegame(s) other than the scrubbed fixture:"
+            echo "$stray"
+            exit 1
+          fi
+      - name: nothing tracked is the size of a real save
+        run: |
+          # A distilled fixture is ~1 MB; a real X4 save is ~100 MB. Anything
+          # over 4 MiB in here is a mistake worth looking at by hand, whatever
+          # its extension is — the leak does not have to be named .xml.gz.
+          big=$(git ls-files -z | xargs -0 -r stat -c '%s %n' |
+                awk '$1 > 4194304 { printf "  %.1f MB  %s\n", $1/1048576, substr($0, index($0, " ") + 1) }')
+          if [ -n "$big" ]; then
+            echo "::error::tracked file(s) over 4 MiB:"
+            echo "$big"
+            exit 1
           fi

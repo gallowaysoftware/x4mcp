@@ -10,10 +10,6 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
-  "dependencies": {
-    "dompurify": "3.4.13",
-    "marked": "18.0.9"
-  },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.0",
     "@tsconfig/svelte": "5.0.8",

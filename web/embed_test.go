@@ -13,9 +13,14 @@ import (
 // (<script src="/assets/index-CUgYPjeU.js">, <link href="/assets/…css">).
 var assetRef = regexp.MustCompile(`(?:src|href)="(/assets/[^"]+)"`)
 
-// TestDistServesIndex is the guard against an empty or half-committed dist/: a
-// build that embeds no app still compiles, and the failure would otherwise show
-// up as a blank browser tab on the second monitor.
+// TestDistServesIndex is the guard against a half-committed dist/, which is the
+// case go:embed cannot see. An EMPTY dist/ does not reach this test at all — the
+// package stops at "pattern all:dist: cannot embed directory dist: contains no
+// embeddable files" — but a dist/ that has files and not the ones index.html
+// points at compiles perfectly and serves a blank browser tab on the second
+// monitor. Stale hashes after a partial `git add`, a build interrupted
+// mid-write, a merge that took index.html from one side and assets/ from the
+// other: all of those get here, and none of them get past.
 func TestDistServesIndex(t *testing.T) {
 	index, err := fs.ReadFile(Dist, "index.html")
 	if err != nil {

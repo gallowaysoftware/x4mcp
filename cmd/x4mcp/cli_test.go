@@ -40,8 +40,8 @@ func TestParseTransport(t *testing.T) {
 		// expands to a launcher with its own flags, including ones named
 		// like ours.
 		{
-			name: "game command is untouched",
-			args: []string{"play", "--relay", "ws://h/r", "--", "/bin/launcher", "--http", "x"},
+			name:      "game command is untouched",
+			args:      []string{"play", "--relay", "ws://h/r", "--", "/bin/launcher", "--http", "x"},
 			wantRelay: "ws://h/r",
 			wantRest:  []string{"play", "--", "/bin/launcher", "--http", "x"},
 		},

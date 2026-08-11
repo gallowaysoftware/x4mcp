@@ -1,0 +1,20 @@
+version: 2
+
+# The actions in ci.yml are pinned to full commit SHAs, which is the right call
+# and also means nothing will ever move them again — a SHA pin does not expire,
+# it just quietly ages out of support. Dependabot is what turns that pin from a
+# freeze into a reviewable PR (it rewrites the SHA *and* the `# vX.Y.Z` comment).
+#
+# Monthly, not weekly: this is a two-person repo and a PR nobody reads is worse
+# than no PR. npm and gomod are deliberately absent for now — the lockfile and
+# go.mod are pinned by hand and reviewed with the code that needs them.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: chore(ci)
