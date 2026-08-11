@@ -217,7 +217,10 @@ func hopKey(hops int) int {
 }
 
 func (s *Service) ListClaimableShips(ctx context.Context, in ListClaimableIn) (ListClaimableOut, error) {
-	snap, err := s.Snapshot(ctx, in.SavePath)
+	// ONE bundle for the request: the install that resolves the save's sector
+	// and hull names must be the install whose gate graph the distances use.
+	d := s.Data()
+	snap, err := s.snapshotWith(ctx, d, in.SavePath)
 	if err != nil {
 		return ListClaimableOut{}, err
 	}
@@ -238,7 +241,7 @@ func (s *Service) ListClaimableShips(ctx context.Context, in ListClaimableIn) (L
 			}
 		}
 	}
-	gates := effectiveGates(s.Data(), snap)
+	gates := effectiveGates(d, snap)
 
 	var matched []x4save.ClaimableShip
 	for _, c := range snap.ClaimableShips {
@@ -1043,7 +1046,9 @@ func perHour(m x4data.Method) float64 {
 }
 
 func (s *Service) PlanProduction(ctx context.Context, in PlanProductionIn) (PlanProductionOut, error) {
-	db := s.Data().Wares
+	// One bundle for the recipe walk AND for resolving the save below.
+	d := s.Data()
+	db := d.Wares
 	if len(db) == 0 {
 		return PlanProductionOut{}, fmt.Errorf("ware database unavailable; set X4MCP_GAME_DIR")
 	}
@@ -1068,7 +1073,7 @@ func (s *Service) PlanProduction(ctx context.Context, in PlanProductionIn) (Plan
 	}
 
 	// Load the snapshot once (reused for build-sector sunlight + blueprint ownership).
-	snap, _ := s.Snapshot(ctx, in.SavePath)
+	snap, _ := s.snapshotWith(ctx, d, in.SavePath)
 	// Energy-cell output scales ~linearly with sunlight, so the EC module count is
 	// site-dependent. Resolve the build sector's sunlight (default 1.0).
 	sun := 1.0
@@ -1557,7 +1562,9 @@ type SectorDistOut struct {
 }
 
 func (s *Service) SectorDistance(ctx context.Context, in SectorDistIn) (SectorDistOut, error) {
-	snap, err := s.Snapshot(ctx, in.SavePath)
+	// One bundle, used both to resolve the save and to route over it.
+	d := s.Data()
+	snap, err := s.snapshotWith(ctx, d, in.SavePath)
 	if err != nil {
 		return SectorDistOut{}, err
 	}
@@ -1566,7 +1573,7 @@ func (s *Service) SectorDistance(ctx context.Context, in SectorDistIn) (SectorDi
 	if from == "" || to == "" {
 		return SectorDistOut{}, fmt.Errorf("could not resolve sector(s): from=%q to=%q", in.From, in.To)
 	}
-	hops := x4data.Hops(effectiveGates(s.Data(), snap), from, to)
+	hops := x4data.Hops(effectiveGates(d, snap), from, to)
 	return SectorDistOut{From: fromName, To: toName, Hops: hops}, nil
 }
 

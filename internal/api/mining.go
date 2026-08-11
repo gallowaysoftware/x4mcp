@@ -111,7 +111,11 @@ type MiningPlanOut struct {
 }
 
 func (s *Service) PlanMiningSupply(ctx context.Context, in MiningPlanIn) (MiningPlanOut, error) {
-	snap, err := s.Snapshot(ctx, in.SavePath)
+	// ONE bundle for the whole request: the recipe walk, the gate graph, the
+	// refinery hint and the enrichment of the save itself must all describe the
+	// same install even if a reload lands mid-flight.
+	d := s.Data()
+	snap, err := s.snapshotWith(ctx, d, in.SavePath)
 	if err != nil {
 		return MiningPlanOut{}, err
 	}
@@ -127,11 +131,6 @@ func (s *Service) PlanMiningSupply(ctx context.Context, in MiningPlanIn) (Mining
 	if limit <= 0 {
 		limit = 5
 	}
-
-	// ONE bundle for the whole request: the recipe walk, the gate graph and the
-	// refinery hint must all describe the same install even if a reload lands
-	// mid-flight.
-	d := s.Data()
 
 	// Which raw resources matter, and what wanted them.
 	wanted, neededFor, via, err := rawInputs(d.Wares, in.Resources, in.Produces)

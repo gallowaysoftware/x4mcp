@@ -107,6 +107,25 @@ type SnapshotProvider interface {
 	Snapshot(ctx context.Context, savePath string) (*x4save.Snapshot, error)
 }
 
+// bundleSnapshotter is a SnapshotProvider that will resolve a save against the
+// CALLER's game-data bundle instead of fetching one of its own.
+//
+// It exists because resolving a save needs the install: the default provider
+// enriches what it parses (sector names, gates, hull names) out of a bundle. So
+// a handler that needed the install too — sector_distance, plan_mining_supply,
+// plan_production, list_claimable_ships, plan_complex, analyze_plan,
+// estimate_ship_cost — took TWO bundles per request, one directly and one down
+// inside the provider, and a SIGHUP reload landing between them answered half
+// from the old install and half from the new. The second read was transitive,
+// which is exactly why reading one handler body never showed it.
+//
+// The method is unexported: an outside provider (the save watcher) cannot be
+// obliged to implement it, and Service.snapshotWith falls back to the plain
+// seam for anything that does not.
+type bundleSnapshotter interface {
+	snapshotWith(ctx context.Context, d *GameData, savePath string) (*x4save.Snapshot, error)
+}
+
 // Service holds everything the tools need: the game-data bundle and wherever
 // savegames come from. It is safe for concurrent use.
 type Service struct {
@@ -117,6 +136,9 @@ type Service struct {
 	ready     chan struct{}
 	readyOnce sync.Once
 	snaps     SnapshotProvider
+	// reads counts bundles handed out, so "one bundle per request" can be
+	// checked by driving the real handlers instead of by reading their source.
+	reads atomic.Int64
 }
 
 // New builds a Service over an already-loaded bundle. A nil provider gets the
@@ -171,18 +193,31 @@ func (s *Service) withProvider(snaps SnapshotProvider) *Service {
 
 func (s *Service) markReady() { s.readyOnce.Do(func() { close(s.ready) }) }
 
-// Data returns the current game-data bundle. Call it ONCE per handler and pass
+// Data returns the current game-data bundle. Call it ONCE per request and pass
 // the result around: two calls can straddle a reload and hand back maps from
 // different bundles, each consistent, together not. Nothing in this package
 // reads a database any other way — there are deliberately no per-map accessors,
 // because an accessor per database is an invitation to call this three times.
 //
+// "Per request", not "per handler": a handler that also needs the SAVE must
+// hand its bundle to snapshotWith, because resolving a save takes a bundle too.
+//
 // It BLOCKS until a bundle exists (see NewLazy); after that it is an atomic
 // load and a receive on a closed channel.
 func (s *Service) Data() *GameData {
 	<-s.ready
+	s.reads.Add(1)
 	return s.data.Load()
 }
+
+// dataReads is how many bundles this Service has handed out since it was built.
+//
+// It is instrumentation for TestOneBundlePerRequest, and it is a counter rather
+// than a source-level check because the read that actually bit was TRANSITIVE:
+// handler -> Snapshot -> provider -> Enrich -> Data. No walk over a single
+// function body can see that, and the source-level checker duly passed while
+// five handlers were taking two bundles each.
+func (s *Service) dataReads() int64 { return s.reads.Load() }
 
 // SetGameData swaps in a bundle built elsewhere and returns the one it
 // replaced. This is a test/embedding seam — the server itself never calls it —
@@ -217,7 +252,16 @@ func (s *Service) ReloadGameData() *GameData {
 // provider seam existed.
 type fileProvider struct{ svc *Service }
 
-func (p *fileProvider) Snapshot(_ context.Context, savePath string) (*x4save.Snapshot, error) {
+var _ bundleSnapshotter = (*fileProvider)(nil)
+
+func (p *fileProvider) Snapshot(ctx context.Context, savePath string) (*x4save.Snapshot, error) {
+	return p.snapshotWith(ctx, nil, savePath)
+}
+
+// snapshotWith parses the save and enriches it from d — the caller's bundle
+// when there is one, else its own. Handing it down is what keeps a request to
+// one install: this enrichment is the second, invisible Data() read.
+func (p *fileProvider) snapshotWith(_ context.Context, d *GameData, savePath string) (*x4save.Snapshot, error) {
 	if savePath == "" {
 		latest, ok := x4save.LatestSave()
 		if !ok {
@@ -229,13 +273,31 @@ func (p *fileProvider) Snapshot(_ context.Context, savePath string) (*x4save.Sna
 	if err != nil {
 		return nil, err
 	}
-	p.svc.Enrich(snap)
+	if d == nil {
+		d = p.svc.Data()
+	}
+	enrich(d, snap)
 	return snap, nil
 }
 
 // Snapshot returns the savegame the tools answer from, via whatever provider
 // this Service was built with. An empty savePath means "the current one".
+//
+// This costs a game-data bundle, because the default provider enriches what it
+// parses. A handler that needs the install as well must take its bundle first
+// and call snapshotWith instead, or the request straddles two of them.
 func (s *Service) Snapshot(ctx context.Context, savePath string) (*x4save.Snapshot, error) {
+	return s.snaps.Snapshot(ctx, savePath)
+}
+
+// snapshotWith is Snapshot for a handler that already holds a bundle: the same
+// GameData resolves the save AND answers the query, so one request is one
+// install even if a reload lands mid-flight. Providers that do not implement
+// the bundleSnapshotter seam fall back to the plain call.
+func (s *Service) snapshotWith(ctx context.Context, d *GameData, savePath string) (*x4save.Snapshot, error) {
+	if bp, ok := s.snaps.(bundleSnapshotter); ok {
+		return bp.snapshotWith(ctx, d, savePath)
+	}
 	return s.snaps.Snapshot(ctx, savePath)
 }
 
@@ -254,11 +316,16 @@ func (s *Service) Snapshot(ctx context.Context, savePath string) (*x4save.Snapsh
 // hands the same *Snapshot to two handlers must enrich it once before it
 // publishes the pointer and never again, or the second Enrich races the first
 // handler's reads.
-func (s *Service) Enrich(snap *x4save.Snapshot) {
+func (s *Service) Enrich(snap *x4save.Snapshot) { enrich(s.Data(), snap) }
+
+// enrich is Enrich against an EXPLICIT bundle. Every internal caller uses this
+// form, so the bundle a request resolves the save with is the same one it
+// answers from — see bundleSnapshotter. Enrich is the exported convenience for
+// a caller (cmd/x4mcp parse, the watcher) that holds no bundle of its own.
+func enrich(d *GameData, snap *x4save.Snapshot) {
 	if snap == nil {
 		return
 	}
-	d := s.Data()
 	snap.ApplySectorNames(d.SectorNames)
 	snap.ApplySectorGases(d.SectorGases)
 	snap.ApplyEnvironment(d.Sunlight, effectiveGates(d, snap))

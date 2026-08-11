@@ -105,7 +105,7 @@ func (s *Service) EstimateShipCost(ctx context.Context, in FitIn) (FitOut, error
 		out.HullPrice = int64(w.PriceAvg)
 	}
 
-	live := s.liveSellPrices(ctx, in.SavePath)
+	live := s.liveSellPrices(ctx, d, in.SavePath)
 	var covered, total int
 
 	for _, slot := range ss.Slots {
@@ -190,9 +190,13 @@ type livePrice struct {
 // liveSellPrices indexes ware -> cheapest live SELL offer across discovered
 // stations. This is the "varies with the economy" half: a component's real cost
 // is whatever somebody near you is charging today.
-func (s *Service) liveSellPrices(ctx context.Context, savePath string) map[string]livePrice {
+//
+// d is the caller's bundle, threaded through rather than fetched: the hull and
+// the slots were priced from it, and the save must be resolved against the
+// same one.
+func (s *Service) liveSellPrices(ctx context.Context, d *GameData, savePath string) map[string]livePrice {
 	out := map[string]livePrice{}
-	snap, err := s.Snapshot(ctx, savePath)
+	snap, err := s.snapshotWith(ctx, d, savePath)
 	if err != nil || snap == nil {
 		return out
 	}

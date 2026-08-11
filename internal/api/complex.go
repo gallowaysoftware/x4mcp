@@ -182,7 +182,9 @@ type PlanComplexOut struct {
 }
 
 func (s *Service) PlanComplex(ctx context.Context, in PlanComplexIn) (PlanComplexOut, error) {
-	db := s.Data().Wares
+	// One bundle for the recipe walk AND for resolving the save below.
+	gd := s.Data()
+	db := gd.Wares
 	if len(db) == 0 {
 		return PlanComplexOut{}, fmt.Errorf("ware database unavailable; set X4MCP_GAME_DIR")
 	}
@@ -226,7 +228,7 @@ func (s *Service) PlanComplex(ctx context.Context, in PlanComplexIn) (PlanComple
 		modules = 1
 	}
 
-	snap, _ := s.Snapshot(ctx, in.SavePath)
+	snap, _ := s.snapshotWith(ctx, gd, in.SavePath)
 	sun := 1.0
 	if in.Sunlight > 0 {
 		sun = in.Sunlight

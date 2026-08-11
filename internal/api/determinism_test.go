@@ -7,7 +7,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -180,6 +183,58 @@ func TestPlanMiningSupplyTieOrderIsFixed(t *testing.T) {
 	}
 }
 
+// ---- find_energy_sites: the fifth ranked tool, and the one CI could not see ----
+
+// find_energy_sites was outside every gate that could catch a ranking change: a
+// build that REVERSED its output passed `go test` and passed the hermetic wire
+// parity run, because the hermetic fixture has no sectors and the tool answers
+// `"sites": null`. Only a live run against a real save disagreed, and CI has no
+// save. So the ranking is pinned here instead, with a fixture that exercises
+// each key in turn — the direction (brightest first), then the demand
+// tie-break, then the macro tie-break that makes the order total.
+func energySitesSnapshot() *x4save.Snapshot {
+	return &x4save.Snapshot{
+		Sectors: []x4save.Sector{
+			// Deliberately NOT in ranked order, and the two "twins" are listed
+			// worst-macro-first, so returning the input order fails too.
+			{Macro: "dim_macro", Name: "Dim", Sunlight: 0.7},
+			{Macro: "twin_z_macro", Name: "Twin Z", Sunlight: 0.9},
+			{Macro: "twin_a_macro", Name: "Twin A", Sunlight: 0.9},
+			{Macro: "mid_a_macro", Name: "Mid A", Sunlight: 1.0},
+			{Macro: "mid_b_macro", Name: "Mid B", Sunlight: 1.0},
+			{Macro: "bright_macro", Name: "Bright", Sunlight: 1.6},
+			{Macro: "dark_macro", Name: "Dark", Sunlight: 0}, // no sunlight: not a site
+		},
+		// One buyer, in Mid B: the only thing separating it from Mid A.
+		TradeStations: []x4save.TradeStation{{
+			ID: "st-1", Code: "AAA-001", Sector: "mid_b_macro",
+			Offers: []x4save.Offer{{Ware: "energycells", Sells: false, Amount: 500, Price: 20}},
+		}},
+	}
+}
+
+func TestFindEnergySitesRankingIsFixed(t *testing.T) {
+	svc := New(&GameData{}, &fakeProvider{snap: energySitesSnapshot()})
+	got := sameEveryTime(t, "find_energy_sites", func() any {
+		out, err := svc.FindEnergySites(context.Background(), EnergySitesIn{})
+		if err != nil {
+			t.Fatalf("FindEnergySites: %v", err)
+		}
+		var names []string
+		for _, s := range out.Sites {
+			names = append(names, s.Name)
+		}
+		return names
+	})
+	// Sunlight descending, then local energy-cell demand descending, then macro
+	// ascending. A reversal, a lost tie-break or a sunlit-sector filter change
+	// all move this line.
+	want := `["Bright","Mid B","Mid A","Twin A","Twin Z","Dim"]`
+	if got != want {
+		t.Errorf("energy sites ranked %s, want %s", got, want)
+	}
+}
+
 // ---- plan_workforce: which of two same-capacity habitats gets named ----
 
 func TestPlanWorkforceHabitatChoiceIsFixed(t *testing.T) {
@@ -215,22 +270,110 @@ func TestPlanWorkforceHabitatChoiceIsFixed(t *testing.T) {
 
 // ---- the Data() invariant, enforced rather than documented ----
 
-// Data()'s doc says to call it ONCE per handler and pass the bundle around,
-// because two calls can straddle a reload and hand back maps from two different
+// bundleTakes reports, for every *Service method in the given files, how many
+// game-data bundles ONE call of it resolves — following calls to other methods
+// on the same receiver.
+//
+// The transitive walk is the entire point. The first version of this checker
+// counted s.Data() inside a single function body, which is not where the read
+// that mattered was: a handler asked its provider for a save, and the default
+// provider ENRICHED that save from a bundle of its own, three frames down. So
+// the checker reported "at most once" for handlers that were taking two.
+//
+// Two costs are charged at the call site rather than by walking the callee,
+// because they are paid inside the SnapshotProvider interface and no AST can
+// see through that:
+//   - s.Snapshot costs one bundle (the default provider enriches).
+//   - s.snapshotWith costs nothing — it makes the same trip with the caller's
+//     bundle — unless it is handed a literal nil, which asks the provider to go
+//     and fetch one.
+func bundleTakes(files []*ast.File) map[string]int {
+	type method struct {
+		decl *ast.FuncDecl
+		recv string // the receiver's name in this method ("s")
+	}
+	methods := map[string]method{}
+	for _, f := range files {
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil || fn.Recv == nil || len(fn.Recv.List) != 1 || len(fn.Recv.List[0].Names) != 1 {
+				continue
+			}
+			t := fn.Recv.List[0].Type
+			if star, ok := t.(*ast.StarExpr); ok {
+				t = star.X
+			}
+			if id, ok := t.(*ast.Ident); !ok || id.Name != "Service" {
+				continue
+			}
+			methods[fn.Name.Name] = method{fn, fn.Recv.List[0].Names[0].Name}
+		}
+	}
+
+	var visit func(name string, onStack map[string]bool) int
+	visit = func(name string, onStack map[string]bool) int {
+		m, ok := methods[name]
+		if !ok || onStack[name] {
+			return 0
+		}
+		onStack[name] = true
+		defer delete(onStack, name)
+		n := 0
+		ast.Inspect(m.decl.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if recv, ok := sel.X.(*ast.Ident); !ok || recv.Name != m.recv {
+				return true
+			}
+			switch sel.Sel.Name {
+			case "Data":
+				n++
+			case "Snapshot":
+				n++
+			case "snapshotWith":
+				if len(call.Args) > 1 {
+					if id, ok := call.Args[1].(*ast.Ident); ok && id.Name == "nil" {
+						n++
+					}
+				}
+			default:
+				n += visit(sel.Sel.Name, onStack)
+			}
+			return true
+		})
+		return n
+	}
+
+	out := map[string]int{}
+	for name := range methods {
+		out[name] = visit(name, map[string]bool{})
+	}
+	return out
+}
+
+// Data()'s doc says to resolve the bundle ONCE per request and pass it around,
+// because two reads can straddle a reload and hand back maps from two different
 // bundles — each internally consistent, together not. That is exactly the torn
-// read the atomic swap exists to prevent, and the four per-database accessors
-// this replaces made the rule impossible to obey: nine handlers loaded the
-// bundle two or three times each.
+// read the atomic swap exists to prevent, and it stopped being theoretical the
+// moment ReloadGameData was wired to SIGHUP.
 //
 // So the rule is checked instead of asserted. A handler that needs two
 // databases takes `d := s.Data()` and reads d.Wares / d.Modules off the one
-// snapshot; a helper that needs one takes it as an argument.
-func TestHandlersLoadTheBundleAtMostOnce(t *testing.T) {
+// bundle; one that needs the SAVE as well hands that same d to snapshotWith;
+// helpers take it as an argument. TestOneBundlePerRequest is the runtime half.
+func TestHandlersTakeOneBundlePerRequest(t *testing.T) {
 	fset := token.NewFileSet()
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
+	var files []*ast.File
 	for _, e := range entries {
 		name := e.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -240,59 +383,42 @@ func TestHandlersLoadTheBundleAtMostOnce(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse %s: %v", name, err)
 		}
-		for _, decl := range f.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
-			}
-			n := 0
-			ast.Inspect(fn.Body, func(node ast.Node) bool {
-				call, ok := node.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "Data" {
-					return true
-				}
-				if recv, ok := sel.X.(*ast.Ident); ok && recv.Name == "s" {
-					n++
-				}
-				return true
-			})
-			if n > 1 {
-				t.Errorf("%s: %s calls s.Data() %d times — take one bundle and pass it down, "+
-					"or a reload lands between the two calls and the answer mixes two installs",
-					fset.Position(fn.Pos()), fn.Name.Name, n)
-			}
+		files = append(files, f)
+	}
+	takes := bundleTakes(files)
+	for _, name := range slices.Sorted(maps.Keys(takes)) {
+		if takes[name] > 1 {
+			t.Errorf("Service.%s resolves %d game-data bundles per call (counting what it calls) — "+
+				"take one with s.Data() and pass it down, hand it to s.snapshotWith for the save, "+
+				"or a reload lands between two reads and the answer mixes two installs", name, takes[name])
 		}
 	}
 }
 
 // A sanity check on the checker itself: it must actually see the calls it is
-// counting, or it passes for the wrong reason forever.
-func TestDataCallCheckerSeesRealCalls(t *testing.T) {
+// counting — including the transitive ones — or it passes for the wrong reason
+// forever, which is precisely what it did.
+func TestBundleCheckerSeesTheTransitivePath(t *testing.T) {
 	src := `package api
-func (s *Service) twice() { a := s.Data(); b := s.Data(); _, _ = a, b }`
+func (s *Service) direct()      { a := s.Data(); b := s.Data(); _, _ = a, b }
+func (s *Service) helper()      { _ = s.Data() }
+func (s *Service) viaHelper()   { _ = s.Data(); s.helper() }
+func (s *Service) viaSnapshot() { _ = s.Data(); _, _ = s.Snapshot(nil, "") }
+func (s *Service) threaded()    { d := s.Data(); _, _ = s.snapshotWith(nil, d, "") }
+func (s *Service) nilBundle()   { d := s.Data(); _, _ = s.snapshotWith(nil, nil, ""); _ = d }
+func (s *Service) recurses()    { _ = s.Data(); s.recurses() }
+func notAMethod()               { }`
 	f, err := parser.ParseFile(token.NewFileSet(), "x.go", src, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := 0
-	ast.Inspect(f, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Data" {
-			if recv, ok := sel.X.(*ast.Ident); ok && recv.Name == "s" {
-				n++
-			}
-		}
-		return true
-	})
-	if n != 2 {
-		t.Fatalf("checker counted %d s.Data() calls in %q, want 2", n, fmt.Sprint(src))
+	want := map[string]int{
+		"direct": 2, "helper": 1, "viaHelper": 2, "viaSnapshot": 2,
+		"threaded": 1, "nilBundle": 2, "recurses": 1,
+	}
+	got := bundleTakes([]*ast.File{f})
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("checker counted %v, want %v (source: %s)", got, want, fmt.Sprint(src))
 	}
 }
 

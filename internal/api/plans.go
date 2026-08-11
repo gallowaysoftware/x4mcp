@@ -126,8 +126,9 @@ type AnalyzePlanOut struct {
 }
 
 func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePlanOut, error) {
-	// One bundle, three databases: wares, modules and workforce have to agree
-	// with each other or the balance is charged against two different installs.
+	// One bundle, three databases plus the save's own resolution: wares, modules
+	// and workforce have to agree with each other, and with whatever named the
+	// sector below, or the balance is charged against two different installs.
 	gd := s.Data()
 	db := gd.Wares
 	if len(db) == 0 {
@@ -150,7 +151,7 @@ func (s *Service) AnalyzePlan(ctx context.Context, in AnalyzePlanIn) (AnalyzePla
 	if in.Sunlight > 0 {
 		sun = in.Sunlight
 	} else if in.Sector != "" {
-		if snap, _ := s.Snapshot(ctx, ""); snap != nil {
+		if snap, _ := s.snapshotWith(ctx, gd, ""); snap != nil {
 			if macro, _ := resolveSector(snap, in.Sector); macro != "" {
 				for _, sec := range snap.Sectors {
 					if sec.Macro == macro && sec.Sunlight > 0 {

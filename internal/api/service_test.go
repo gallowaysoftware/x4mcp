@@ -1,9 +1,14 @@
 package api
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
+	"maps"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -92,18 +97,59 @@ func TestReloadGameDataSwapsInAFreshBundle(t *testing.T) {
 // fakeProvider is a save that never touches a disk. It also records what was
 // asked for, because "empty path means the current save" is a contract the
 // watcher will implement differently.
+//
+// The bookkeeping is mutex-guarded because the thing this double stands in for
+// is shared by definition: handlers run concurrently, and a double that races
+// on its own slice means no concurrent test can be written through it at all.
 type fakeProvider struct {
-	snap  *x4save.Snapshot
+	snap  *x4save.Snapshot        // the snapshot to hand back...
+	fresh func() *x4save.Snapshot // ...or a new one per call, as the file provider does
 	err   error
+	// svc, when set, makes the fake ENRICH what it returns, exactly as
+	// fileProvider does. That is where the transitive bundle read lives, so a
+	// counting test has to have it.
+	svc *Service
+
+	mu    sync.Mutex
 	asked []string
 }
 
-func (f *fakeProvider) Snapshot(_ context.Context, savePath string) (*x4save.Snapshot, error) {
+var _ bundleSnapshotter = (*fakeProvider)(nil)
+
+func (f *fakeProvider) Snapshot(ctx context.Context, savePath string) (*x4save.Snapshot, error) {
+	return f.snapshotWith(ctx, nil, savePath)
+}
+
+func (f *fakeProvider) snapshotWith(_ context.Context, d *GameData, savePath string) (*x4save.Snapshot, error) {
+	f.mu.Lock()
 	f.asked = append(f.asked, savePath)
+	f.mu.Unlock()
 	if f.err != nil {
 		return nil, f.err
 	}
-	return f.snap, nil
+	snap := f.snap
+	if f.fresh != nil {
+		snap = f.fresh()
+	}
+	if f.svc != nil {
+		if d == nil {
+			d = f.svc.Data() // no caller bundle: take one, like the real provider
+		}
+		enrich(d, snap)
+	}
+	return snap, nil
+}
+
+func (f *fakeProvider) askedPaths() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.asked...)
+}
+
+func (f *fakeProvider) askedCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.asked)
 }
 
 func fixtureSnapshot() *x4save.Snapshot {
@@ -168,8 +214,8 @@ func TestHandlersReadThroughTheProvider(t *testing.T) {
 		t.Fatalf("ListStations: %v", err)
 	}
 	want := []string{"", "", "", "/archive/old.xml.gz"}
-	if !reflect.DeepEqual(fake.asked, want) {
-		t.Errorf("provider was asked for %q, want %q", fake.asked, want)
+	if got := fake.askedPaths(); !reflect.DeepEqual(got, want) {
+		t.Errorf("provider was asked for %q, want %q", got, want)
 	}
 }
 
@@ -405,10 +451,24 @@ func TestEverySaveBackedHandlerUsesTheProvider(t *testing.T) {
 	fake := &fakeProvider{snap: fixtureSnapshot()}
 	svc := New(fitData(), fake)
 
-	// Every handler that takes a save. The error return is deliberately ignored:
-	// what is under test is that the SNAPSHOT came from the provider, not
-	// whether the fixture happens to satisfy the query.
-	calls := map[string]func(){
+	for name, call := range saveBackedCalls(ctx, svc) {
+		before := fake.askedCount()
+		call()
+		if fake.askedCount() == before {
+			t.Errorf("%s answered without asking the provider for a snapshot — it reached past the seam", name)
+		}
+	}
+}
+
+// saveBackedCalls is every handler that answers from a savegame, with arguments
+// the fitData()/fixtureSnapshot() pair satisfies. It is shared by the three
+// tests that drive the whole tool surface — the provider seam, the one-bundle
+// rule and the concurrency check — so a new tool is added to the sweep once.
+//
+// The error returns are deliberately ignored: what is under test is how a
+// handler reaches the world, not whether the fixture satisfies the query.
+func saveBackedCalls(ctx context.Context, svc *Service) map[string]func() {
+	return map[string]func(){
 		"get_player_overview":  func() { _, _ = svc.GetPlayerOverview(ctx, SaveSel{}) },
 		"list_ships":           func() { _, _ = svc.ListShips(ctx, ListShipsIn{}) },
 		"list_claimable_ships": func() { _, _ = svc.ListClaimableShips(ctx, ListClaimableIn{}) },
@@ -433,11 +493,173 @@ func TestEverySaveBackedHandlerUsesTheProvider(t *testing.T) {
 		"update_objective":     func() { _, _ = svc.UpdateObjective(ctx, UpdateObjectiveIn{ID: 1, Status: "done"}) },
 		"add_journal_entry":    func() { _, _ = svc.AddJournal(ctx, AddJournalIn{Note: "first blood"}) },
 	}
-	for name, call := range calls {
-		before := len(fake.asked)
-		call()
-		if len(fake.asked) == before {
-			t.Errorf("%s answered without asking the provider for a snapshot — it reached past the seam", name)
+}
+
+// ---- one game-data bundle per REQUEST, counted at runtime ----
+
+// The source-level checker (TestHandlersTakeOneBundlePerRequest) reads bodies;
+// this drives the handlers and counts what they actually resolve. It is the
+// half that catches a TRANSITIVE second read, which is the one that got past
+// review: handlers were fixed to call s.Data() once each, but the provider they
+// then asked for a save enriched it from a bundle of its OWN — so
+// sector_distance, plan_mining_supply, plan_production, list_claimable_ships,
+// plan_complex and estimate_ship_cost took two per request, and the SIGHUP
+// reload wired up in the same commit could land between them and answer half
+// from each install.
+//
+// The fake enriches (fake.svc), because a double that skips enrichment cannot
+// reproduce the defect: the second read happens inside it.
+func TestOneBundlePerRequest(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("X4MCP_GAME_DIR", t.TempDir())
+	ctx := context.Background()
+	fake := &fakeProvider{fresh: fixtureSnapshot}
+	svc := New(fitData(), fake)
+	fake.svc = svc
+
+	// These need BOTH halves of the world — the install AND the save — so they
+	// must resolve exactly one bundle. A zero would mean the call bailed out
+	// early and the ceiling below was proved against nothing.
+	needsBoth := map[string]bool{
+		"sector_distance": true, "plan_mining_supply": true, "plan_production": true,
+		"list_claimable_ships": true, "plan_complex": true, "estimate_ship_cost": true,
+	}
+	calls := saveBackedCalls(ctx, svc)
+	for _, name := range slices.Sorted(maps.Keys(calls)) {
+		before := svc.dataReads()
+		calls[name]()
+		got := svc.dataReads() - before
+		if got > 1 {
+			t.Errorf("%s resolved %d game-data bundles; one request must answer from ONE install, "+
+				"or a reload landing mid-request mixes two", name, got)
 		}
+		if needsBoth[name] && got != 1 {
+			t.Errorf("%s resolved %d bundles, want exactly 1 — it needs the install and the save, "+
+				"so 0 means it never got far enough to prove anything", name, got)
+		}
+	}
+}
+
+// The default provider is the production one, and it is where the second read
+// hid. Handed a bundle it must use that one and take none of its own; handed
+// none it still has to work, because ListSaves/RefreshSave and the exported
+// Enrich all reach it without one.
+func TestFileProviderEnrichesFromTheCallersBundle(t *testing.T) {
+	t.Setenv("X4MCP_CACHE_DIR", t.TempDir())
+	path := writeTinySave(t)
+	svc := New(enrichData(), nil) // nil provider = the real fileProvider
+	d := svc.Data()
+	ctx := context.Background()
+
+	before := svc.dataReads()
+	snap, err := svc.snapshotWith(ctx, d, path)
+	if err != nil {
+		t.Fatalf("snapshotWith: %v", err)
+	}
+	if n := svc.dataReads() - before; n != 0 {
+		t.Errorf("the file provider resolved %d bundles of its own after being handed one", n)
+	}
+	// Not vacuous: it really did enrich, from the bundle it was given.
+	if len(snap.Sectors) != 1 || snap.Sectors[0].Name != "Argon Prime" {
+		t.Fatalf("sectors = %+v, want the fixture sector named from the caller's bundle", snap.Sectors)
+	}
+
+	before = svc.dataReads()
+	if _, err := svc.Snapshot(ctx, path); err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if n := svc.dataReads() - before; n != 1 {
+		t.Errorf("Snapshot with no caller bundle resolved %d, want exactly 1 of its own", n)
+	}
+}
+
+// writeTinySave writes the smallest thing x4save will parse: one sector, gzipped.
+func writeTinySave(t *testing.T) string {
+	t.Helper()
+	const doc = `<?xml version="1.0" encoding="UTF-8"?>
+<savegame>
+<info><player name="Test Pilot" money="1"/></info>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections><connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections><connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="argon" id="[0x10]"/>
+</connection></connections>
+</component>
+</connection></connections>
+</component>
+</universe>
+</savegame>`
+	path := filepath.Join(t.TempDir(), "tiny.xml.gz")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(f)
+	if _, err := gz.Write([]byte(doc)); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// ---- handlers under concurrent load ----
+
+// Service is advertised as safe for concurrent use and the whole D13 bundle
+// swap exists so a reload can land under live readers — but nothing drove the
+// handlers concurrently, because the test double could not be driven
+// concurrently: fakeProvider.Snapshot appended to an unguarded slice, so any
+// such test failed on the double rather than on the code.
+//
+// So: every save-backed handler, on many goroutines, while bundles are swapped
+// underneath them. Run under -race; what it catches is a torn bundle read, an
+// unguarded provider, or a handler that mutates something the bundle shares.
+func TestHandlersRunConcurrentlyThroughTheProvider(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("X4MCP_GAME_DIR", t.TempDir())
+	ctx := context.Background()
+	// fresh, not snap: the file provider parses a new snapshot per call, and
+	// Enrich mutates what it is given, so a shared pointer would be a race in
+	// the DOUBLE rather than in the code under test.
+	fake := &fakeProvider{fresh: fixtureSnapshot}
+	svc := New(fitData(), fake)
+	fake.svc = svc
+
+	calls := saveBackedCalls(ctx, svc)
+	names := slices.Sorted(maps.Keys(calls))
+
+	const workers = 8
+	var stop atomic.Bool
+	var swaps sync.WaitGroup
+	swaps.Add(1)
+	go func() { // a SIGHUP-style reload, over and over, under the readers
+		defer swaps.Done()
+		for !stop.Load() {
+			svc.SetGameData(fitData())
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _, name := range names {
+				calls[name]()
+			}
+		}()
+	}
+	wg.Wait()
+	stop.Store(true)
+	swaps.Wait()
+
+	if got, want := fake.askedCount(), workers*len(names); got != want {
+		t.Errorf("the provider recorded %d requests, want %d — the double dropped some", got, want)
 	}
 }
