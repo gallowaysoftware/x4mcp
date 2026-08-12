@@ -23,7 +23,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,6 +52,49 @@ const (
 	agingAfter = 20 * time.Minute
 	staleAfter = 45 * time.Minute
 )
+
+// ParseNiceEnv overrides how polite the parse is (see parseNice). An integer
+// is the nice value to run the parse thread at; "off" leaves the scheduler
+// alone entirely, which is what this build used to do — so it is also the
+// "before" arm of the measurement in docs/parse-baseline.md §6, taken through
+// the shipped code rather than against a reconstruction of it.
+const ParseNiceEnv = "X4MCP_PARSE_NICE"
+
+// defaultParseNice is the nice value the parse thread runs at.
+//
+// The docs have promised a systemd unit with CPUWeight=20 + Nice=10 since the
+// PRD was written, and the unit is real (deploy/systemd/x4mcp.service) — but a
+// unit only governs a process systemd started, and on a gaming machine this one
+// is usually started from a shell or from the Steam launch wrapper, where
+// NOTHING was niced. Measured with scripts/hitchcheck against a busy-loop game
+// proxy sharing one core (docs/parse-baseline.md §6): an unniced parse takes
+// 51% of that core's throughput away for as long as it runs; at nice 19 it
+// takes 4%. It pays for that by taking 27× longer on THAT core — and nothing at
+// all in the case that actually happens, where the scheduler has 15 other cores
+// to put it on and the parse runs at its ordinary 198 ms.
+//
+// 19 rather than the unit's 10 because this applies to ONE thread that does
+// nothing but read a savegame, where 10 applies to the whole process — the
+// board, the SSE hub and the MCP face included, which the player is looking at.
+const defaultParseNice = 19
+
+// stalledWrite is how long a save that would not parse has to sit UNTOUCHED
+// before the board is willing to call it broken.
+//
+// X4 spends 20–60 s writing a late-game save, and it does not spend them
+// evenly: the write pauses, and a pause longer than the settle gate's 4 s fires
+// the gate on a file that is only half there. What that parse hits is a gzip
+// stream that ends in the middle, which is not a fault in the save and not a
+// fault in this build — it is a file that is still being written, exactly like
+// the ErrSaveChanged case, and the board turning amber for it is the false red
+// that PRD §10's "<1 per week" budget cannot afford.
+//
+// A re-stat at the moment of failure does not see it: the parse of a truncated
+// file fails in milliseconds, and during a pause the size and mtime are exactly
+// what the gate settled on. Only time separates "paused mid-write" from
+// "broken", so the decision is deferred to the poller, which is re-stating the
+// file every 2 s anyway. See holdUnfinished.
+const stalledWrite = 60 * time.Second
 
 // Options configures a Watcher. The zero value is usable: it watches the
 // default save roots, polls every 2 s, and parses through x4save.
@@ -98,6 +143,10 @@ type Watcher struct {
 	opts  Options
 	clock clock
 	roots []string
+	// nice is the scheduling priority the parse thread asks for; polite is
+	// whether it asks at all (see parseNice).
+	nice   int
+	polite bool
 
 	published atomic.Pointer[Published]
 	reqs      chan *parseReq // cap 1, newest-wins
@@ -131,6 +180,13 @@ type state struct {
 	// Not an error — see stillWriting — but the reason a caller asking for the
 	// live snapshot has nothing to be given yet.
 	writing *wire.SaveMeta
+	// unfinished is a parse that failed on a file that has not been shown to be
+	// finished yet. It is a held verdict, not an error: see holdUnfinished.
+	unfinished *unfinished
+
+	// priority is what the last parse's thread was actually granted by the
+	// scheduler; before the first parse it is what will be asked for.
+	priority wire.ParsePriority
 
 	lastCheckAt   time.Time
 	lastDetectAt  time.Time
@@ -149,6 +205,18 @@ type state struct {
 type parseReq struct {
 	cand    candidate
 	waiters []chan struct{}
+}
+
+// unfinished is a parse that failed on a file nothing has yet proved to be
+// finished. It holds everything the confession needs, so that the poller can
+// make it without touching the parser again.
+type unfinished struct {
+	cand candidate
+	meta wire.SaveMeta
+	err  error
+	// at is when the parse failed, the fallback clock for the confession when
+	// the file's own mtime is not usable (a save stamped in the future).
+	at time.Time
 }
 
 // New builds a Watcher. It does no I/O; Start does.
@@ -185,7 +253,35 @@ func New(opts Options) *Watcher {
 		done:  make(chan struct{}),
 		det:   newDetector(opts.SettleTicks),
 	}
+	w.nice, w.polite = parseNice()
+	w.st.priority = wire.ParsePriority{Detail: "no save has been parsed yet"}
+	if w.polite {
+		w.st.priority.Nice, w.st.priority.IOClass = w.nice, "idle"
+	} else {
+		w.st.priority.Detail = ParseNiceEnv + " is off: the parse runs at the process's own priority"
+	}
 	return w
+}
+
+// parseNice reads the parse politeness out of the environment: the nice value
+// to run the parse thread at, and whether to touch the scheduler at all.
+//
+// An unparseable value is not an error worth refusing to start over — it is a
+// typo in an env var on a gaming machine — so it falls back to the default and
+// the health drawer reports what actually happened either way.
+func parseNice() (int, bool) {
+	switch v := strings.TrimSpace(os.Getenv(ParseNiceEnv)); v {
+	case "":
+		return defaultParseNice, true
+	case "off", "none", "no":
+		return 0, false
+	default:
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return defaultParseNice, true
+		}
+		return min(max(n, -20), 19), true
+	}
 }
 
 // Start launches the poller and the parse worker. It returns immediately; Wait
@@ -320,6 +416,12 @@ func (w *Watcher) notReadyError() error {
 	case st.writing != nil:
 		return fmt.Errorf("%s is still being written by X4; it will be parsed once it settles",
 			st.writing.Name)
+	case st.unfinished != nil:
+		// A held verdict (holdUnfinished) still owes the caller the reason it
+		// has nothing — the honest form of it, which does not yet claim to know
+		// whether the file is broken or merely unfinished.
+		return fmt.Errorf("%s has not parsed: %v — X4 may still be writing it",
+			st.unfinished.meta.Name, st.unfinished.err)
 	case st.lastErr != nil:
 		return fmt.Errorf("the current save has not been parsed: %s", st.lastErr.Detail)
 	}
@@ -369,16 +471,37 @@ func (w *Watcher) check(ctx context.Context, src source) {
 	}
 	dirs := x4save.SaveDirs(w.roots...)
 
-	var cand candidate
-	if latest, ok := x4save.LatestSave(w.roots...); ok {
-		cand = candidate{path: latest.Path, size: latest.Size, modTime: latest.Modified}
+	// The WHOLE listing, not just the newest: which of these saves is the one
+	// worth looking at is the detector's decision (see detector.choose), and
+	// "the newest mtime" is not always the answer — a restored save is older
+	// than the file it was restored beside.
+	saves, _ := x4save.ListSaves(w.roots...)
+	all := make([]candidate, 0, len(saves))
+	for _, s := range saves {
+		all = append(all, candidate{path: s.Path, size: s.Size, modTime: s.Modified})
 	}
 
+	now := w.clock.Now()
 	w.mu.Lock()
 	w.st.dirs = dirs
-	w.st.lastCheckAt = w.clock.Now()
+	w.st.lastCheckAt = now
+	cand := w.det.choose(all)
 	fire := w.det.observe(cand, src)
 	first := w.det.firstSource
+	// A held parse failure (holdUnfinished) is settled here, because this is
+	// the only place that watches the file over time. Either it moved — X4 was
+	// indeed still writing it, and the gate will bring it back — or it has been
+	// lying untouched long enough that "still being written" has stopped being
+	// a believable account of it.
+	var confess *unfinished
+	if u := w.st.unfinished; u != nil {
+		switch {
+		case !cand.same(u.cand):
+			w.st.unfinished = nil
+		case !w.st.parsing && (now.Sub(u.cand.modTime) >= stalledWrite || now.Sub(u.at) >= stalledWrite):
+			confess, w.st.unfinished = u, nil
+		}
+	}
 	// A caller waiting on a kick is waiting for the pipeline to be DONE with
 	// whatever is newest on disk. If the gate is still settling — the file is
 	// mid-write — the wait continues into the next check rather than answering
@@ -395,7 +518,7 @@ func (w *Watcher) check(ctx context.Context, src source) {
 	}
 	if fire {
 		w.st.pending = cand
-		w.st.lastDetectAt = w.clock.Now()
+		w.st.lastDetectAt = now
 		w.st.detections.Total++
 		switch first {
 		case sourceManual:
@@ -405,6 +528,12 @@ func (w *Watcher) check(ctx context.Context, src source) {
 		}
 	}
 	w.mu.Unlock()
+
+	// Outside the lock: failParse takes it again, and the events it emits are
+	// not something to hold a mutex across.
+	if confess != nil {
+		w.failParse(confess.meta, confess.err)
+	}
 
 	if !fire {
 		// Nothing to do: anyone waiting on this kick has their answer.
@@ -462,7 +591,7 @@ func (w *Watcher) parse(ctx context.Context, req *parseReq) {
 
 	start := w.clock.Now()
 	cached := false
-	snap, err := w.opts.Load(ctx, req.cand.path, x4save.LoadOptions{
+	snap, err := w.readSave(ctx, req.cand.path, x4save.LoadOptions{
 		OnRetry: func(attempt int) {
 			w.bump(func(st *state) { st.attempt, st.retries = attempt, st.retries+1 })
 			retry := meta
@@ -482,13 +611,50 @@ func (w *Watcher) parse(ctx context.Context, req *parseReq) {
 			w.bump(func(st *state) { st.parsing = false })
 			return
 		}
-		w.failParse(meta, err)
+		w.failedParse(req.cand, meta, err)
 		return
 	}
 	if w.opts.Enrich != nil {
 		w.opts.Enrich(snap)
 	}
 	w.publish(req, snap, meta, elapsed, cached)
+}
+
+// readSave runs one parse on an OS thread of its own, asked to get out of the
+// game's way first.
+//
+// A thread of its own for two reasons, both hard. On Linux the nice value and
+// the I/O class are attributes of a THREAD, and a goroutine does not own one —
+// without LockOSThread this would nice whichever thread the runtime happened to
+// be using, including one the HTTP handlers are about to land on. And lowering
+// a priority is a one-way door: RLIMIT_NICE is 0 for an ordinary user, so the
+// "restore it afterwards" half of the obvious design fails with EACCES every
+// time. A thread that exists only for this parse restores itself by ending,
+// which is the only restore that actually works.
+//
+// The cost is one thread creation per save the game writes. The thing it buys
+// is measured in the defaultParseNice comment.
+func (w *Watcher) readSave(ctx context.Context, path string, opts x4save.LoadOptions) (*x4save.Snapshot, error) {
+	if !w.polite {
+		return w.opts.Load(ctx, path, opts)
+	}
+	type result struct {
+		snap *x4save.Snapshot
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		// Deliberately never unlocked: the goroutine returns with the thread
+		// still locked to it, which is how the runtime knows to destroy the
+		// thread rather than hand a niced one back to the scheduler pool.
+		runtime.LockOSThread()
+		prio := applyParsePriority(w.nice)
+		w.bump(func(st *state) { st.priority = prio })
+		snap, err := w.opts.Load(ctx, path, opts)
+		done <- result{snap, err}
+	}()
+	r := <-done
+	return r.snap, r.err
 }
 
 // settlePending marks the pipeline as done with c and releases anyone who was
@@ -506,19 +672,35 @@ func (w *Watcher) settlePending(c candidate) {
 	closeAll(waiters)
 }
 
-// failParse records a parse that ended badly and says which KIND of bad it was:
-// "this save did not parse" and "this build cannot read this game's saves" are
-// the same amber on the board and completely different player actions.
-func (w *Watcher) failParse(meta wire.SaveMeta, err error) {
+// failedParse decides what a parse that ended badly MEANS, which is a different
+// question from what went wrong inside it.
+//
+// There are only two answers. Either the parser proved the file moved under it
+// — ErrSaveChanged, which the post-parse re-stat raises — or it did not prove
+// anything, in which case the file may equally well be one X4 has not finished
+// writing. That second case used to go straight to amber, which is how a
+// 7-second pause in the middle of an ordinary autosave took the save leg DOWN:
+// the settle gate fired on a half-written file, the gzip stream ended in the
+// middle of it, and "decode station: unexpected EOF" was reported as a broken
+// save 117 ms later — while X4 was still writing it.
+func (w *Watcher) failedParse(c candidate, meta wire.SaveMeta, err error) {
 	if errors.Is(err, x4save.ErrSaveChanged) {
 		w.stillWriting(meta, err)
 		return
 	}
+	w.holdUnfinished(c, meta, err)
+}
+
+// failParse records a parse that ended badly and says which KIND of bad it was:
+// "this save did not parse" and "this build cannot read this game's saves" are
+// the same amber on the board and completely different player actions.
+func (w *Watcher) failParse(meta wire.SaveMeta, err error) {
 	se := &wire.SaveError{Kind: wire.SaveErrorKindParse, Detail: err.Error(), Save: &meta}
 	w.bump(func(st *state) {
 		st.parsing, st.attempt = false, 0
 		st.lastErr = se
 		st.writing = nil
+		st.unfinished = nil
 		st.parseErrors++
 	})
 	w.opts.Logf("parse of %s failed: %v", meta.Path, err)
@@ -545,9 +727,36 @@ func (w *Watcher) stillWriting(meta wire.SaveMeta, err error) {
 		st.parsing, st.attempt = false, 0
 		save := meta
 		st.writing = &save
+		st.unfinished = nil
 		w.det.dispatched = candidate{}
 	})
 	w.opts.Logf("%s is still being written (%v); it will be parsed once it settles", meta.Path, err)
+}
+
+// holdUnfinished parks a parse failure instead of reporting it, until the file
+// it happened on has stopped moving.
+//
+// It is the other half of stillWriting, for the case the parser cannot prove:
+// the decode died INSIDE the file, so there is no post-parse re-stat and no
+// ErrSaveChanged, only an error that reads like a broken save and is usually a
+// half-written one. Re-stating here would not tell them apart — X4 pauses
+// mid-write, and during a pause the file is byte-for-byte what the settle gate
+// settled on. Time tells them apart, and the poller is already spending it:
+// check() clears this the moment the file moves (the write resumed; the gate
+// will bring the finished file back), and confesses it as a parse error once
+// the file has lain untouched for stalledWrite.
+//
+// The gate's dispatched marker is deliberately LEFT SET, which stillWriting
+// clears: the file has not changed, so a re-parse would read the same bytes and
+// fail the same way, and 100 MB of re-read every 2 s while the game runs is the
+// cost this whole watcher exists to avoid.
+func (w *Watcher) holdUnfinished(c candidate, meta wire.SaveMeta, err error) {
+	w.bump(func(st *state) {
+		st.parsing, st.attempt = false, 0
+		st.writing = nil
+		st.unfinished = &unfinished{cand: c, meta: meta, err: err, at: w.clock.Now()}
+	})
+	w.opts.Logf("%s did not parse (%v); holding — X4 may still be writing it", meta.Path, err)
 }
 
 // publish swaps in the new snapshot and fires the events that follow from it.
@@ -607,6 +816,7 @@ func (w *Watcher) publish(req *parseReq, snap *x4save.Snapshot, save wire.SaveMe
 			st.parsing, st.attempt = false, 0
 			st.lastErr = se
 			st.writing = nil
+			st.unfinished = nil
 			st.parseErrors++
 		})
 		w.opts.Emit(wire.EventTypeSaveError, se)
@@ -643,6 +853,7 @@ func (w *Watcher) publish(req *parseReq, snap *x4save.Snapshot, save wire.SaveMe
 		st.parsing, st.attempt = false, 0
 		st.lastErr = nil
 		st.writing = nil
+		st.unfinished = nil
 		st.rollback = meta.Rollback
 		st.parses++
 		if !cached {
@@ -785,6 +996,7 @@ func (w *Watcher) Health() wire.WatchHealth {
 		ParseErrors:    w.st.parseErrors,
 		MedianParseMS:  median(w.st.parseDuration),
 		Cache:          w.st.cache,
+		Parse:          w.st.priority,
 	}
 	if len(h.Dirs) == 0 {
 		h.Dirs = w.watchRoots()
@@ -952,11 +1164,31 @@ func median(xs []int64) int64 {
 	return s[len(s)/2]
 }
 
+// How much evidence a cadence needs before anything is allowed to be said
+// about it (design §11.2, and the same doctrine as every ∅ on the board).
+//
+// Two autosaves are not a cadence, they are one gap; and one gap can be
+// seconds, because X4 writes an autosave on events as well as on a timer — a
+// jump, a mission hand-in — so two of them 23 s apart is an ordinary thing to
+// see. That is what "30 autosaves overdue — is autosave on?" was measured
+// against on a live board while autosave was working perfectly.
+//
+// So: three autosaves, which is two gaps and a real middle value, and a floor
+// under the cadence itself, well below any interval X4 offers and far above the
+// event-driven pairs. Below either bar the field is not sent at all, and the
+// client already renders the unnumbered copy for it — "autosaves overdue — is
+// autosave on?" — which claims nothing it cannot support.
+const (
+	minCadenceSamples = 3
+	minCadence        = 5 * time.Minute
+)
+
 // medianInterval is the observed autosave cadence: the middle gap between the
 // last few autosaves. The overdue count leans on it so "overdue" means overdue
-// for THIS playthrough rather than for a constant somebody picked.
+// for THIS playthrough rather than for a constant somebody picked. It returns 0
+// — no cadence, say nothing — until there is enough evidence for one.
 func medianInterval(ts []time.Time) time.Duration {
-	if len(ts) < 2 {
+	if len(ts) < minCadenceSamples {
 		return 0
 	}
 	gaps := make([]int64, 0, len(ts)-1)
@@ -965,5 +1197,11 @@ func medianInterval(ts []time.Time) time.Duration {
 			gaps = append(gaps, int64(d))
 		}
 	}
-	return time.Duration(median(gaps))
+	if len(gaps) < minCadenceSamples-1 {
+		return 0
+	}
+	if d := time.Duration(median(gaps)); d >= minCadence {
+		return d
+	}
+	return 0
 }

@@ -123,3 +123,73 @@ func TestDetectorAttributesFirstSighting(t *testing.T) {
 		})
 	}
 }
+
+// Which save the gate should be WATCHING is a separate decision from whether it
+// has settled, and it used to be "the newest mtime" with no alternative. That
+// answer cannot see a save restored from a backup: cp -p, rsync -a and this
+// repo's own archiver all preserve the original timestamp, so the restored file
+// lands older than the one already there and is never looked at again.
+func TestDetectorChoosesWhatChanged(t *testing.T) {
+	t0 := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)
+	c := func(name string, size int64, mod time.Duration) candidate {
+		return candidate{path: "/saves/" + name, size: size, modTime: t0.Add(mod)}
+	}
+	// Listings arrive newest first (x4save.ListSaves sorts them).
+	quick := c("quicksave.xml.gz", 100, 0)
+	older := c("save_007.xml.gz", 90, -2*time.Hour)
+	restored := c("restored.xml.gz", 80, -3*time.Hour)
+
+	cases := []struct {
+		name     string
+		listings [][]candidate
+		want     []candidate
+	}{
+		{
+			name:     "start-up has observed nothing, so the newest is the best guess",
+			listings: [][]candidate{{quick, older}},
+			want:     []candidate{quick},
+		},
+		{
+			name:     "an empty directory chooses nothing",
+			listings: [][]candidate{{}},
+			want:     []candidate{{}},
+		},
+		{
+			name:     "a restored save is chosen although it is the oldest file there",
+			listings: [][]candidate{{quick, older}, {quick, older, restored}},
+			want:     []candidate{quick, restored},
+		},
+		{
+			name: "and it is not abandoned on the next quiet tick",
+			listings: [][]candidate{
+				{quick, older}, {quick, older, restored}, {quick, older, restored}, {quick, older, restored},
+			},
+			want: []candidate{quick, restored, restored, restored},
+		},
+		{
+			name:     "a file that grew is chosen over an untouched newer one",
+			listings: [][]candidate{{quick, older}, {quick, c("save_007.xml.gz", 9000, -2*time.Hour)}},
+			want:     []candidate{quick, c("save_007.xml.gz", 9000, -2*time.Hour)},
+		},
+		{
+			name:     "the watched file being deleted falls back to the newest left",
+			listings: [][]candidate{{restored}, {quick, older}},
+			want:     []candidate{restored, quick},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDetector(2)
+			for i, listing := range tc.listings {
+				got := d.choose(listing)
+				if !got.same(tc.want[i]) {
+					t.Fatalf("listing %d: chose %q (%d bytes), want %q (%d bytes)",
+						i, got.path, got.size, tc.want[i].path, tc.want[i].size)
+				}
+				// The gate sees it too, so `cur` tracks the real sequence.
+				d.observe(got, sourcePoll)
+			}
+		})
+	}
+}

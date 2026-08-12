@@ -72,6 +72,32 @@ type WatchHealth struct {
 	LastCheckAt  *time.Time  `json:"last_check_at,omitempty"`
 	LastDetectAt *time.Time  `json:"last_detect_at,omitempty"`
 	Cache        CacheHealth `json:"cache"`
+	// Parse is how politely the parse runs (design risk §10.3).
+	Parse ParsePriority `json:"parse_priority"`
+}
+
+// ParsePriority is what the parse worker asked the scheduler for and what it
+// was granted: the answer to "is x4cue getting out of the game's way?" without
+// anyone having to find the right thread in ps.
+//
+// It matters because the systemd unit that promises CPUWeight=20 + Nice=10 only
+// applies when the binary was started BY systemd, and on a gaming machine it
+// usually was not — it was started from a shell, or from the Steam launch
+// wrapper. Measured against a busy game proxy sharing one core, an unniced parse
+// costs that core 51% of its throughput for as long as it runs; the same parse
+// at nice 19 costs 4% (docs/parse-baseline.md §6).
+type ParsePriority struct {
+	// Nice is the CPU nice value of the thread the last parse ran on, read back
+	// from the kernel rather than assumed.
+	Nice int `json:"nice"`
+	// IOClass is that thread's I/O scheduling class: "idle" is the one this
+	// build asks for, "none" means nothing was ever asked.
+	IOClass string `json:"io_class,omitempty"`
+	// Applied is true only when a parse really has run at these values. False
+	// before the first parse, and when the platform or the sandbox refused.
+	Applied bool `json:"applied"`
+	// Detail says why not, verbatim, or that no save has been parsed yet.
+	Detail string `json:"detail,omitempty"`
 }
 
 // DetectionStats counts detected saves and says what found each one. Manual is

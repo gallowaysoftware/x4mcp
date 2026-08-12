@@ -48,20 +48,21 @@ Every un-archived play session is lost rule-mining corpus for S7.
 ## Phase 2 — the live screen (W2, ~6 ev)
 
 ### S3 · Watcher + snapshot store + SSE core — F2 (3.5 ev)
-- [ ] `internal/watch`: 2 s stat-poll over `DefaultSaveRoots()` + new `X4MCP_SAVE_DIR` override; settle gate (size+mtime stable 2 ticks); newest-wins parse chan (cap 1); single parse worker; `atomic.Pointer[Published]` swap; `Kick()`
-- [ ] New parser API: `LoadSnapshotCtx(ctx, path, opts{Force, OnRetry(attempt)})` wrapping the existing retry loop; ctx-checking reader under the gzip stream (cancelable 16 s parse)
-- [ ] Guard rails: GameGUID switch → `playthrough.changed` + baseline reset (never diff across GUIDs); GameTimeS regression → rollback state
-- [ ] Gob-cache GC: newest N per save path + purge stale-schemaVersion files at startup
-- [ ] `internal/web`: mux, SSE hub (512-ring, 15 s heartbeats, slow-client → `resync`), `/api/state`, `/api/events`, `save.detected/parsing/retry/error` + `snapshot.ready` events
-- [ ] `refresh_save` branches: empty path → `Kick()`; explicit path → force-load (MCP semantics preserved)
+- [x] `internal/watch`: 2 s stat-poll over `DefaultSaveRoots()` + new `X4MCP_SAVE_DIR` override; settle gate (size+mtime stable 2 ticks); newest-wins parse chan (cap 1); single parse worker; `atomic.Pointer[Published]` swap; `Kick()`
+- [x] New parser API: `LoadSnapshotCtx(ctx, path, opts{Force, OnRetry(attempt)})` wrapping the existing retry loop; ctx-checking reader under the gzip stream (cancelable 16 s parse)
+- [x] Guard rails: GameGUID switch → `playthrough.changed` + baseline reset (never diff across GUIDs); GameTimeS regression → rollback state
+- [x] Gob-cache GC: newest N per save path + purge stale-schemaVersion files at startup
+- [x] `internal/web`: mux, SSE hub (512-ring, 15 s heartbeats, slow-client → `resync`), `/api/state`, `/api/events`, `save.detected/parsing/retry/error` + `snapshot.ready` events
+- [x] `refresh_save` branches: empty path → `Kick()`; explicit path → force-load (MCP semantics preserved)
 - [ ] Gate: table tests (settle/GUID/rotation, fake clock+FS); quicksave in game → reflected < 60 s wall-clock; retry state visible with count; cache dir bounded after 20 synthetic saves; **parse-while-gaming hitch check #1**
+  - hitch check #1 **done** 2026-08-12 — numbers and method in `docs/parse-baseline.md` §6. The parse now lowers its own thread (nice 19 + `IOPRIO_CLASS_IDLE`) and `deploy/systemd/x4mcp.service` carries the `CPUWeight=20` + `Nice=10` the PRD has promised since it was written. Everything else on this line is done except **the in-game wall-clock check**, which no test can attest: it needs a quicksave in a running X4 and a stopwatch. That is the only thing holding this box open.
 
 ### S4b · Vitals + honesty chrome — F7 (render) / F11 (2.5 ev)
-- [ ] Chrome kit to design §2–§6: `FreshnessStamp` (all §6 states + exact copy), `LegChips`, `ProvenanceChip`, `UnknownValue`, `SeverityDot` — tokens verbatim from design §2
-- [ ] Vitals strip: credits + Δ, credits sparkline (dotted-unknown empty state until S8), counts (no severity suffixes at rest — amber lifecycle per design §2), war chips (presence + offer counts only)
-- [ ] First-run arming flow: checklist card (watch dir ✓ → chime enable+test → notification permission); MUTED/blocked state always visible in vitals
-- [ ] Health drawer (design §6): watch paths, parse health, leg detail, arming state
-- [ ] **Before freezing the ramp:** load real JetBrains Mono woff2 into the mockup at spec sizes; glance test at 75 cm and from the couch (design §11.4)
+- [x] Chrome kit to design §2–§6: `FreshnessStamp` (all §6 states + exact copy), `LegChips`, `ProvenanceChip`, `UnknownValue`, `SeverityDot` — tokens verbatim from design §2
+- [x] Vitals strip: credits + Δ, credits sparkline (dotted-unknown empty state until S8), counts (no severity suffixes at rest — amber lifecycle per design §2), war chips (presence + offer counts only)
+- [x] First-run arming flow: checklist card (watch dir ✓ → chime enable+test → notification permission); MUTED/blocked state always visible in vitals
+- [x] Health drawer (design §6): watch paths, parse health, leg detail, arming state
+- [ ] **Before freezing the ramp:** load real JetBrains Mono woff2 into the mockup at spec sizes; glance test at 75 cm and from the couch (design §11.4) — a physical check, unticked until someone sits in the chair
 - [ ] Gate: **end of W2 — live screen on the second monitor**; chrome reviewed against design spec (tables normative over mockup)
 
 ---

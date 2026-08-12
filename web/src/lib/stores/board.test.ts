@@ -115,6 +115,7 @@ function stateView(over: Partial<StateView> = {}): StateView {
 			retries: 0,
 			parse_errors: 0,
 			cache: { entries: 3, bytes: 1000, removed: 0 },
+			parse_priority: { nice: 19, io_class: 'idle', applied: true },
 		},
 		last_event_seq: 10,
 		silence: { heartbeat_s: 15, stale_s: 45, lost_s: 60 },

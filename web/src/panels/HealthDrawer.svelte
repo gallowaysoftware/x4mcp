@@ -85,6 +85,18 @@
 			gob cache: {watch.cache.entries} entries · {formatBytes(watch.cache.bytes)} · {watch.cache.removed} removed since
 			start-up
 		</p>
+		<!--
+		  "Am I niced?" — the one question about x4cue's cost that a player can
+		  feel the answer to through the game, and it used to be answerable only
+		  from ps. This is what the kernel actually granted the thread that read
+		  the last save, not what the unit file asked for.
+		-->
+		<p class="row t-body" class:dim={watch.parse_priority.applied} class:amber={!watch.parse_priority.applied}>
+			parse priority: nice {watch.parse_priority.nice} · io {watch.parse_priority.io_class ?? 'unknown'}
+			{#if !watch.parse_priority.applied}<span class="note">— not applied{watch.parse_priority.detail
+					? `: ${watch.parse_priority.detail}`
+					: ''}</span>{/if}
+		</p>
 	{/if}
 
 	<h3 class="t-micro sect">PARSE HEALTH</h3>

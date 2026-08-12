@@ -193,6 +193,36 @@ func (r *recorder) count(typ wire.EventType) int {
 // mtime so the settle gate is driven by the test rather than by timing.
 func writeSave(t *testing.T, path, guid string, gameTime float64, money int64, mtime time.Time) {
 	t.Helper()
+	writeBytes(t, path, saveBytes(t, guid, gameTime, money), mtime)
+}
+
+// writeHalfSave writes the FIRST HALF of a real savegame: a gzip stream that
+// stops in the middle of itself, which is precisely what is on disk while X4 is
+// writing one — and what the settle gate fires on when the write pauses for
+// longer than the gate's 4 s. The parser is left to produce its own error from
+// it, because "what does a torn file actually fail with" is the thing under
+// test and a hand-written error would be the test asserting its own premise.
+func writeHalfSave(t *testing.T, path, guid string, gameTime float64, money int64, mtime time.Time) {
+	t.Helper()
+	full := saveBytes(t, guid, gameTime, money)
+	writeBytes(t, path, full[:len(full)/2], mtime)
+}
+
+func writeBytes(t *testing.T, path string, b []byte, mtime time.Time) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func saveBytes(t *testing.T, guid string, gameTime float64, money int64) []byte {
+	t.Helper()
 	raw := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <savegame>
 <info>
@@ -210,15 +240,7 @@ func writeSave(t *testing.T, path, guid string, gameTime float64, money int64, m
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(path, mtime, mtime); err != nil {
-		t.Fatal(err)
-	}
+	return buf.Bytes()
 }
 
 // stubSnapshot is what a fake loader hands back: enough identity for the guard
@@ -316,9 +338,44 @@ func (r *rig) settle() {
 	}
 }
 
+// awaitParseDone blocks until the parse worker has finished with the save it
+// was reading, whatever it decided about it.
+//
+// It reads the state directly because there is nothing else to read: a parse
+// that ends in a HELD verdict (Watcher.holdUnfinished) emits no event at all —
+// that is the whole point of it — so a test cannot wait on the stream to learn
+// that the decision has been made, and one that advanced the clock without
+// waiting would be advancing past nothing. Call it once save.parsing has been
+// seen: st.parsing is set before that event is emitted.
+func (r *rig) awaitParseDone() {
+	r.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		r.w.mu.Lock()
+		parsing := r.w.st.parsing
+		r.w.mu.Unlock()
+		if !parsing {
+			return
+		}
+		if time.Now().After(deadline) {
+			r.t.Fatal("the parse worker never finished")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func (r *rig) save(name, guid string, gameTime float64, money int64, mtime time.Time) string {
 	r.t.Helper()
 	path := filepath.Join(r.dir, name)
 	writeSave(r.t, path, guid, gameTime, money, mtime)
+	return path
+}
+
+// halfSave is r.save interrupted halfway: the file X4 has on disk when it
+// pauses in the middle of writing one.
+func (r *rig) halfSave(name, guid string, gameTime float64, money int64, mtime time.Time) string {
+	r.t.Helper()
+	path := filepath.Join(r.dir, name)
+	writeHalfSave(r.t, path, guid, gameTime, money, mtime)
 	return path
 }

@@ -63,6 +63,57 @@ type detector struct {
 	// it yet — so it is reconsidered on the next sighting even if the write
 	// finished at exactly the size and mtime that was dispatched.
 	dispatched candidate
+
+	// seen is the previous listing of every save on disk, by path. It is what
+	// makes choose able to answer "what changed?" rather than only "what is
+	// newest?"; nil before the first listing, which is not the same as empty.
+	seen map[string]candidate
+}
+
+// choose picks which of the saves on disk the settle gate should be watching.
+// all is the whole listing, newest first.
+//
+// "The newest save by mtime" is a different question from "what just happened
+// in this directory", and the difference is an entire class of save this
+// watcher could not see. A save RESTORED from a backup keeps its original
+// timestamp — cp -p, rsync -a, an unpacked tarball, and the archiver this repo
+// ships, which is the one a player is most likely to restore FROM — so it lands
+// beside a file that is newer than it is, and a rule that only ever looks at
+// the newest never looks at it again. Not on a poll, and not on an explicit
+// refresh either: both asked the same question.
+//
+// So the answer is whatever CHANGED since the last listing — appeared, grew, or
+// was overwritten — newest first among those. When nothing changed the answer
+// is whatever we were already watching, because abandoning a half-settled
+// candidate every time the disk goes quiet would mean the gate never settles.
+// Only when there is neither (the first listing, or the watched file was
+// deleted) does it fall back to the newest on disk, which is also the only
+// honest answer at start-up: nothing was observed to happen, so the newest save
+// is the best guess at the one being played.
+func (d *detector) choose(all []candidate) candidate {
+	seen := make(map[string]candidate, len(all))
+	var changed candidate
+	for _, c := range all {
+		seen[c.path] = c
+		if was, ok := d.seen[c.path]; !ok || !was.same(c) {
+			if changed.zero() {
+				changed = c // newest first, so the first one found is the newest
+			}
+		}
+	}
+	d.seen = seen
+	if !changed.zero() {
+		return changed
+	}
+	if !d.cur.zero() {
+		if c, ok := seen[d.cur.path]; ok {
+			return c
+		}
+	}
+	if len(all) > 0 {
+		return all[0]
+	}
+	return candidate{}
 }
 
 func newDetector(settleTicks int) *detector {

@@ -231,6 +231,15 @@ func TestWatcherParseFailureKeepsThePreviousSnapshot(t *testing.T) {
 	}
 	r.save("save_001.xml.gz", "guid-a", 1100, 510, r.clock.Now().Add(time.Minute))
 	r.settle()
+	// A parse failure is a HELD verdict until the file stops moving: X4 pauses
+	// mid-write, and a save caught in one of those pauses fails exactly like a
+	// broken save (see holdUnfinished). Nothing is amber yet.
+	r.rec.wait(t, wire.EventTypeSaveParsing, 2)
+	r.awaitParseDone()
+	if n := r.rec.count(wire.EventTypeSaveError); n != 0 {
+		t.Fatalf("save.error fired %d times before the file had stopped moving", n)
+	}
+	r.advance(stalledWrite)
 	se := r.rec.wait(t, wire.EventTypeSaveError, 1).(*wire.SaveError)
 
 	if se.Kind != wire.SaveErrorKindParse || !strings.Contains(se.Detail, "unexpected EOF") {
@@ -966,4 +975,192 @@ func TestWatchDirsFollowTheFilesystem(t *testing.T) {
 		t.Errorf("watching %v after the dir came back, want it back in the list", got)
 	}
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
+}
+
+// X4 does not write a save at a steady rate — it pauses, and a pause longer
+// than the settle gate's 4 s fires the gate on a file that is only half there.
+// The parse of that file dies inside the gzip stream, which is not the same
+// error as the post-parse re-stat's ErrSaveChanged and did not take its path:
+// it went straight to save.error, the save leg DOWN and an amber board, 117 ms
+// after the detection, for an autosave that finished normally six seconds
+// later. That is a whole week's false-red budget (PRD §10) spent on one hiccup.
+//
+// This drives the real loader against a real truncated gzip, because the thing
+// that was miscategorised is the parser's own error text.
+func TestAPausedWriteIsNotAParseFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t, func(o *Options) { o.Load = x4save.LoadSnapshotCtx })
+	r.start(ctx)
+
+	// The write stalls halfway. The file holds still, so the gate fires on it.
+	r.halfSave("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSaveParsing, 1)
+	r.awaitParseDone()
+
+	// Nothing about a paused write is a fault, so nothing says it is.
+	if n := r.rec.count(wire.EventTypeSaveError); n != 0 {
+		t.Errorf("save.error fired %d times for a save X4 had not finished writing", n)
+	}
+	if n := r.rec.count(wire.EventTypeHealthLeg); n != 0 {
+		t.Errorf("the save leg reported %d times; a half-written file is not a leg event", n)
+	}
+	if h := r.w.Health(); h.ParseErrors != 0 {
+		t.Errorf("parse_errors = %d, want 0: nothing has been shown to be broken", h.ParseErrors)
+	}
+	if f := r.w.Freshness(); f.State == wire.FreshnessStateParseError {
+		t.Error("freshness = parse_error while X4 was still writing the save")
+	}
+	// And the same file is not re-read every 2 s while the game runs: the bytes
+	// have not changed, so a second parse would fail identically.
+	r.settle()
+	r.settle()
+	if n := r.rec.count(wire.EventTypeSaveParsing); n != 1 {
+		t.Errorf("parses attempted = %d, want 1: the file never changed", n)
+	}
+	if _, err := r.w.Snapshot(ctx, ""); err == nil || !strings.Contains(err.Error(), "has not parsed") {
+		t.Errorf("err = %v, want the honest reason there is nothing yet", err)
+	}
+
+	// The write resumes and finishes. The ordinary path takes over with no
+	// restart, and the board never went amber at any point.
+	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now().Add(10*time.Second))
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
+	if n := r.rec.count(wire.EventTypeSaveError); n != 0 {
+		t.Errorf("save.error fired %d times across a paused write that completed", n)
+	}
+	if f := r.w.Freshness(); f.State != wire.FreshnessStateCurrent {
+		t.Errorf("state = %q after the write finished, want current", f.State)
+	}
+}
+
+// The other half of the same rule: a file that stops mid-stream and then never
+// moves again is not being written by anyone, and holding that verdict forever
+// would be its own dishonesty. It is confessed with the parser's real reason.
+func TestASaveThatStopsMidStreamAndStaysThereIsConfessed(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t, func(o *Options) { o.Load = x4save.LoadSnapshotCtx })
+	r.start(ctx)
+
+	r.halfSave("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSaveParsing, 1)
+	r.awaitParseDone()
+	r.advance(stalledWrite)
+
+	se := r.rec.wait(t, wire.EventTypeSaveError, 1).(*wire.SaveError)
+	if se.Kind != wire.SaveErrorKindParse || !strings.Contains(se.Detail, "EOF") {
+		t.Errorf("save.error = %+v, want the parser's own reason", se)
+	}
+	if leg := r.rec.wait(t, wire.EventTypeHealthLeg, 1).(wire.LegHealth); leg.Up {
+		t.Error("the save leg stayed up for a save that will not parse")
+	}
+	if f := r.w.Freshness(); f.State != wire.FreshnessStateParseError {
+		t.Errorf("state = %q, want parse_error once the file had stopped moving", f.State)
+	}
+}
+
+// A save RESTORED from a backup keeps its original mtime — cp -p, rsync -a, an
+// unpacked archive, or the archiver this repo ships — so it lands OLDER than
+// the file already sitting there. Watching only "the newest by mtime" made it
+// permanently invisible: not to the poll, and not to an explicit refresh
+// either, because both asked the same question.
+func TestARestoredSaveIsSeenEvenThoughItIsOlder(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t)
+	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		if strings.Contains(path, "restored") {
+			return stubSnapshot(path, "guid-restored", 400, 90), nil
+		}
+		return stubSnapshot(path, "guid-a", 1000, 500), nil
+	}
+	r.start(ctx)
+
+	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
+
+	// Two hours older than the quicksave that is already there, which is what
+	// a restore from this morning's archive looks like.
+	restored := r.save("restored.xml.gz", "guid-restored", 400, 90, r.clock.Now().Add(-2*time.Hour))
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 2)
+
+	p := r.w.Published()
+	if p == nil || p.Snapshot.SourcePath != restored {
+		t.Fatalf("published %v, want the restored save at %s", p, restored)
+	}
+	if p.Meta.GameGUID != "guid-restored" {
+		t.Errorf("game_guid = %q, want the restored playthrough", p.Meta.GameGUID)
+	}
+	// And it stays: the newer file beside it has already been dealt with, so
+	// nothing must drag the board back onto it on the next tick.
+	r.settle()
+	r.settle()
+	if n := r.rec.count(wire.EventTypeSnapshotReady); n != 2 {
+		t.Errorf("snapshot.ready fired %d times, want 2: nothing changed on disk", n)
+	}
+	if got := r.w.Published().Snapshot.SourcePath; got != restored {
+		t.Errorf("published %s, want the restored save to stay published", got)
+	}
+}
+
+// "30 autosaves overdue — is autosave on?" was printed off two saves 23 s
+// apart, while autosave was working perfectly: X4 writes autosaves on events as
+// well as on a timer, so a close pair says nothing at all about the cadence.
+// Too little evidence has to render as the ∅ treatment, not as a confident
+// number — the same doctrine as CREDITS and THREAT.
+func TestOverdueSaysNothingWithoutEnoughEvidence(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t)
+	r.start(ctx)
+
+	// Two autosaves 23 s apart — a jump, then a mission hand-in.
+	now := r.clock.Now()
+	r.save("autosave_01.xml.gz", "guid-a", 1000, 500, now)
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
+	r.save("autosave_02.xml.gz", "guid-a", 2000, 500, now.Add(23*time.Second))
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 2)
+
+	r.advance(12 * time.Minute)
+	if f := r.w.Freshness(); f.AutosavesOverdue != 0 {
+		t.Errorf("overdue = %d off one 23 s gap; want nothing said at all", f.AutosavesOverdue)
+	}
+
+	// A third one 23 s behind the second gives a real median gap — and 23 s is
+	// still not a cadence any X4 setting produces, so it is still not evidence
+	// that a single autosave has been missed.
+	r.save("autosave_03.xml.gz", "guid-a", 3000, 500, now.Add(46*time.Second))
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 3)
+	r.advance(12 * time.Minute)
+	if f := r.w.Freshness(); f.AutosavesOverdue != 0 {
+		t.Errorf("overdue = %d off a 23 s median; want nothing said at all", f.AutosavesOverdue)
+	}
+}
+
+// The same knob, off: a machine that is not gaming can have the parse back at
+// full speed, and the drawer says that is what is happening.
+func TestParsePolitenessCanBeTurnedOff(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	t.Setenv(ParseNiceEnv, "off")
+	r := newRig(t)
+	r.start(ctx)
+
+	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
+
+	p := r.w.Health().Parse
+	if p.Applied || !strings.Contains(p.Detail, ParseNiceEnv) {
+		t.Errorf("parse priority = %+v, want it to name the override that turned it off", p)
+	}
 }
