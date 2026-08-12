@@ -49,9 +49,13 @@ type Hub struct {
 
 type client struct {
 	ch chan wire.Envelope
-	// resync is set when this client fell behind and its queue was dropped. It
-	// is a field rather than just an event so the state is visible to tests and
-	// to Stats without draining anything.
+	// resync records that the LAST send overflowed this client's queue and left
+	// a resync in its place. It is an observation, never a latch: a connection
+	// that starts reading again is caught up by its own refetch and is a normal
+	// client from that point. (It used to gate every future send, so a tab told
+	// to resync once received heartbeats and nothing else for the rest of the
+	// session — a board that looks live and is frozen, which is the one failure
+	// the silence timers cannot see.)
 	resync bool
 }
 
@@ -80,17 +84,22 @@ func (h *Hub) Publish(typ wire.EventType, data any) {
 // send queues one event for one client, or gives up on catching it up. Called
 // with h.mu held.
 func (h *Hub) send(c *client, env wire.Envelope) {
-	if c.resync {
-		return // already told to refetch; nothing in between matters
-	}
 	select {
 	case c.ch <- env:
+		// It is keeping up (again). Whatever it missed is behind the resync it
+		// has already been handed.
+		c.resync = false
 		return
 	default:
 	}
 	// Full. Drop everything queued — it is about to be superseded by a refetch
 	// — and hand over a resync, which is the only event that still means
 	// something to a client that has missed an unknown amount.
+	//
+	// A client that overflows repeatedly lands here repeatedly, and that is the
+	// point: its queue holds exactly one resync, always carrying the newest
+	// sequence, so whenever it does start reading, the first thing it reads is
+	// still "refetch" and never a stale tail.
 	for len(c.ch) > 0 {
 		<-c.ch
 	}
@@ -128,7 +137,9 @@ func (h *Hub) subscribe(after int64) (*client, []wire.Envelope) {
 		return c, nil
 	}
 	if len(h.ring) == 0 || after < h.ring[0].Seq-1 {
-		c.resync = true
+		// The resync goes out as the first thing this connection reads. It is
+		// NOT a state the connection stays in: the socket is brand new and
+		// everything after this point reaches it normally.
 		return c, []wire.Envelope{{Seq: h.seq, Type: wire.EventTypeResync, At: h.now().UTC()}}
 	}
 	var replay []wire.Envelope

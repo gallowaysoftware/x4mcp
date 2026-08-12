@@ -2,9 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
 
 // --web is parsed out of the leftovers, not by cli.go. It has to behave like
@@ -78,26 +86,130 @@ func TestTransportAndWebCompose(t *testing.T) {
 // Without --web nothing about the server changes: no watcher, no board, and
 // the load-on-demand provider the MCP faces have always used.
 func TestBuildServiceWithoutWebStartsNothing(t *testing.T) {
-	svc, s, err := buildService(t.Context(), "")
+	svc, s, wait, err := buildService(t.Context(), "")
 	if err != nil {
 		t.Fatalf("buildService: %v", err)
 	}
 	if svc == nil || s == nil {
 		t.Fatal("buildService returned nothing to serve")
 	}
+	wait() // nothing was started, so nothing to wait for
 }
 
 // The bind policy is enforced where the flag is turned into a server, so a
 // mistyped --web fails at start-up rather than exposing the board.
 func TestBuildServiceRefusesANonLoopbackBind(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	_, _, err := buildService(ctx, "0.0.0.0:8484")
-	if err == nil {
-		t.Fatal("binding every interface with no token must fail")
+	// ":8484" is the spelling TestParseWeb itself uses, and it binds every
+	// interface exactly like 0.0.0.0 does.
+	for _, addr := range []string{"0.0.0.0:8484", ":8484", "[::]:8484", "192.168.1.50:8484"} {
+		t.Run(addr, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			_, _, _, err := buildService(ctx, addr)
+			if err == nil {
+				t.Fatalf("--web %s with no token must fail: the board serves the savegame and the plan writes", addr)
+			}
+			if !strings.Contains(err.Error(), "X4MCP_AUTH_TOKEN") {
+				t.Errorf("err = %v, want it to name the way out", err)
+			}
+		})
 	}
-	if !strings.Contains(err.Error(), "X4MCP_AUTH_TOKEN") {
-		t.Errorf("err = %v, want it to name the way out", err)
+}
+
+// `x4mcp serve --web 127.0.0.1:8484` is what the flag's own help advertises,
+// and it used to fall through to the stdio transport — so it printed
+// "board on http://…" and then exited 0 the instant stdin hit EOF. Under nohup
+// or systemd (StandardInput=null) that is a dead board reporting success.
+//
+// So stdin here is /dev/null, which is exactly what those launches provide: the
+// EOF is immediate, and the board still has to be up afterwards.
+func TestOnlyWebServesTheBoardUntilSignalled(t *testing.T) {
+	t.Setenv(x4save.SaveRootEnv, t.TempDir())
+	t.Setenv("X4MCP_CACHE_DIR", t.TempDir())
+
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdin := os.Stdin
+	os.Stdin = devnull
+	t.Cleanup(func() { os.Stdin = stdin; devnull.Close() })
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runServer(ctx, transport{}, addr) }()
+
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			cancel()
+			t.Fatal("the board never came up")
+		}
+		res, err := http.Get("http://" + addr + "/healthz")
+		if err == nil {
+			res.Body.Close()
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("runServer returned %v while stdin was at EOF; the board is dead and the exit code says fine", err)
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+
+	// Still serving, with nothing on stdin and nobody connected.
+	select {
+	case err := <-done:
+		t.Fatalf("runServer returned %v with the board still expected to be up", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// And a signal — which is what cancels this context in main — stops it,
+	// cleanly, after the watcher and the board's drain are finished.
+	cancel()
+	select {
+	case err := <-done:
+		if !cleanExit(err) {
+			t.Errorf("runServer = %v on shutdown; a signal is a request, not a fault", err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("runServer did not return after its context was cancelled")
+	}
+	if _, err := http.Get("http://" + addr + "/healthz"); err == nil {
+		t.Error("the board is still listening after runServer returned")
+	}
+}
+
+// SIGTERM cancels the root context, and whatever was waiting on it reports that
+// as why it stopped. Exiting 1 for it makes every clean `systemctl stop` a
+// failed unit.
+func TestCleanExit(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "no error", err: nil, want: true},
+		{name: "the signal that asked it to stop", err: context.Canceled, want: true},
+		{name: "wrapped", err: fmt.Errorf("relay: %w", context.Canceled), want: true},
+		{name: "a real failure", err: errors.New("listen tcp :8484: address already in use")},
+		{name: "a deadline is not a request", err: context.DeadlineExceeded},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := cleanExit(c.err); got != c.want {
+				t.Errorf("cleanExit(%v) = %v, want %v", c.err, got, c.want)
+			}
+		})
 	}
 }
 

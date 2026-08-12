@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // CacheDir is where parsed snapshots are stored. Parsing a ~1GB save takes
@@ -27,8 +29,11 @@ func CacheDir() string {
 }
 
 // schemaVersion is bumped whenever the parser/Snapshot shape changes, so a
-// code change automatically invalidates stale cached snapshots.
-const schemaVersion = 24
+// code change automatically invalidates stale cached snapshots. 25 is the gob
+// header (see cacheHeader), which is a layout change rather than a parser one:
+// old entries are unreadable by this build and are removed by name, which is
+// cheaper and safer than decoding one to discover it.
+const schemaVersion = 25
 
 // SchemaVersion is the parser's current snapshot schema, exported so the
 // watcher can report it (a schema mismatch is a player-visible state, design
@@ -68,7 +73,24 @@ type LoadOptions struct {
 	// otherwise run for half a minute and report nothing until it is over.
 	// Called on the caller's goroutine; keep it non-blocking.
 	OnRetry func(attempt int)
+	// OnCacheHit is called when the snapshot came from the gob cache instead of
+	// from the parser. The returned Snapshot carries the ORIGINAL parse's
+	// duration, so anything measuring parse cost has to know the difference —
+	// a cache hit reporting 11 s is how a rolling median ended up describing a
+	// session whose parses were milliseconds.
+	OnCacheHit func()
 }
+
+// Retry pacing for a save that changed mid-parse.
+//
+// Vars, not consts, only so the tests that induce the race can run at a speed
+// that is not X4's. quiesceStep is both the gap between stats and the interval
+// the file must hold still for; quiesceBudget gives up and spends the attempt
+// anyway, because a file that never settles still deserves its retries.
+var (
+	quiesceStep   = time.Second
+	quiesceBudget = 8 * time.Second
+)
 
 // LoadSnapshot returns a Snapshot for the save at path, parsing it (and caching
 // the result) only if no fresh cache entry exists. force re-parses unconditionally.
@@ -102,6 +124,9 @@ func LoadSnapshotCtx(ctx context.Context, path string, opts LoadOptions) (*Snaps
 
 		if !opts.Force {
 			if snap, err := readCache(file); err == nil {
+				if opts.OnCacheHit != nil {
+					opts.OnCacheHit()
+				}
 				return snap, nil
 			}
 		}
@@ -110,11 +135,20 @@ func LoadSnapshotCtx(ctx context.Context, path string, opts LoadOptions) (*Snaps
 		if err != nil {
 			lastErr = err
 			if errors.Is(err, ErrSaveChanged) {
-				continue // the write has almost certainly finished by now
+				// The write is still going. Re-reading immediately is how three
+				// full parses of a 64 MB save land back to back at the exact
+				// moment the game is writing one — against the <2% duty cycle
+				// this is all supposed to cost. Wait for the file to hold still
+				// first; that is the same signal the watcher's settle gate uses,
+				// and it is the only one that means anything here.
+				if err := waitQuiescent(ctx, path); err != nil {
+					return nil, err
+				}
+				continue
 			}
 			return nil, err
 		}
-		if err := writeCache(file, snap); err != nil {
+		if err := writeCache(file, path, snap); err != nil {
 			// Caching is best-effort; a failure here shouldn't fail the query.
 			_ = err
 		}
@@ -123,20 +157,80 @@ func LoadSnapshotCtx(ctx context.Context, path string, opts LoadOptions) (*Snaps
 	return nil, lastErr
 }
 
+// waitQuiescent blocks until path has held one size and mtime for a full
+// quiesceStep, or until the budget runs out. Returning after the budget is not
+// a failure: the caller still has retries, and spending one on a file that
+// refuses to settle is better than refusing to look at it at all.
+func waitQuiescent(ctx context.Context, path string) error {
+	deadline := time.Now().Add(quiesceBudget)
+	var last os.FileInfo
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(quiesceStep):
+		}
+		fi, err := os.Stat(path)
+		if err != nil {
+			// Gone, or unreadable. Let the next attempt's own stat report it.
+			return nil
+		}
+		if last != nil && fi.Size() == last.Size() && fi.ModTime().Equal(last.ModTime()) {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			return nil
+		}
+		last = fi
+	}
+}
+
+// cacheHeader is the first gob value in every entry, written ahead of the
+// snapshot so that it can be read on its own.
+//
+// It exists for exactly one question: is the savegame this entry was written
+// for still on disk? The entry NAME cannot answer it — the path is a one-way
+// hash — so without this, a cache entry for a save the player deleted is
+// immortal. Decoding it costs one small gob message; the snapshot behind it is
+// tens of megabytes and is never touched.
+type cacheHeader struct {
+	SavePath string
+}
+
 func readCache(file string) (*Snapshot, error) {
 	f, err := os.Open(file)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	dec := gob.NewDecoder(f)
+	var hdr cacheHeader
+	if err := dec.Decode(&hdr); err != nil {
+		return nil, err
+	}
 	var snap Snapshot
-	if err := gob.NewDecoder(f).Decode(&snap); err != nil {
+	if err := dec.Decode(&snap); err != nil {
 		return nil, err
 	}
 	return &snap, nil
 }
 
-func writeCache(file string, snap *Snapshot) error {
+// cacheSavePath is the save an entry was written for, or "" if this build
+// cannot tell (a half-written entry, or a layout it does not know).
+func cacheSavePath(file string) string {
+	f, err := os.Open(file)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	var hdr cacheHeader
+	if err := gob.NewDecoder(f).Decode(&hdr); err != nil {
+		return ""
+	}
+	return hdr.SavePath
+}
+
+func writeCache(file, savePath string, snap *Snapshot) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		return err
 	}
@@ -145,7 +239,12 @@ func writeCache(file string, snap *Snapshot) error {
 	if err != nil {
 		return err
 	}
-	if err := gob.NewEncoder(f).Encode(snap); err != nil {
+	enc := gob.NewEncoder(f)
+	if err := enc.Encode(cacheHeader{SavePath: savePath}); err != nil {
+		f.Close()
+		return err
+	}
+	if err := enc.Encode(snap); err != nil {
 		f.Close()
 		return err
 	}
@@ -161,12 +260,36 @@ type CacheStats struct {
 	Bytes        int64 // what those occupy
 	RemovedStale int   // wrong (or unrecognised) schema version
 	RemovedOld   int   // beyond keep-per-save
-	RemovedBytes int64
+	// RemovedOrphan is entries whose savegame no longer exists.
+	RemovedOrphan int
+	// RemovedOverBudget is entries evicted to bring the WHOLE cache back inside
+	// maxCacheEntries/maxCacheBytes, oldest first.
+	RemovedOverBudget int
+	RemovedBytes      int64
 }
 
-// GCCache bounds the snapshot cache: it deletes entries written for any schema
-// other than the current one, then keeps only the newest keep entries per save
-// path. keep <= 0 means 3.
+// The whole cache's budget, applied after the per-save pass.
+//
+// keep-per-save bounds a ROTATING name and nothing else. X4 writes quicksave
+// and autosave_NN in place, so those stay at `keep` forever — but it also
+// writes save_001, save_002, … one new path per manual save, for the life of a
+// playthrough, and this repo ships an archiver that copies more. Every one of
+// those is its own bucket with its own allowance, so 500 lifetime manual saves
+// at keep=3 is 1500 entries of tens of megabytes each that no per-path rule
+// will ever look at twice. That is the leak this file claims to have fixed.
+//
+// The numbers are a disk budget, not a correctness knob: evicting an entry
+// costs one re-parse of a save nobody has opened recently.
+const (
+	maxCacheEntries = 32
+	maxCacheBytes   = 1 << 30 // 1 GiB
+)
+
+// GCCache bounds the snapshot cache, in four passes: entries written for any
+// schema other than the current one, then everything past the newest keep per
+// save path, then entries whose savegame no longer exists, then — oldest first
+// — whatever it takes to fit the whole cache inside maxCacheEntries and
+// maxCacheBytes. keep <= 0 means 3.
 //
 // It exists because the cache was written for a load-on-demand server that
 // parsed a handful of saves a day. The watcher re-parses EVERY save the game
@@ -222,6 +345,7 @@ func GCCache(keep int) CacheStats {
 		}
 		bySave[pathHash] = append(bySave[pathHash], entry{name: name, size: info.Size(), mtime: info.ModTime().UnixNano()})
 	}
+	var kept []entry
 	for _, es := range bySave {
 		// Newest first by write time — the entry most likely to be asked for
 		// again — with the name as tie-break so the pass is deterministic.
@@ -233,8 +357,7 @@ func GCCache(keep int) CacheStats {
 		})
 		for i, e := range es {
 			if i < keep {
-				st.Entries++
-				st.Bytes += e.size
+				kept = append(kept, e)
 				continue
 			}
 			if os.Remove(filepath.Join(dir, e.name)) == nil {
@@ -242,6 +365,54 @@ func GCCache(keep int) CacheStats {
 				st.RemovedBytes += e.size
 			}
 		}
+	}
+
+	// Orphans: the savegame this entry was written for is gone. Only a
+	// definite "not there" counts — an unreadable directory or a header this
+	// build cannot parse is unknown, and unknown must never mean delete.
+	survivors := kept[:0]
+	for _, e := range kept {
+		file := filepath.Join(dir, e.name)
+		if save := cacheSavePath(file); save != "" {
+			if _, err := os.Stat(save); errors.Is(err, fs.ErrNotExist) {
+				if os.Remove(file) == nil {
+					st.RemovedOrphan++
+					st.RemovedBytes += e.size
+					continue
+				}
+			}
+		}
+		survivors = append(survivors, e)
+	}
+
+	// The total budget. Oldest first, because the newest entry per save is the
+	// one a re-open would hit and the only one the watcher itself ever wants.
+	sort.Slice(survivors, func(i, j int) bool {
+		if survivors[i].mtime != survivors[j].mtime {
+			return survivors[i].mtime < survivors[j].mtime
+		}
+		return survivors[i].name < survivors[j].name
+	})
+	remaining, total := len(survivors), int64(0)
+	for _, e := range survivors {
+		total += e.size
+	}
+	for _, e := range survivors {
+		if remaining <= maxCacheEntries && total <= maxCacheBytes {
+			st.Entries++
+			st.Bytes += e.size
+			continue
+		}
+		if os.Remove(filepath.Join(dir, e.name)) != nil {
+			// Still there, so it still counts against the budget.
+			st.Entries++
+			st.Bytes += e.size
+			continue
+		}
+		st.RemovedOverBudget++
+		st.RemovedBytes += e.size
+		remaining--
+		total -= e.size
 	}
 	return st
 }

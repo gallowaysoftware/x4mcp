@@ -59,7 +59,7 @@ func runPlay(args []string) error {
 	defer cancel()
 
 	serverErr := make(chan error, 1)
-	go func() { serverErr <- runServer(ctx, tr.http, tr.relay, webAddr) }()
+	go func() { serverErr <- runServer(ctx, tr, webAddr) }()
 
 	game := exec.CommandContext(ctx, rest[0], rest[1:]...) //nolint:gosec // the command is the player's own launcher
 	game.Stdout, game.Stderr, game.Stdin = os.Stdout, os.Stderr, os.Stdin

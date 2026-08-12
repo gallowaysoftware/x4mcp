@@ -3,6 +3,8 @@ package web
 import (
 	"bufio"
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -228,6 +230,28 @@ func TestHostAllowlist(t *testing.T) {
 		})
 	}
 
+	// A request with NO Host at all is not a browser and must not be the way
+	// past the allowlist. It cannot be sent through net/http's client, which
+	// always fills one in, so this is the wire.
+	conn, err := net.Dial("tcp", ts.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := io.WriteString(conn, "GET /api/state HTTP/1.0\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	status, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(status, "403") {
+		t.Errorf("a Host-less HTTP/1.0 request got %q, want 403: it named no machine", strings.TrimSpace(status))
+	}
+
 	// /healthz is exempt: it is the same endpoint the relay mux serves and it
 	// says nothing about anybody's empire.
 	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/healthz", nil)
@@ -257,6 +281,14 @@ func TestCheckBind(t *testing.T) {
 		{name: "lan with a token", addr: "192.168.1.50:8484", token: "s3cret"},
 		{name: "empty means no web server", addr: ""},
 		{name: "nonsense", addr: "not-an-address", wantErr: true},
+
+		// The wildcards. net.Listen reads a missing host as EVERY interface, so
+		// these are the same exposure as 0.0.0.0 written three shorter ways —
+		// and ":8484" is the spelling the flag tests themselves use.
+		{name: "bare port", addr: ":8484", wantErr: true},
+		{name: "bare port with a token", addr: ":8484", token: "s3cret"},
+		{name: "ipv6 any", addr: "[::]:8484", wantErr: true},
+		{name: "any interface on any port", addr: "0.0.0.0:0", wantErr: true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

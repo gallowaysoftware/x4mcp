@@ -142,11 +142,19 @@ func TestHubSlowClientIsResyncedNotBackpressured(t *testing.T) {
 	publish(10)
 
 	got := drain(t, slow)
-	if len(got) != 1 || got[0].Type != wire.EventTypeResync {
-		t.Fatalf("slow client queue = %d events (%v), want exactly one resync", len(got), types(got))
+	if len(got) == 0 || got[0].Type != wire.EventTypeResync {
+		t.Fatalf("slow client queue = %v, want a resync at the head", types(got))
 	}
-	if !slow.resync {
-		t.Error("the slow client should be marked for resync")
+	// Everything it had queued is dropped — a refetch supersedes it — but the
+	// events AFTER the resync are exactly what the refetch needs applying on
+	// top, so they are delivered rather than swallowed.
+	for _, env := range got[1:] {
+		if env.Type == wire.EventTypeResync {
+			t.Errorf("a second resync in one overflow: %v", types(got))
+		}
+	}
+	if n := len(got); n != 10 {
+		t.Errorf("slow client got %d events, want the resync plus the 9 that fit after it", n)
 	}
 	// One tab falling behind is not the other tab's problem.
 	if n := len(drain(t, fast)); n != 10 {
@@ -155,6 +163,58 @@ func TestHubSlowClientIsResyncedNotBackpressured(t *testing.T) {
 	if fast.resync {
 		t.Error("the client that kept up must not be told to refetch")
 	}
+}
+
+// The recovery half of the same contract, and the one that was missing: being
+// told to resync is a moment, not a condition. A connection that is deaf
+// forever still gets heartbeats, so the client's own 45 s/60 s silence timers
+// never fire — the board looks live and is frozen, which is the failure mode
+// this whole layer exists to make impossible.
+func TestHubClientKeepsReceivingAfterAResync(t *testing.T) {
+	t.Run("after overflowing", func(t *testing.T) {
+		h := NewHub()
+		c, _ := h.subscribe(0)
+
+		// Overflow it, then start reading again like a tab coming back from
+		// a sleeping laptop.
+		for range clientQueue + 5 {
+			h.Publish(wire.EventTypeSaveDetected, nil)
+		}
+		got := drain(t, c)
+		if len(got) == 0 || got[0].Type != wire.EventTypeResync {
+			t.Fatalf("queue = %v, want a resync at the head", types(got))
+		}
+
+		h.Publish(wire.EventTypeSnapshotReady, wire.SnapshotMeta{GameGUID: "g"})
+		next := drain(t, c)
+		if len(next) != 1 || next[0].Type != wire.EventTypeSnapshotReady {
+			t.Fatalf("after resyncing, the client got %v; want the next event", types(next))
+		}
+		if c.resync {
+			t.Error("a client that is keeping up again is not still resyncing")
+		}
+	})
+
+	t.Run("after reconnecting past the ring", func(t *testing.T) {
+		h := NewHub()
+		for range ringSize + 10 {
+			h.Publish(wire.EventTypeSaveDetected, nil)
+		}
+		// A BRAND-NEW connection whose cursor fell off the ring. It has missed
+		// nothing yet — it has not been sent anything yet.
+		c, replay := h.subscribe(1)
+		defer h.unsubscribe(c)
+		if len(replay) != 1 || replay[0].Type != wire.EventTypeResync {
+			t.Fatalf("replay = %v, want a single resync", types(replay))
+		}
+
+		h.Publish(wire.EventTypeSnapshotReady, wire.SnapshotMeta{GameGUID: "g"})
+		h.Publish(wire.EventTypeHealthLeg, wire.LegHealth{Leg: wire.LegSave, Up: true})
+		got := drain(t, c)
+		if len(got) != 2 {
+			t.Fatalf("a resynced connection received %v, want both events that followed it", types(got))
+		}
+	})
 }
 
 func types(evs []wire.Envelope) []wire.EventType {

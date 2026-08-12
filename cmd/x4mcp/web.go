@@ -19,6 +19,10 @@ const webUsage = `
 Board (x4cue):
   --web host:port      serve the live board (and /api) on a loopback address,
                        e.g. 127.0.0.1:8484. The save watcher runs only with this.
+                       On its own it serves the board until the process is
+                       signalled; add --stdio/--http/--relay to serve MCP too.
+                       A non-loopback bind needs X4MCP_AUTH_TOKEN — and ":8484"
+                       is a non-loopback bind, it means every interface.
 `
 
 // parseWeb pulls --web out of args and returns the rest untouched.

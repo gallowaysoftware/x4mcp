@@ -122,6 +122,15 @@ type state struct {
 	attempt     int
 	lastErr     *wire.SaveError
 	rollback    bool
+	// pending is the newest candidate handed to the parse worker whose parse has
+	// not finished. It is what detector.dispatched is NOT: dispatched is set the
+	// moment work is submitted, so asking it "has the pipeline dealt with this
+	// save?" answers yes while the save is still being read.
+	pending candidate
+	// writing is the save X4 was still writing when every retry lost the race.
+	// Not an error — see stillWriting — but the reason a caller asking for the
+	// live snapshot has nothing to be given yet.
+	writing *wire.SaveMeta
 
 	lastCheckAt   time.Time
 	lastDetectAt  time.Time
@@ -293,15 +302,26 @@ func (w *Watcher) Snapshot(ctx context.Context, savePath string) (*x4save.Snapsh
 }
 
 // notReadyError says why there is nothing to answer with. "No savegames found"
-// is only one of the two reasons, and reporting it for the other one — a save
-// that is right there and did not parse — sends the reader looking in the wrong
-// place entirely.
+// is the LAST of four reasons, and reporting it for any of the others — a save
+// that is right there and is being read this second — sends the reader looking
+// in the wrong place entirely. That is not hypothetical: every MCP session that
+// connected during the first parse was told the save did not exist, which is
+// precisely when clients connect.
 func (w *Watcher) notReadyError() error {
 	w.mu.Lock()
-	last := w.st.lastErr
+	st := w.st
 	w.mu.Unlock()
-	if last != nil {
-		return fmt.Errorf("the current save has not been parsed: %s", last.Detail)
+	switch {
+	case st.parsing && st.attempt > 0:
+		return fmt.Errorf("%s is being parsed (X4 was saving; attempt %d) — try again in a moment",
+			st.parsingSave.Name, st.attempt)
+	case st.parsing:
+		return fmt.Errorf("%s is being parsed right now — try again in a moment", st.parsingSave.Name)
+	case st.writing != nil:
+		return fmt.Errorf("%s is still being written by X4; it will be parsed once it settles",
+			st.writing.Name)
+	case st.lastErr != nil:
+		return fmt.Errorf("the current save has not been parsed: %s", st.lastErr.Detail)
 	}
 	return w.noSaveError()
 }
@@ -363,11 +383,18 @@ func (w *Watcher) check(ctx context.Context, src source) {
 	// whatever is newest on disk. If the gate is still settling — the file is
 	// mid-write — the wait continues into the next check rather than answering
 	// "nothing happened" about a save that is two seconds from being parsed.
+	//
+	// "Already dealt with" has to mean dealt with, not merely handed over. A
+	// parse that is still running is why a client connecting in the first
+	// seconds was told the save did not exist, and why refresh_save answered in
+	// 5 ms with the PREVIOUS save while the new one was being read. Those
+	// waiters are released by the parse itself (see settlePending).
 	var waiters []chan struct{}
-	if fire || cand.zero() || cand.same(w.det.dispatched) {
+	if fire || cand.zero() || (cand.same(w.det.dispatched) && !cand.same(w.st.pending)) {
 		waiters, w.waiters = w.waiters, nil
 	}
 	if fire {
+		w.st.pending = cand
 		w.st.lastDetectAt = w.clock.Now()
 		w.st.detections.Total++
 		switch first {
@@ -423,6 +450,9 @@ func (w *Watcher) work(ctx context.Context) {
 
 func (w *Watcher) parse(ctx context.Context, req *parseReq) {
 	defer closeAll(req.waiters)
+	// Whatever happens below, the pipeline is finished with this candidate, and
+	// anyone waiting for it to be finished can stop waiting.
+	defer w.settlePending(req.cand)
 
 	meta := w.saveMeta(req.cand, 0)
 	w.bump(func(st *state) {
@@ -431,6 +461,7 @@ func (w *Watcher) parse(ctx context.Context, req *parseReq) {
 	w.opts.Emit(wire.EventTypeSaveParsing, meta)
 
 	start := w.clock.Now()
+	cached := false
 	snap, err := w.opts.Load(ctx, req.cand.path, x4save.LoadOptions{
 		OnRetry: func(attempt int) {
 			w.bump(func(st *state) { st.attempt, st.retries = attempt, st.retries+1 })
@@ -438,6 +469,9 @@ func (w *Watcher) parse(ctx context.Context, req *parseReq) {
 			retry.Attempt = attempt
 			w.opts.Emit(wire.EventTypeSaveRetry, retry)
 		},
+		// A cache hit is not a parse, and the rolling median the board's
+		// progress blocks step against is a median of PARSES.
+		OnCacheHit: func() { cached = true },
 	})
 	elapsed := w.clock.Now().Sub(start)
 
@@ -454,23 +488,37 @@ func (w *Watcher) parse(ctx context.Context, req *parseReq) {
 	if w.opts.Enrich != nil {
 		w.opts.Enrich(snap)
 	}
-	w.publish(req, snap, meta, elapsed)
+	w.publish(req, snap, meta, elapsed, cached)
+}
+
+// settlePending marks the pipeline as done with c and releases anyone who was
+// waiting for exactly that. A NEWER candidate dispatched while this parse ran
+// leaves pending set to that one, so the wait rolls forward onto it rather than
+// answering with a snapshot that is already superseded.
+func (w *Watcher) settlePending(c candidate) {
+	w.mu.Lock()
+	var waiters []chan struct{}
+	if c.same(w.st.pending) {
+		w.st.pending = candidate{}
+		waiters, w.waiters = w.waiters, nil
+	}
+	w.mu.Unlock()
+	closeAll(waiters)
 }
 
 // failParse records a parse that ended badly and says which KIND of bad it was:
 // "this save did not parse" and "this build cannot read this game's saves" are
 // the same amber on the board and completely different player actions.
 func (w *Watcher) failParse(meta wire.SaveMeta, err error) {
-	kind := wire.SaveErrorKindParse
 	if errors.Is(err, x4save.ErrSaveChanged) {
-		// Every retry lost the race: X4 is still writing. Honest as a parse
-		// error — the save really did not parse — and the detail says why.
-		kind = wire.SaveErrorKindParse
+		w.stillWriting(meta, err)
+		return
 	}
-	se := &wire.SaveError{Kind: kind, Detail: err.Error(), Save: &meta}
+	se := &wire.SaveError{Kind: wire.SaveErrorKindParse, Detail: err.Error(), Save: &meta}
 	w.bump(func(st *state) {
 		st.parsing, st.attempt = false, 0
 		st.lastErr = se
+		st.writing = nil
 		st.parseErrors++
 	})
 	w.opts.Logf("parse of %s failed: %v", meta.Path, err)
@@ -478,16 +526,58 @@ func (w *Watcher) failParse(meta wire.SaveMeta, err error) {
 	w.emitLeg(false, err.Error())
 }
 
+// stillWriting records a parse that lost every race with X4's own writer.
+//
+// It is deliberately NOT a fault. X4 spends 20–60 s writing a late-game save
+// and this build reads one in 5–16 s, so a parse that starts near the beginning
+// of a write can lose three attempts in a row without anything at all being
+// wrong — and the board was answering that with save.error, the save leg DOWN
+// and a parse_error stamp, for the most ordinary event in the game. The honest
+// report is that there is nothing to show for this file yet.
+//
+// Clearing the gate's dispatched marker is what guarantees another attempt: the
+// file is normally still changing, so the next sighting re-settles it on its
+// own, but if the write happened to finish between our last read and now, the
+// file is stable at a size and mtime nothing has parsed — and without this it
+// would sit there, unparsed, until the game wrote another save.
+func (w *Watcher) stillWriting(meta wire.SaveMeta, err error) {
+	w.bump(func(st *state) {
+		st.parsing, st.attempt = false, 0
+		save := meta
+		st.writing = &save
+		w.det.dispatched = candidate{}
+	})
+	w.opts.Logf("%s is still being written (%v); it will be parsed once it settles", meta.Path, err)
+}
+
 // publish swaps in the new snapshot and fires the events that follow from it.
 // Everything here runs on the single parse goroutine, so the ordering the
 // client sees is the ordering that happened.
-func (w *Watcher) publish(req *parseReq, snap *x4save.Snapshot, save wire.SaveMeta, elapsed time.Duration) {
+func (w *Watcher) publish(req *parseReq, snap *x4save.Snapshot, save wire.SaveMeta, elapsed time.Duration, cached bool) {
 	prev := w.published.Load()
 	now := w.clock.Now()
 
-	save.ParseMS = snap.ParseMS
-	if save.ParseMS == 0 {
-		save.ParseMS = elapsed.Milliseconds()
+	// The file as PARSED, not as first sighted. After an ErrSaveChanged retry
+	// the loader re-stats and reads the completed file, so the dispatch-time
+	// stat describes a truncated intermediate — a 64 MB save was going out on
+	// the wire as 32 MB, and the stale modified_at behind it is what age,
+	// aging/stale and "autosaves overdue" are all computed from.
+	if snap.SourceSize > 0 {
+		save.SizeBytes = snap.SourceSize
+	}
+	if snap.SourceMod > 0 {
+		save.ModifiedAt = time.Unix(snap.SourceMod, 0)
+	}
+	save.AgeS = ageS(now, save.ModifiedAt)
+
+	// This publish's own cost. snap.ParseMS is the duration of the parse that
+	// produced the snapshot, which for a cache HIT is a number from a different
+	// parse minutes ago — and it was landing in the rolling median.
+	save.ParseMS = elapsed.Milliseconds()
+	if !cached && save.ParseMS == 0 {
+		// A clock too coarse to see it (or a test clock that did not move):
+		// fall back to the parser's own measurement, never the cache's.
+		save.ParseMS = snap.ParseMS
 	}
 	meta := wire.SnapshotMeta{
 		GameGUID:      snap.GameGUID,
@@ -516,6 +606,7 @@ func (w *Watcher) publish(req *parseReq, snap *x4save.Snapshot, save wire.SaveMe
 		w.bump(func(st *state) {
 			st.parsing, st.attempt = false, 0
 			st.lastErr = se
+			st.writing = nil
 			st.parseErrors++
 		})
 		w.opts.Emit(wire.EventTypeSaveError, se)
@@ -551,9 +642,12 @@ func (w *Watcher) publish(req *parseReq, snap *x4save.Snapshot, save wire.SaveMe
 	w.bump(func(st *state) {
 		st.parsing, st.attempt = false, 0
 		st.lastErr = nil
+		st.writing = nil
 		st.rollback = meta.Rollback
 		st.parses++
-		st.parseDuration = appendRolling(st.parseDuration, meta.ParseMS)
+		if !cached {
+			st.parseDuration = appendRolling(st.parseDuration, meta.ParseMS)
+		}
 		if save.Kind == wire.SaveKindAutosave {
 			// AUTOSAVES only: the cadence this feeds is what "3 autosaves
 			// overdue — is autosave on?" is measured against, and a player who
@@ -593,7 +687,7 @@ func (w *Watcher) lastGoodAt() time.Time {
 func (w *Watcher) gcCache() {
 	st := x4save.GCCache(w.opts.CacheKeep)
 	w.bump(func(s *state) {
-		s.cacheRemoved += int64(st.RemovedOld + st.RemovedStale)
+		s.cacheRemoved += int64(st.RemovedOld + st.RemovedStale + st.RemovedOrphan + st.RemovedOverBudget)
 		s.cache = wire.CacheHealth{Entries: st.Entries, Bytes: st.Bytes, Removed: s.cacheRemoved}
 	})
 }
@@ -650,19 +744,14 @@ func (w *Watcher) Freshness() wire.Freshness {
 
 	if p != nil {
 		save := p.Meta.Save
-		save.AgeS = int64(w.clock.Now().Sub(save.ModifiedAt).Seconds())
+		save.AgeS = ageS(w.clock.Now(), save.ModifiedAt)
 		if f.Save == nil {
 			f.Save = &save
 		}
 		parsed := p.Meta.ParsedAt
 		f.ParsedAt = &parsed
 		f.ParseMS = p.Meta.ParseMS
-		age := w.clock.Now().Sub(save.ModifiedAt)
-		if age < 0 {
-			// A save stamped in the future: the file came from another machine,
-			// or the clock moved. It is not overdue and it is not aging.
-			age = 0
-		}
+		age := time.Duration(save.AgeS) * time.Second
 		if cadence := medianInterval(st.saveTimes); cadence > 0 {
 			f.AutosavesOverdue = int(age / cadence)
 		}
@@ -718,8 +807,21 @@ func (w *Watcher) Meta() *wire.SnapshotMeta {
 		return nil
 	}
 	meta := p.Meta
-	meta.Save.AgeS = int64(w.clock.Now().Sub(meta.Save.ModifiedAt).Seconds())
+	meta.Save.AgeS = ageS(w.clock.Now(), meta.Save.ModifiedAt)
 	return &meta
+}
+
+// ageS is how old a save is in whole seconds, and never less than zero.
+//
+// A save stamped in the FUTURE is a real case — the file came from another
+// machine, or the clock moved — and the aging/stale decision has always clamped
+// it. The field the board renders as "saved N ago" did not, so a save an hour
+// ahead went out as age_s: -3593 and every surface downstream inherited it.
+func ageS(now, mod time.Time) int64 {
+	if d := now.Sub(mod); d > 0 {
+		return int64(d.Seconds())
+	}
+	return 0
 }
 
 // ---- small helpers ----
@@ -752,7 +854,7 @@ func (w *Watcher) saveMeta(c candidate, attempt int) wire.SaveMeta {
 		Kind:       saveKind(name),
 		SizeBytes:  c.size,
 		ModifiedAt: c.modTime,
-		AgeS:       int64(w.clock.Now().Sub(c.modTime).Seconds()),
+		AgeS:       ageS(w.clock.Now(), c.modTime),
 		Attempt:    attempt,
 	}
 }

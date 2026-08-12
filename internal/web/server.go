@@ -114,16 +114,36 @@ func CheckBind(addr, token string) error {
 	if err != nil {
 		return fmt.Errorf("web: cannot parse --web %q: %w", addr, err)
 	}
-	if isLoopbackHost(host) {
+	if loopbackBind(host) {
 		return nil
 	}
-	return fmt.Errorf("web: refusing to bind %s: it is not loopback and %s is not set "+
+	return fmt.Errorf("web: refusing to bind %q: it is not loopback and %s is not set "+
 		"(the board serves savegame contents and plan writes with no auth)", addr, AuthTokenEnv)
 }
 
+// loopbackBind decides whether a LISTEN address reaches only this machine.
+//
+// It is deliberately not isLoopbackHost. The two questions look identical and
+// answer OPPOSITELY on the empty host: a request that carries no Host named no
+// machine, while a bind address that carries no host is net.Listen's spelling
+// of every interface. Sharing one helper is what put `--web :8484` — the
+// shortest and most natural way to write it, and the one the flag tests use —
+// on the LAN with the savegame and the plan-write tools and no token.
+//
+// Everything else follows from IsLoopback, which is already false for the
+// wildcards 0.0.0.0 and :: and for every routable address.
+func loopbackBind(host string) bool {
+	if host == "" {
+		return false
+	}
+	return isLoopbackHost(host)
+}
+
+// isLoopbackHost answers for a Host HEADER: a name or literal that refers to
+// this machine. The empty string is not one of them — see hostAllowed.
 func isLoopbackHost(host string) bool {
 	switch strings.ToLower(host) {
-	case "", "localhost", "localhost.localdomain":
+	case "localhost", "localhost.localdomain":
 		return true
 	}
 	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
@@ -186,6 +206,12 @@ func (s *Server) hostAllowed(hostHeader string) bool {
 	host := hostHeader
 	if h, _, err := net.SplitHostPort(hostHeader); err == nil {
 		host = h
+	}
+	if host == "" {
+		// No Host at all. Every browser sends one, so this is a hand-written
+		// HTTP/1.0 request — and it used to be the way past the allowlist
+		// entirely, since "" read as loopback here.
+		return false
 	}
 	if isLoopbackHost(host) {
 		return true
@@ -304,6 +330,11 @@ func (s *Server) static() http.Handler {
 }
 
 // ListenAndServe binds and serves until ctx is done, then drains for up to 5 s.
+//
+// It does not return until that drain is over. Shutdown makes ListenAndServe
+// return immediately, so a caller that treats "it returned" as "it is finished"
+// leaves the process free to exit through the middle of the drain — which is
+// the whole point of having one.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	srv := &http.Server{
 		Addr:              s.opts.Addr,
@@ -314,7 +345,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		IdleTimeout: 120 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
+	drained := make(chan struct{})
 	go func() {
+		defer close(drained)
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -322,7 +355,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}()
 	s.opts.Logf("board on http://%s (SSE at /api/events)", s.opts.Addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		// Never bound: there is nothing to drain, and the goroutine above is
+		// released when ctx ends.
 		return err
 	}
+	<-drained
 	return nil
 }

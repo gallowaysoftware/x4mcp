@@ -129,7 +129,24 @@ func ParseFile(path string) (*Snapshot, error) {
 // context's own error (not a wrapped XML error), so a caller can tell "we asked
 // it to stop" apart from "this save is broken" — the difference between a quiet
 // shutdown and an amber system row on the board.
+//
+// That promise is kept HERE rather than at each return, and it was not being
+// kept before: cancellation reaches the decoder as a read error from anywhere
+// it happens to be — Skip, DecodeElement, the token loop — and most of those
+// sites wrap it as "decode blueprints: …" or "xml token: …". A caller reading
+// that message is told a save is broken because the process was asked to stop.
 func ParseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
+	snap, err := parseFileCtx(ctx, path)
+	if err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, cerr
+		}
+		return nil, err
+	}
+	return snap, nil
+}
+
+func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -142,9 +159,6 @@ func ParseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 
 	gz, err := gzip.NewReader(ctxReader{ctx: ctx, r: f})
 	if err != nil {
-		if cerr := ctx.Err(); cerr != nil {
-			return nil, cerr
-		}
 		return nil, fmt.Errorf("gzip: %w", err)
 	}
 	defer gz.Close()
@@ -187,11 +201,6 @@ func ParseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 			break
 		}
 		if err != nil {
-			// A cancelled parse surfaces here as whatever the reader returned,
-			// wrapped by the decoder; report the cancellation itself.
-			if cerr := ctx.Err(); cerr != nil {
-				return nil, cerr
-			}
 			return nil, fmt.Errorf("xml token: %w", err)
 		}
 

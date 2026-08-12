@@ -57,6 +57,11 @@ type detector struct {
 	// dispatched is the last candidate handed to the parse worker. It is set on
 	// DISPATCH, not on success: a save that fails to parse must not be retried
 	// every tick forever, so it is only reconsidered when the file changes.
+	//
+	// One exception, cleared by the caller rather than decided here: a save X4
+	// was still writing (Watcher.stillWriting) did not fail — nothing has read
+	// it yet — so it is reconsidered on the next sighting even if the write
+	// finished at exactly the size and mtime that was dispatched.
 	dispatched candidate
 }
 

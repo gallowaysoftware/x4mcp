@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -91,10 +92,20 @@ func main() {
 	// observable changes.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if err := runServer(ctx, tr.http, tr.relay, webAddr); err != nil {
+	if err := runServer(ctx, tr, webAddr); !cleanExit(err) {
 		fmt.Fprintln(os.Stderr, "server error:", err)
 		os.Exit(1)
 	}
+}
+
+// cleanExit says whether an ended server ended the way it was asked to.
+//
+// A SIGTERM cancels the root context, and a transport that was waiting on it
+// reports that as the reason it stopped. Printing "server error: context
+// canceled" and exiting 1 for that turns every ordinary `systemctl stop` into a
+// failed unit — the signal is the request, not a fault.
+func cleanExit(err error) bool {
+	return err == nil || errors.Is(err, context.Canceled)
 }
 
 // runShips loads the ship-stat DB and prints matching hulls (debug). Filter with

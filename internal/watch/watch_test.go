@@ -658,6 +658,278 @@ func TestSnapshotReportsWhyItHasNothing(t *testing.T) {
 	}
 }
 
+// answer is what a caller waiting on the pipeline eventually got back.
+type answer struct {
+	snap *x4save.Snapshot
+	err  error
+}
+
+// The window every MCP client connects in: the first parse is running, and it
+// takes 5–16 s. Asking for the live snapshot during it must wait for that
+// parse, because the alternative — which is what happened — is telling a model
+// that the savegame it is looking at does not exist.
+func TestSnapshotWaitsForTheFirstParseInsteadOfDenyingTheSave(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t)
+
+	parsing, release := make(chan struct{}), make(chan struct{})
+	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		close(parsing)
+		<-release
+		return stubSnapshot(path, "guid-a", 1000, 500), nil
+	}
+	r.start(ctx)
+	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
+	r.settle()
+	<-parsing
+
+	if f := r.w.Freshness(); f.State != wire.FreshnessStateParsing {
+		t.Fatalf("freshness = %q, want parsing: the fixture is not in the state this is about", f.State)
+	}
+
+	got := make(chan answer, 1)
+	go func() {
+		snap, err := r.w.Snapshot(ctx, "")
+		got <- answer{snap, err}
+	}()
+	// Three polls with the parse still in flight. Each one used to see "the
+	// newest save was already dispatched", release the waiter, and answer with
+	// nothing — while /api/state said "parsing quicksave" at the same instant.
+	for range 3 {
+		r.tick()
+	}
+	close(release)
+
+	select {
+	case a := <-got:
+		if a.err != nil {
+			t.Fatalf("Snapshot during the first parse: %v", a.err)
+		}
+		if a.snap == nil || a.snap.GameGUID != "guid-a" {
+			t.Fatalf("Snapshot returned %+v, want the save that was being parsed", a.snap)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Snapshot never returned")
+	}
+}
+
+// refresh_save with no path means "make sure you are current". Answering it in
+// 5 ms with the save from before the one being read right now is the silent
+// staleness this whole layer exists to prevent.
+func TestRefreshWaitsForTheParseOfTheNewestSave(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t)
+	r.start(ctx)
+
+	r.save("aaa_old.xml.gz", "guid-a", 1000, 500, r.clock.Now())
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
+
+	parsing, release := make(chan struct{}), make(chan struct{})
+	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		close(parsing)
+		<-release
+		return stubSnapshot(path, "guid-a", 2000, 900), nil
+	}
+	r.save("zzz_new.xml.gz", "guid-a", 2000, 900, r.clock.Now().Add(time.Minute))
+	r.settle()
+	<-parsing
+
+	got := make(chan answer, 1)
+	go func() {
+		snap, err := r.w.RefreshSnapshot(ctx)
+		got <- answer{snap, err}
+	}()
+	for range 3 {
+		r.tick()
+	}
+	close(release)
+
+	select {
+	case a := <-got:
+		if a.err != nil {
+			t.Fatalf("Refresh: %v", a.err)
+		}
+		if filepath.Base(a.snap.SourcePath) != "zzz_new.xml.gz" {
+			t.Errorf("Refresh answered with %q while %q was mid-parse", filepath.Base(a.snap.SourcePath), "zzz_new.xml.gz")
+		}
+		if a.snap.GameTimeS != 2000 {
+			t.Errorf("game time = %v, want the newer save's", a.snap.GameTimeS)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Refresh never returned")
+	}
+}
+
+// After an ErrSaveChanged retry the loader re-stats and reads the COMPLETED
+// file. The event describing it has to describe those bytes — a 64 MB save
+// going out as the 32 MB the gate first saw makes the board report an age, and
+// a size, that were never true of anything it parsed.
+func TestSnapshotReadyDescribesTheBytesThatWereParsed(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t)
+
+	const truncated, complete = 32_322_750, 64_645_500
+	firstSeen := r.clock.Now()
+	finished := firstSeen.Add(7 * time.Second)
+	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		snap := stubSnapshot(path, "guid-a", 1000, 500)
+		snap.SourceSize, snap.SourceMod = complete, finished.Unix()
+		return snap, nil
+	}
+	r.start(ctx)
+
+	// The gate fires on the file as it was mid-write.
+	path := filepath.Join(r.dir, "quicksave.xml.gz")
+	writeSave(t, path, "guid-a", 1000, 500, firstSeen)
+	if err := os.Truncate(path, truncated); err != nil {
+		t.Skipf("cannot pad the fixture to a mid-write size: %v", err)
+	}
+	if err := os.Chtimes(path, firstSeen, firstSeen); err != nil {
+		t.Fatal(err)
+	}
+	r.settle()
+
+	meta := r.rec.wait(t, wire.EventTypeSnapshotReady, 1).(wire.SnapshotMeta)
+	if meta.Save.SizeBytes != complete {
+		t.Errorf("snapshot.ready size = %d, want the %d bytes that were parsed", meta.Save.SizeBytes, complete)
+	}
+	if !meta.Save.ModifiedAt.Equal(time.Unix(finished.Unix(), 0)) {
+		t.Errorf("modified_at = %s, want the completed file's %s", meta.Save.ModifiedAt, finished)
+	}
+	if p := r.w.Published(); p.Meta.Save.SizeBytes != complete {
+		t.Errorf("published meta size = %d, want %d", p.Meta.Save.SizeBytes, complete)
+	}
+}
+
+// X4 spends 20–60 s writing a late-game save and this build reads one in 5–16 s,
+// so losing every retry is an ordinary in-progress save, not a fault. It was
+// taking the save leg DOWN and stamping the board parse_error.
+func TestASaveStillBeingWrittenIsNotAFault(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t)
+
+	attempts := make(chan struct{}, 8)
+	r.load = func(_ context.Context, _ string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		attempts <- struct{}{}
+		return nil, fmt.Errorf("%w: quicksave.xml.gz changed while being read (X4 is probably saving)", x4save.ErrSaveChanged)
+	}
+	r.start(ctx)
+	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
+	r.settle()
+	<-attempts
+
+	// The file has NOT changed since the gate fired on it — the case where the
+	// write finished during the last read attempt. Without reconsidering it,
+	// this save would sit there unparsed until the game wrote another one.
+	r.tick()
+	select {
+	case <-attempts:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a save that lost every retry was never looked at again")
+	}
+
+	if n := r.rec.count(wire.EventTypeSaveError); n != 0 {
+		t.Errorf("save.error fired %d times for a save X4 was still writing", n)
+	}
+	if n := r.rec.count(wire.EventTypeHealthLeg); n != 0 {
+		t.Errorf("the save leg reported %d times; a save being written is not a leg event", n)
+	}
+	if h := r.w.Health(); h.ParseErrors != 0 {
+		t.Errorf("parse_errors = %d, want 0: nothing failed to parse", h.ParseErrors)
+	}
+	if f := r.w.Freshness(); f.State == wire.FreshnessStateParseError {
+		t.Error("freshness = parse_error for a save that is simply still being written")
+	}
+	// And the reason a caller has nothing yet is the true one.
+	if _, err := r.w.Snapshot(ctx, ""); err == nil || !strings.Contains(err.Error(), "still being written") {
+		t.Errorf("err = %v, want it to say the save is still being written", err)
+	}
+
+	// Once the write finishes, the ordinary path resumes with no restart.
+	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		return stubSnapshot(path, "guid-a", 1000, 500), nil
+	}
+	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now().Add(time.Minute))
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
+	if leg := r.rec.wait(t, wire.EventTypeHealthLeg, 1).(wire.LegHealth); !leg.Up {
+		t.Error("the leg came up down after a successful parse")
+	}
+}
+
+// A save stamped in the future — copied from another machine, or a clock that
+// moved — is not negative seconds old. The aging decision always clamped it;
+// the field the board renders as "saved N ago" did not.
+func TestFutureStampedSaveNeverReportsANegativeAge(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t)
+	r.start(ctx)
+
+	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now().Add(time.Hour))
+	r.settle()
+	meta := r.rec.wait(t, wire.EventTypeSnapshotReady, 1).(wire.SnapshotMeta)
+
+	detected := r.rec.wait(t, wire.EventTypeSaveDetected, 1).(wire.SaveMeta)
+	f := r.w.Freshness()
+	for name, age := range map[string]int64{
+		"save.detected":  detected.AgeS,
+		"snapshot.ready": meta.Save.AgeS,
+		"freshness.save": f.Save.AgeS,
+		"Meta()":         r.w.Meta().Save.AgeS,
+	} {
+		if age < 0 {
+			t.Errorf("%s age_s = %d; the board would render a save as saved in the future", name, age)
+		}
+	}
+}
+
+// median_parse_ms is what the parsing progress blocks step against, so it has
+// to be a median of PARSES. A snapshot read back from the gob cache carries the
+// original parse's duration, and it was going straight into the window.
+func TestMedianParseTimeIgnoresCacheHits(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t)
+
+	const realParse, originalCost = 40, 11_395
+	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		snap := stubSnapshot(path, "guid-a", 1000, 500)
+		snap.ParseMS = realParse
+		return snap, nil
+	}
+	r.start(ctx)
+	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
+
+	// The same save again, answered from the cache: the snapshot it hands back
+	// is the one the expensive parse produced, duration and all.
+	r.load = func(_ context.Context, path string, opts x4save.LoadOptions) (*x4save.Snapshot, error) {
+		snap := stubSnapshot(path, "guid-a", 2000, 900)
+		snap.ParseMS = originalCost
+		if opts.OnCacheHit != nil {
+			opts.OnCacheHit()
+		}
+		return snap, nil
+	}
+	r.save("autosave_01.xml.gz", "guid-a", 2000, 900, r.clock.Now().Add(time.Minute))
+	r.settle()
+	cachedReady := r.rec.wait(t, wire.EventTypeSnapshotReady, 2).(wire.SnapshotMeta)
+
+	if cachedReady.ParseMS == originalCost {
+		t.Errorf("a cache hit reported parse_ms = %d — a duration from a different parse", cachedReady.ParseMS)
+	}
+	if got := r.w.Health().MedianParseMS; got != realParse {
+		t.Errorf("median_parse_ms = %d, want %d: only real parses belong in the window", got, realParse)
+	}
+}
+
 // A save directory can disappear under the watcher — a Proton prefix rebuilt, a
 // reinstall, a profile deleted — and come back later. Because every pass
 // re-derives the dirs from the roots instead of resolving them once at start-up,
