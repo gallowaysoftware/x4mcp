@@ -33,6 +33,16 @@ const ringSize = 512
 // the parse worker.
 const clientQueue = 64
 
+// livenessBudget is how long a heartbeat will wait for proof that the hub can
+// still make progress before it stops writing (see Hub.alive). Enormous next to
+// the microseconds a fan-out under h.mu actually takes, and small next to the
+// 15 s heartbeat, so a busy hub never trips it and a wedged one goes quiet
+// inside a single beat.
+const livenessBudget = 2 * time.Second
+
+// livenessPoll is how often that proof is retried while waiting.
+const livenessPoll = time.Millisecond
+
 // Hub is the SSE fan-out: a sequence, a ring buffer, and one buffered channel
 // per connected tab.
 type Hub struct {
@@ -40,6 +50,8 @@ type Hub struct {
 	// heartbeat is HeartbeatInterval outside tests, which cannot wait 15 s to
 	// find out whether the keep-alive works.
 	heartbeat time.Duration
+	// liveness is livenessBudget outside tests.
+	liveness time.Duration
 
 	mu      sync.Mutex
 	seq     int64
@@ -61,7 +73,12 @@ type client struct {
 
 // NewHub builds an empty hub.
 func NewHub() *Hub {
-	return &Hub{now: time.Now, heartbeat: HeartbeatInterval, clients: map[*client]struct{}{}}
+	return &Hub{
+		now:       time.Now,
+		heartbeat: HeartbeatInterval,
+		liveness:  livenessBudget,
+		clients:   map[*client]struct{}{},
+	}
 }
 
 // Publish stamps an event and fans it out. It never blocks: a slow client gets
@@ -100,11 +117,56 @@ func (h *Hub) send(c *client, env wire.Envelope) {
 	// point: its queue holds exactly one resync, always carrying the newest
 	// sequence, so whenever it does start reading, the first thing it reads is
 	// still "refetch" and never a stale tail.
-	for len(c.ch) > 0 {
-		<-c.ch
+	//
+	// Every channel operation from here down is NON-BLOCKING, and that is the
+	// whole of it. This runs with h.mu held, and stream() is a SECOND, concurrent
+	// consumer of this same channel: `for len(c.ch) > 0 { <-c.ch }` is a check
+	// and a receive with a gap between them, so a connection that takes the last
+	// queued event in that gap leaves this receive parked forever — holding the
+	// hub lock, which only Publish could ever release by refilling the queue.
+	// Every later Publish, every /api/state, every unsubscribe and, because
+	// watch.check emits inline on the poll goroutine, the WATCHER stop with it:
+	// the board freezes with the last snapshot on screen. A drain that gives up
+	// the instant the queue is empty cannot lose that race, because it never
+	// waits for anything.
+	for drained := false; !drained; {
+		select {
+		case <-c.ch:
+		default:
+			drained = true
+		}
 	}
 	c.resync = true
-	c.ch <- wire.Envelope{Seq: env.Seq, Type: wire.EventTypeResync, At: env.At}
+	select {
+	case c.ch <- wire.Envelope{Seq: env.Seq, Type: wire.EventTypeResync, At: env.At}:
+	default:
+		// Unreachable: the drain above left the queue empty, h.mu means no other
+		// producer can refill it, and the only other party on this channel is a
+		// reader, which only makes room. It is a select rather than a bare send
+		// because "the ingest path never blocks" has to be a property of the
+		// code and not of the paragraph above it.
+	}
+}
+
+// alive reports whether the hub can still make progress, by taking and
+// releasing the same lock every Publish, every subscribe and every /api/state
+// needs. It waits up to budget for it, because a fan-out under contention is a
+// normal microsecond-scale event and a heartbeat must not call that death.
+//
+// It polls TryLock rather than parking on Lock deliberately: a hub that is
+// genuinely wedged would swallow one goroutine per beat per tab forever, and
+// the caller needs an answer, not a place in the queue.
+func (h *Hub) alive(budget time.Duration) bool {
+	for start := time.Now(); ; {
+		if h.mu.TryLock() {
+			h.mu.Unlock()
+			return true
+		}
+		if time.Since(start) >= budget {
+			return false
+		}
+		time.Sleep(livenessPoll)
+	}
 }
 
 // LastSeq is the newest sequence issued. /api/state carries it so a client can
@@ -209,6 +271,26 @@ func (h *Hub) stream(w http.ResponseWriter, r *http.Request, c *client, replay [
 		case <-beat.C:
 			// A comment line: it keeps the connection (and any proxy) alive and
 			// is what the client's silence timers are measured against.
+			//
+			// Which is exactly why it is not written until the hub has been
+			// PROVEN to still work. This loop touches nothing but its own
+			// channel and its own socket, so it will happily beat at a dead
+			// server: 15 heartbeats in 3 s went out to a healthy tab while
+			// every publish and the watcher itself were parked on h.mu, and a
+			// heartbeat is the one thing that tells the client the silence
+			// ladder (design §6) has nothing to fire about. A board that is
+			// certain of a snapshot it can no longer refresh is worse than a
+			// board that says the connection is gone.
+			//
+			// So the beat means "the hub can still make progress", and when
+			// that stops being true this connection stops writing and lets the
+			// 45 s/60 s ladder do its job. (The handler's deferred unsubscribe
+			// may then park on the same lock — nothing in here can recover a
+			// wedged hub — but the writes have stopped, which is the part the
+			// player can see.)
+			if !h.alive(h.liveness) {
+				return
+			}
 			if _, err := io.WriteString(w, ": heartbeat\n\n"); err != nil {
 				return
 			}

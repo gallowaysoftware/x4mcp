@@ -2,11 +2,15 @@ package web
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -139,8 +143,11 @@ func TestVitalsOmitsWhatIsNotKnownYet(t *testing.T) {
 	// With a snapshot AND a predecessor, both the balance and the delta are
 	// real numbers.
 	src.published = &watch.Published{
-		Snapshot: &x4save.Snapshot{Money: 12_405_882, Ships: []x4save.Ship{{Order: "Mine"}, {}}, Stations: []x4save.Station{{}}},
-		Previous: &x4save.Snapshot{Money: 12_000_000},
+		Snapshot: &x4save.Snapshot{
+			Money: 12_405_882, MoneySeen: true,
+			Ships: []x4save.Ship{{Order: "Mine"}, {}}, Stations: []x4save.Station{{}},
+		},
+		Previous: &x4save.Snapshot{Money: 12_000_000, MoneySeen: true},
 		Meta:     wire.SnapshotMeta{GameGUID: "g"},
 	}
 	res = get(t, ts, "/api/views/vitals")
@@ -166,6 +173,96 @@ func TestVitalsOmitsWhatIsNotKnownYet(t *testing.T) {
 	if !strings.Contains(body, `"credits":12405882`) || strings.Contains(body, `"credits_delta"`) {
 		t.Errorf("with no baseline the delta must be absent: %s", body)
 	}
+}
+
+// PRD risk #1, driven through the real parser: a patch moves the balance
+// attribute, the save still gunzips, still tokenizes, still carries its
+// playthrough identity — so nothing errors, the schema-mismatch guard stays
+// silent (it needs BOTH GameGUID and PlayerName gone), every section is in band
+// and freshness is green. The only thing that changed is that nobody read the
+// balance, and int64's zero is waiting to stand in for it in the largest cell on
+// the board.
+func TestVitalsWillNotInventABalanceItNeverRead(t *testing.T) {
+	const withBalance = `<?xml version="1.0" encoding="UTF-8"?>
+<savegame>
+<info><game guid="00000000-0000-4000-8000-000000000000"/><player name="Test Pilot" money="5492825"/></info>
+</savegame>`
+	// The same save with `money=` renamed to `credits=`. Byte for byte the
+	// difference a game patch makes.
+	const balanceMoved = `<?xml version="1.0" encoding="UTF-8"?>
+<savegame>
+<info><game guid="00000000-0000-4000-8000-000000000000"/><player name="Test Pilot" credits="5492825"/></info>
+</savegame>`
+
+	src := &stubSource{freshness: wire.Freshness{State: wire.FreshnessStateCurrent}}
+	_, ts := newTestServer(t, src)
+
+	// The control: with the attribute where this build expects it, the board
+	// gets a number and a delta.
+	src.published = &watch.Published{
+		Snapshot: parseSave(t, withBalance),
+		Previous: parseSave(t, withBalance),
+		Meta:     wire.SnapshotMeta{GameGUID: "g"},
+	}
+	body := readAll(t, get(t, ts, "/api/views/vitals"))
+	if !strings.Contains(body, `"credits":5492825`) {
+		t.Fatalf("a balance that WAS read must be sent: %s", body)
+	}
+
+	// And with it moved: absent, not zero. The board draws its ∅ box from this.
+	moved := parseSave(t, balanceMoved)
+	if moved.PlayerName == "" || moved.GameGUID == "" {
+		t.Fatal("the fixture is meant to keep its playthrough identity, so the schema-mismatch guard cannot cover for this")
+	}
+	src.published = &watch.Published{
+		Snapshot: moved,
+		Previous: parseSave(t, withBalance),
+		Meta:     wire.SnapshotMeta{GameGUID: "g"},
+	}
+	body = readAll(t, get(t, ts, "/api/views/vitals"))
+	if strings.Contains(body, `"credits"`) {
+		t.Errorf("a balance nobody parsed was published as a number: %s", body)
+	}
+	// And no delta either: −5 492 825 against a number nobody read is a loss the
+	// player never took, printed beside the value that "caused" it.
+	if strings.Contains(body, `"credits_delta"`) {
+		t.Errorf("a delta was computed against a balance nobody read: %s", body)
+	}
+
+	// The mirror image: the CURRENT balance is real and the predecessor's was
+	// never read. The balance is still a fact; only the subtraction is not.
+	src.published = &watch.Published{
+		Snapshot: parseSave(t, withBalance),
+		Previous: parseSave(t, balanceMoved),
+		Meta:     wire.SnapshotMeta{GameGUID: "g"},
+	}
+	body = readAll(t, get(t, ts, "/api/views/vitals"))
+	if !strings.Contains(body, `"credits":5492825`) || strings.Contains(body, `"credits_delta"`) {
+		t.Errorf("want the balance and no delta: %s", body)
+	}
+}
+
+// parseSave runs the shipped parser over a save written to a temp dir. Nothing
+// here can see, let alone touch, a real X4 save directory.
+func parseSave(t *testing.T, xml string) *x4save.Snapshot {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "quicksave.xml.gz")
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write([]byte(xml)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := x4save.ParseFile(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	return snap
 }
 
 func TestRefreshSaveKicksTheWatcher(t *testing.T) {

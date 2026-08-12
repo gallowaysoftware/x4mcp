@@ -1,6 +1,13 @@
 package web
 
 import (
+	"bytes"
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"runtime"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -215,6 +222,151 @@ func TestHubClientKeepsReceivingAfterAResync(t *testing.T) {
 			t.Fatalf("a resynced connection received %v, want both events that followed it", types(got))
 		}
 	})
+}
+
+// Every slow-client test above shares one blind spot: the test goroutine is the
+// ONLY consumer of the queue it inspects, so the overflow drain never has to
+// share the channel with anybody. The shipped stack always has two consumers —
+// send() drains under h.mu while stream() reads the same channel on the
+// connection's own goroutine — and that is a different program. A drain written
+// as `for len(c.ch) > 0 { <-c.ch }` loses the last element to the reader and
+// parks forever WITH THE HUB LOCK HELD, which stops every later Publish, every
+// /api/state, every unsubscribe, and the watcher itself (watch.check emits on
+// the poll goroutine). The board freezes showing a snapshot it can never
+// refresh.
+//
+// Run it with -race and -count: the window is a few nanoseconds wide, so this
+// is a probability test that pays for itself in how catastrophic the event is.
+func TestHubOverflowNeverBlocksOnACompetingReader(t *testing.T) {
+	const publishes = 50_000
+
+	h := NewHub()
+	c, _ := h.subscribe(0)
+	// Deliberately never unsubscribed: unsubscribe wants h.mu, so on a wedged
+	// hub a t.Cleanup would turn this test's failure into a hung test binary.
+
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		// A slow TCP reader in miniature: always on the channel, always a little
+		// slower than the ingest side. Being SLOWER is what keeps the queue at
+		// clientQueue so that every publish overflows, and being ALWAYS ON is
+		// what puts a live receive next to the drain's own receives — which is
+		// the collision the shipped stack has and the tests above do not.
+		for {
+			select {
+			case <-stop:
+				return
+			case <-c.ch:
+			}
+			runtime.Gosched()
+		}
+	}()
+
+	var published atomic.Int64
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range publishes {
+			h.Publish(wire.EventTypeSaveDetected, wire.SaveMeta{Name: "quicksave"})
+			published.Add(1)
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		// Name the collateral damage, because the stack trace of the parked
+		// goroutine only shows the receive.
+		seq := make(chan int64, 1)
+		go func() { seq <- h.LastSeq() }()
+		state := "and a healthy tab's /api/state came back fine"
+		select {
+		case <-seq:
+		case <-time.After(time.Second):
+			state = "and a healthy tab's /api/state is parked on the same lock"
+		}
+		t.Fatalf("Publish wedged after %d of %d events %s: the ingest path is holding h.mu inside a blocking channel operation, so the watcher, every view and every reconnect have stopped",
+			published.Load(), publishes, state)
+	}
+}
+
+// A dead hub must not look alive. stream() writes heartbeats without touching
+// h.mu, so a wedged server kept a healthy tab beating happily along — and those
+// beats are the entire input to design §6's 45 s/60 s silence ladder, so the
+// board never reported the connection lost and showed its last snapshot as
+// current for as long as the tab stayed open.
+func TestHubHeartbeatGoesSilentWhenTheHubCannotMakeProgress(t *testing.T) {
+	h := NewHub()
+	h.heartbeat = 2 * time.Millisecond
+	h.liveness = 20 * time.Millisecond
+	c, _ := h.subscribe(0)
+
+	rec := &beatRecorder{header: http.Header{}}
+	req := httptest.NewRequest(http.MethodGet, "/api/events", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	req = req.WithContext(ctx)
+
+	gone := make(chan struct{})
+	go func() {
+		defer close(gone)
+		h.stream(rec, req, c, nil)
+	}()
+
+	// A healthy hub beats — asserted first, because "stop heartbeating" is not
+	// a fix, it is the other half of the same lie.
+	deadline := time.Now().Add(5 * time.Second)
+	for rec.beats() < 3 {
+		if time.Now().After(deadline) {
+			t.Fatalf("a healthy hub sent %d heartbeats; the keep-alive is gone", rec.beats())
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// Wedge it exactly as a blocking send under h.mu did.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	atWedge := rec.beats()
+
+	select {
+	case <-gone:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("the hub cannot make progress and the stream sent %d more heartbeats anyway: the client's silence ladder has nothing to fire on and the board keeps presenting a snapshot it can never refresh",
+			rec.beats()-atWedge)
+	}
+	settled := rec.beats()
+	time.Sleep(50 * h.heartbeat)
+	if now := rec.beats(); now != settled {
+		t.Errorf("%d heartbeats after the stream gave up", now-settled)
+	}
+}
+
+// beatRecorder is an http.ResponseWriter the test goroutine can read while
+// stream() writes on its own. httptest.NewRecorder cannot be shared that way,
+// and -race is right to say so.
+type beatRecorder struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	header http.Header
+}
+
+func (b *beatRecorder) Header() http.Header { return b.header }
+
+func (b *beatRecorder) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *beatRecorder) WriteHeader(int) {}
+
+func (b *beatRecorder) Flush() {}
+
+func (b *beatRecorder) beats() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return bytes.Count(b.buf.Bytes(), []byte(": heartbeat\n\n"))
 }
 
 func types(evs []wire.Envelope) []wire.EventType {

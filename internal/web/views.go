@@ -46,14 +46,25 @@ func (s *Server) Vitals() wire.VitalsView {
 	if p == nil {
 		return v
 	}
-	credits := p.Snapshot.Money
-	v.Credits = &credits
-	if p.Previous != nil {
-		// Only within one playthrough, and only against a snapshot that is
-		// really the predecessor: the watcher drops Previous across a
-		// playthrough switch and a rollback precisely so this cannot lie.
-		delta := credits - p.Previous.Money
-		v.CreditsDelta = &delta
+	// A parse that happened is not a balance that was read. Money is an int64
+	// with a legitimate zero, so the parser records whether it saw the
+	// attribute at all (x4save.Snapshot.MoneySeen) and this stays nil when it
+	// did not — exactly as Threats does, and for the same reason: CREDITS 0 at
+	// 34 px is the 117-blueprints doctrine printed in the largest cell on the
+	// board.
+	if p.Snapshot.MoneySeen {
+		credits := p.Snapshot.Money
+		v.Credits = &credits
+		// Only within one playthrough, only against a snapshot that is really
+		// the predecessor — the watcher drops Previous across a playthrough
+		// switch and a rollback precisely so this cannot lie — and only when
+		// that predecessor's balance was read too. A delta against a number
+		// nobody parsed is a fabricated loss, and it is the number a player
+		// reacts to fastest.
+		if p.Previous != nil && p.Previous.MoneySeen {
+			delta := credits - p.Previous.Money
+			v.CreditsDelta = &delta
+		}
 	}
 	// CreditsSeries stays empty until the history store (S8) exists. The
 	// client draws its dotted-unknown sparkline rather than a flat line

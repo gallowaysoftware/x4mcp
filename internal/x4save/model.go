@@ -32,6 +32,17 @@ type Snapshot struct {
 	LocationRaw string   `json:"location_raw"`
 	DLCs        []string `json:"dlcs"`
 
+	// MoneySeen records whether <player money=…> was actually read. Money is an
+	// int64 with a perfectly good zero, so "the player is broke" and "this build
+	// never found the balance" are the same bits — and the board prints the
+	// larger of its two glance-sized numbers from them. Rename the attribute (a
+	// patch moving it is PRD risk #1) and the strip reports CREDITS 0 with a
+	// confident Δ against a number nobody parsed, freshness green, every
+	// section in band, because the schema-mismatch guard only fires when the
+	// playthrough identity is gone too. Presence is the difference between a
+	// fact and a fabrication, so it is recorded rather than inferred.
+	MoneySeen bool `json:"money_seen"`
+
 	// Diplomacy: player's relation to each faction.
 	Relations []Relation `json:"relations"`
 

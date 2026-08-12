@@ -25,6 +25,7 @@
       "Envoy Pack",
       "Hyperion Pack"
     ],
+    "money_seen": true,
     "relations": [
       {
         "faction": "khaak",

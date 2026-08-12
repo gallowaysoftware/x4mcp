@@ -21,6 +21,7 @@
       "Cradle of Humanity",
       "Kingdom End"
     ],
+    "money_seen": true,
     "relations": [
       {
         "faction": "argon",

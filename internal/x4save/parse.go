@@ -574,7 +574,13 @@ type rawInfo struct {
 	Player struct {
 		Name     string `xml:"name,attr"`
 		Location string `xml:"location,attr"`
-		Money    int64  `xml:"money,attr"`
+		// Money is a POINTER so the decoder answers "was there a balance?" and
+		// not just "what was it?": encoding/xml only allocates it for an
+		// attribute that is actually present, so nil is absent and 0 is a
+		// player who spent everything. A garbage value is still a decode error
+		// — loud, and the freshness lane says parse_error — which is the right
+		// answer for a save this build cannot read.
+		Money *int64 `xml:"money,attr"`
 	} `xml:"player"`
 	Patches []struct {
 		Name string `xml:"name,attr"`
@@ -596,7 +602,10 @@ func decodeInfo(dec *xml.Decoder, start *xml.StartElement, snap *Snapshot) error
 	snap.Seed = ri.Game.Seed
 	snap.PlayerName = ri.Player.Name
 	snap.LocationRaw = ri.Player.Location
-	snap.Money = ri.Player.Money
+	if ri.Player.Money != nil {
+		snap.Money = *ri.Player.Money
+		snap.MoneySeen = true
+	}
 	for _, p := range ri.Patches {
 		if p.Name != "" {
 			snap.DLCs = append(snap.DLCs, p.Name)

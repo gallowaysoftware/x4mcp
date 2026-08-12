@@ -8,11 +8,16 @@ import "time"
 type VitalsView struct {
 	Freshness Freshness   `json:"freshness"`
 	Legs      []LegHealth `json:"legs"`
-	// Credits is the player's balance; nil before the first successful parse.
+	// Credits is the player's balance. nil before the first successful parse —
+	// and ALSO when a save parsed but carried no balance the parser recognised,
+	// which is what a patch moving the attribute looks like (PRD risk #1). The
+	// pointer is the whole defence: 0 is a real answer about a real empire, so
+	// a parsed-but-unread balance must not be able to borrow it.
 	Credits *int64 `json:"credits,omitempty"`
 	// CreditsDelta is the change against the previous snapshot of the same
 	// playthrough; nil when there is no previous snapshot to compare against
-	// (first parse, or a playthrough switch reset the baseline).
+	// (first parse, or a playthrough switch reset the baseline), and nil when
+	// either end of the subtraction was never read.
 	CreditsDelta *int64 `json:"credits_delta,omitempty"`
 	// CreditsSeries is the sparkline series, oldest first. Empty until the
 	// history store exists; the client draws its dotted-unknown empty state.

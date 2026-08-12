@@ -112,3 +112,50 @@ describe('wars', () => {
 		expect(out).not.toContain('∅ wars');
 	});
 });
+
+describe('a balance nobody read', () => {
+	/**
+	 * PRD risk #1 as the board sees it: the save parsed, freshness is green,
+	 * every section is in band, and the balance attribute moved. The server
+	 * answers with no `credits` field — and the largest cell on the board must
+	 * say so, because `0` there is a sentence about the player's empire.
+	 */
+	it('shows the ∅ box after a successful parse, not 0', () => {
+		const out = body(true, vitals({ credits: undefined, credits_delta: undefined }));
+		expect(out).toContain('∅ credits');
+		// The value branch, which is the only thing that renders at glance size.
+		expect(out).not.toContain('t-glance');
+	});
+
+	it('says which unknown it is: parsed, and no balance in it', () => {
+		// The tooltip is the whole payload of an admission. "no save has been
+		// parsed yet" under a green freshness stamp is a second wrong claim.
+		expect(body(true, vitals({ credits: undefined }))).toContain('no balance this build recognises');
+		expect(body(false, vitals({ credits: undefined }))).toContain('no save has been parsed yet');
+	});
+
+	it('treats a JSON null exactly like an absent field', () => {
+		// `omitempty` is a serialisation detail. A producer that spells the same
+		// unknown as `null` must not get a number out of the strip — the cast is
+		// the point of the test, because the generated type cannot say `null`.
+		const out = body(
+			true,
+			vitals({
+				credits: null as unknown as undefined,
+				// The exact pairing the verifier saw: CREDITS 0 with a confident
+				// Δ −5 492 825 beside it.
+				credits_delta: -5_492_825,
+			}),
+		);
+		expect(out).toContain('∅ credits');
+		expect(out).not.toContain('t-glance');
+	});
+
+	it('still prints a balance of zero, which is a real thing to be', () => {
+		// The other half of the doctrine: absent is unknown, and 0 is "you have
+		// no money". Suppressing both would be the same bug facing the other way.
+		const out = body(true, vitals({ credits: 0 }));
+		expect(out).not.toContain('∅ credits');
+		expect(out).toContain('t-glance');
+	});
+});

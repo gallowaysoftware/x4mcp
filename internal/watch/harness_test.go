@@ -231,7 +231,10 @@ func stubSnapshot(path, guid string, gameTime float64, money int64) *x4save.Snap
 		StartType:  "x4ep1_gamestart_pirate2",
 		GameTimeS:  gameTime,
 		Money:      money,
-		ParseMS:    7,
+		// A real parse of a real save reads the balance, and a stub that says
+		// otherwise is a stub of a broken save.
+		MoneySeen: true,
+		ParseMS:   7,
 	}
 }
 

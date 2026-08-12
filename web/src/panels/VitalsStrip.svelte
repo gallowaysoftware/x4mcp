@@ -47,10 +47,30 @@
 	/** The one reason four different cells share, written once. */
 	const PARSE_PENDING = 'no save has been parsed yet';
 
+	/**
+	 * Every unknown on this strip is tested with `== null`, never `=== undefined`.
+	 * Absent and JSON `null` are the SAME claim — "nobody computed this" — and
+	 * the difference between them is a Go `omitempty` tag, which is a
+	 * serialisation detail the board must not be able to read as a number. A
+	 * gate that only catches `undefined` lets `null` fall through to the value
+	 * branch, and the value branch formats it: the credits cell would print at
+	 * 34 px, the size the eye trusts most.
+	 */
 	const vitals = $derived(board.vitals);
 	const credits = $derived(vitals.credits);
 	const delta = $derived(vitals.credits_delta);
 	const series = $derived((vitals.credits_series ?? []).map((s) => s.credits));
+	/**
+	 * Why the credits cell is empty — two different facts since the server
+	 * learned to admit the second one. Before the first parse it is simply
+	 * pending. AFTER one, an absent balance means the save was read and no
+	 * balance was found in it: a patch moved the attribute (PRD risk #1), and
+	 * the tooltip has to say so, because "no save has been parsed yet" beside a
+	 * green freshness stamp is its own small lie.
+	 */
+	const creditsReason = $derived(
+		board.published ? 'this save parsed, and no balance this build recognises was in it' : PARSE_PENDING,
+	);
 	/**
 	 * ABSENT is not "no wars". The server sends no war data at all until the F3
 	 * schema bump, so `undefined` means the board has never looked — and "NO
@@ -87,8 +107,8 @@
 		<span class="field field-credits">
 			<span class="t-micro lbl">CREDITS</span>
 			<span class="cell cell-credits">
-				{#if credits === undefined}
-					<UnknownValue size="glance" label="credits" reason={PARSE_PENDING} />
+				{#if credits == null}
+					<UnknownValue size="glance" label="credits" reason={creditsReason} />
 				{:else}
 					<span class="t-glance val">{formatCredits(credits)}<span class="unit">{CREDITS_UNIT}</span></span>
 				{/if}
@@ -97,11 +117,11 @@
 
 		<span class="field field-delta">
 			<span class="cell cell-delta">
-				{#if delta === undefined}
+				{#if delta == null}
 					<UnknownValue
 						size="emph"
 						label="no baseline"
-						reason="nothing to compare against yet — one snapshot, or a new playthrough"
+						reason="nothing to compare against yet — one snapshot, a new playthrough, or a balance one end of it never read"
 					/>
 				{:else}
 					<!-- design §3: signed, true minus, and NEVER coloured. The sign
@@ -120,7 +140,7 @@
 			<span class="field field-count">
 				<span class="t-micro lbl">{count.label}</span>
 				<span class="cell cell-count">
-					{#if board.published && count.value !== undefined}
+					{#if board.published && count.value != null}
 						<span class="t-num-l val">{formatCount(count.value)}</span>
 					{:else}
 						<UnknownValue size="num-l" label={count.label.toLowerCase()} reason={count.reason} />
@@ -139,7 +159,7 @@
 
 		<span class="field field-wars">
 			<span class="cell cell-wars">
-				{#if wars === undefined}
+				{#if wars == null}
 					<UnknownValue
 						size="micro"
 						label="wars"

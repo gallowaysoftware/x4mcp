@@ -160,7 +160,7 @@
 			<p class="t-body slot-note">
 				{#if !board.published}
 					<UnknownValue label="threats" reason="no save has been parsed yet" />
-				{:else if threats === undefined}
+				{:else if threats == null}
 					<!-- design §5's threat empty state is honest about VISION, not
 					     about danger. This build has no attacker data at all, so
 					     "0 known" would be the 117-blueprints bug wearing a

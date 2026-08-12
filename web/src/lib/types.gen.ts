@@ -181,13 +181,18 @@ export interface VitalsView {
 	freshness: Freshness;
 	legs: LegHealth[];
 	/**
-	 * Credits is the player's balance; nil before the first successful parse.
+	 * Credits is the player's balance. nil before the first successful parse —
+	 * and ALSO when a save parsed but carried no balance the parser recognised,
+	 * which is what a patch moving the attribute looks like (PRD risk #1). The
+	 * pointer is the whole defence: 0 is a real answer about a real empire, so
+	 * a parsed-but-unread balance must not be able to borrow it.
 	 */
 	credits?: number /* int64 */;
 	/**
 	 * CreditsDelta is the change against the previous snapshot of the same
 	 * playthrough; nil when there is no previous snapshot to compare against
-	 * (first parse, or a playthrough switch reset the baseline).
+	 * (first parse, or a playthrough switch reset the baseline), and nil when
+	 * either end of the subtraction was never read.
 	 */
 	credits_delta?: number /* int64 */;
 	/**
