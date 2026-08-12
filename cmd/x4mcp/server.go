@@ -13,6 +13,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pequalsnp/x4mcp/internal/api"
+	"github.com/pequalsnp/x4mcp/internal/watch"
+	"github.com/pequalsnp/x4mcp/internal/web"
+	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
 
 const version = "0.1.0"
@@ -39,13 +42,17 @@ func tool[I, O any](f func(context.Context, I) (O, error)) func(
 // on another box) can use a gaming PC's saves. There is no auth — bind
 // beyond localhost only on a network you trust, and remember the tools
 // expose your savegame contents plus the plan-write tools.
-func runServer(ctx context.Context, addr, connect string) error {
-	// NewLazy, not New: nothing in initialize/tools-list touches the install,
-	// so the ten game databases load behind the handshake instead of in front
-	// of it (2.7 s cold, 0.4 s warm, on every client launch).
-	svc := api.NewLazy("", nil)
+//
+// webAddr additionally serves the x4cue board on a loopback address. That is
+// the only mode in which the save watcher runs, and it changes where the MCP
+// tools get their snapshot from: the watcher's, already parsed and enriched,
+// instead of a load-on-demand read per call.
+func runServer(ctx context.Context, addr, connect, webAddr string) error {
+	svc, s, err := buildService(ctx, webAddr)
+	if err != nil {
+		return err
+	}
 	reloadOnSIGHUP(ctx, svc)
-	s := newServer(svc)
 
 	if addr == "" && connect == "" {
 		return s.Run(ctx, &mcp.StdioTransport{})
@@ -78,6 +85,61 @@ func runServer(ctx context.Context, addr, connect string) error {
 		return err
 	}
 	return nil
+}
+
+// buildService assembles the Service the tools answer from, and — when the
+// board was asked for — the watcher and web mux behind it.
+//
+// The two are built together because they are one decision: with --web there is
+// a process that already holds a parsed save, so every MCP tool in it should
+// answer from that snapshot rather than re-reading 100 MB of gzip to reach the
+// same answer a different way (§1.2). Without --web nothing has changed:
+// load-on-demand, exactly as before.
+func buildService(ctx context.Context, webAddr string) (*api.Service, *mcp.Server, error) {
+	// NewLazy, not New: nothing in initialize/tools-list touches the install,
+	// so the ten game databases load behind the handshake instead of in front
+	// of it (2.7 s cold, 0.4 s warm, on every client launch).
+	if webAddr == "" {
+		svc := api.NewLazy("", nil)
+		return svc, newServer(svc), nil
+	}
+
+	var svc *api.Service
+	hub := web.NewHub()
+	watcher := watch.New(watch.Options{
+		Emit: hub.Publish,
+		// Resolving a fresh parse against the install turns raw macros into
+		// sector and hull names. It runs on the parse goroutine before the
+		// pointer is published, so every reader sees an enriched snapshot and
+		// nobody mutates it afterwards — the one condition api.Enrich sets.
+		Enrich: func(snap *x4save.Snapshot) { svc.Enrich(snap) },
+	})
+	svc = api.NewLazy("", watcher)
+	s := newServer(svc)
+
+	board, err := web.New(web.Options{
+		Addr:   webAddr,
+		Source: watcher,
+		Hub:    hub,
+		// The web mux is the SUPERSET (D10): it carries /mcp as well, so one
+		// loopback port serves the board and the tools. The relay and --http
+		// keep their own restricted mux and never see /api.
+		MCP:       mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, nil),
+		Version:   version,
+		BuildHash: buildHash(),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	watcher.Start(ctx)
+	go func() {
+		if err := board.ListenAndServe(ctx); err != nil {
+			// The board failing must not take the MCP faces down with it: a
+			// player mid-session would rather keep the tools than lose both.
+			fmt.Fprintf(os.Stderr, "x4mcp: board stopped: %v\n", err)
+		}
+	}()
+	return svc, s, nil
 }
 
 // reloadOnSIGHUP rebuilds the game-data bundle when the process is HUP'd.

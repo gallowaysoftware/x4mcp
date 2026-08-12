@@ -663,3 +663,64 @@ func TestHandlersRunConcurrentlyThroughTheProvider(t *testing.T) {
 		t.Errorf("the provider recorded %d requests, want %d — the double dropped some", got, want)
 	}
 }
+
+// liveProvider is a provider that owns the live save, the way the watcher does.
+type liveProvider struct {
+	fakeProvider
+	refreshed int
+	snapshot  *x4save.Snapshot
+	err       error
+}
+
+func (p *liveProvider) RefreshSnapshot(context.Context) (*x4save.Snapshot, error) {
+	p.refreshed++
+	if p.err != nil {
+		return nil, p.err
+	}
+	return p.snapshot, nil
+}
+
+// refresh_save means two different things depending on its argument, and the
+// difference matters to a model: "make sure you are current" is a kick at the
+// watcher, "re-read this file" is a forced load of THAT file. Conflating them
+// would silently redirect a client analysing an archived save to the live one.
+func TestRefreshSaveBranches(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ctx := context.Background()
+
+	live := &liveProvider{snapshot: &x4save.Snapshot{
+		SourcePath: "/saves/quicksave.xml.gz",
+		Ships:      []x4save.Ship{{Code: "A"}, {Code: "B"}},
+		Stations:   []x4save.Station{{Code: "S"}},
+		ParseMS:    9123,
+	}}
+	svc := New(&GameData{}, live)
+
+	out, err := svc.RefreshSave(ctx, SaveSel{})
+	if err != nil {
+		t.Fatalf("RefreshSave: %v", err)
+	}
+	if live.refreshed != 1 {
+		t.Errorf("the watcher was kicked %d times, want 1", live.refreshed)
+	}
+	if out.SavePath != "/saves/quicksave.xml.gz" || out.ShipCount != 2 || out.StationCount != 1 || out.ParseMS != 9123 {
+		t.Errorf("out = %+v, want the watcher's snapshot reported as it always was", out)
+	}
+
+	// An explicit path never reaches the watcher: it is a force-load of that
+	// file, and with no such file the honest answer is an error.
+	if _, err := svc.RefreshSave(ctx, SaveSel{SavePath: filepath.Join(t.TempDir(), "archived.xml.gz")}); err == nil {
+		t.Error("an explicit path must be loaded, not answered from the live snapshot")
+	}
+	if live.refreshed != 1 {
+		t.Errorf("the watcher was kicked for an explicit path (%d times)", live.refreshed)
+	}
+
+	// A provider that does NOT own the live save keeps the old behaviour: find
+	// the newest save on disk and force-load it. With no saves anywhere, that
+	// is the error it has always been.
+	plain := New(&GameData{}, &fakeProvider{snap: fixtureSnapshot()})
+	if _, err := plain.RefreshSave(ctx, SaveSel{}); err == nil {
+		t.Error("with no watcher and no saves, refresh_save must still report that")
+	}
+}

@@ -2,6 +2,7 @@ package x4save
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -96,11 +97,39 @@ var boringPlayerClasses = map[string]bool{
 // parsed, so the resulting Snapshot cannot be trusted. Callers should retry.
 var ErrSaveChanged = errors.New("save changed during parse")
 
+// ctxReader fails the read that follows a cancelled context.
+//
+// It sits UNDER the gzip stream rather than over the token loop because that is
+// where a parse actually spends its time: a 100 MB save is ~16 s of inflate and
+// tokenize with no natural interruption point, and a shutdown that has to wait
+// for it holds the whole process open past its 5 s budget. Checking per read
+// (~32 KB of compressed input) bounds cancellation to microseconds of work while
+// costing one atomic-ish load per chunk — unmeasurable against inflate.
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c ctxReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.r.Read(p)
+}
+
 // ParseFile streams a (gzip-compressed) X4 savegame and returns a Snapshot of
 // the player-relevant state. Memory stays bounded: the universe tree is walked
 // as a token stream, and only player-owned ship/station subtrees are
 // materialized — one at a time.
 func ParseFile(path string) (*Snapshot, error) {
+	return ParseFileCtx(context.Background(), path)
+}
+
+// ParseFileCtx is ParseFile that stops when ctx does. Cancelling returns the
+// context's own error (not a wrapped XML error), so a caller can tell "we asked
+// it to stop" apart from "this save is broken" — the difference between a quiet
+// shutdown and an amber system row on the board.
+func ParseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -111,8 +140,11 @@ func ParseFile(path string) (*Snapshot, error) {
 	}
 	defer f.Close()
 
-	gz, err := gzip.NewReader(f)
+	gz, err := gzip.NewReader(ctxReader{ctx: ctx, r: f})
 	if err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, cerr
+		}
 		return nil, fmt.Errorf("gzip: %w", err)
 	}
 	defer gz.Close()
@@ -155,6 +187,11 @@ func ParseFile(path string) (*Snapshot, error) {
 			break
 		}
 		if err != nil {
+			// A cancelled parse surfaces here as whatever the reader returned,
+			// wrapped by the decoder; report the cancellation itself.
+			if cerr := ctx.Err(); cerr != nil {
+				return nil, cerr
+			}
 			return nil, fmt.Errorf("xml token: %w", err)
 		}
 

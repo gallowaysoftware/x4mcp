@@ -39,6 +39,13 @@ func runPlay(args []string) error {
 	if err != nil {
 		return fmt.Errorf("%w\n%s", err, transportUsage)
 	}
+	// The board rides along with the game: `x4mcp play --web 127.0.0.1:8484 --
+	// %command%` is the whole companion-app setup, watcher included, and it
+	// stops when the game does.
+	webAddr, rest, err := parseWeb(rest)
+	if err != nil {
+		return fmt.Errorf("%w\n%s", err, webUsage)
+	}
 	// parseTransport keeps the "--"; Steam's %command% expands to the
 	// launcher after it.
 	if len(rest) > 0 && rest[0] == "--" {
@@ -52,7 +59,7 @@ func runPlay(args []string) error {
 	defer cancel()
 
 	serverErr := make(chan error, 1)
-	go func() { serverErr <- runServer(ctx, tr.http, tr.relay) }()
+	go func() { serverErr <- runServer(ctx, tr.http, tr.relay, webAddr) }()
 
 	game := exec.CommandContext(ctx, rest[0], rest[1:]...) //nolint:gosec // the command is the player's own launcher
 	game.Stdout, game.Stderr, game.Stdin = os.Stdout, os.Stderr, os.Stdin

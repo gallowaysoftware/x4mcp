@@ -44,6 +44,177 @@ export interface Envelope {
 }
 
 //////////
+// source: state.go
+
+/**
+ * StateView is GET /api/state: everything a tab needs to draw itself from
+ * nothing, and the thing it refetches after a resync.
+ * It is a BOOTSTRAP, not a poll target. The board's steady state is the SSE
+ * stream; this exists so that a tab opened mid-session, or reconnected after
+ * the ring buffer moved past it, does not have to wait for the next save to
+ * know anything.
+ */
+export interface StateView {
+	build: BuildInfo;
+	/**
+	 * Vitals is the same body /api/views/vitals returns, inlined so first paint
+	 * is one request.
+	 */
+	vitals: VitalsView;
+	/**
+	 * Snapshot describes the currently published parse; nil before the first
+	 * one succeeds (the startup state, which is not an error).
+	 */
+	snapshot?: SnapshotMeta;
+	watch: WatchHealth;
+	/**
+	 * LastEventSeq is the newest event the hub has issued. A client that
+	 * bootstraps here and then subscribes with this as Last-Event-ID misses
+	 * nothing in the gap between the two requests.
+	 */
+	last_event_seq: number /* int64 */;
+	/**
+	 * Silence is the design §6 two-stage timing, sent rather than hard-coded in
+	 * the client so both halves of the contract move together.
+	 */
+	silence: SilencePolicy;
+}
+/**
+ * BuildInfo identifies the binary a tab is talking to.
+ * Hash is the versioning story (tech-design §2): assets and binary ship
+ * together, so the only skew that can exist is a tab left open across a
+ * restart. The client compares this against what it booted with and reloads on
+ * a mismatch, which is cheaper than versioning every path.
+ */
+export interface BuildInfo {
+	version: string;
+	hash: string;
+	/**
+	 * SchemaVersion is the parser's snapshot schema; a save this build cannot
+	 * read reports the schema_mismatch freshness state against it.
+	 */
+	schema_version: number /* int */;
+	started_at: string;
+	/**
+	 * RSSBytes is the process's resident set, for the health drawer. 0 when the
+	 * platform did not tell us — unknown, not "no memory".
+	 */
+	rss_bytes?: number /* int64 */;
+}
+/**
+ * SilencePolicy is how long a client waits before disbelieving its stream
+ * (design §6). The server heartbeats every HeartbeatS; two missed heartbeats
+ * stale the freshness stamp, three mean the connection is gone.
+ */
+export interface SilencePolicy {
+	heartbeat_s: number /* int */;
+	stale_s: number /* int */;
+	lost_s: number /* int */;
+}
+/**
+ * WatchHealth is the watcher's own report: what it is watching, how it is
+ * finding saves, and what that has cost. It is the health drawer's watch
+ * section, and it is also the evidence for D15 — the hybrid detector's
+ * counters are how "fsnotify is missing saves" would ever be noticed.
+ */
+export interface WatchHealth {
+	dirs: string[];
+	/**
+	 * PollIntervalMS is the CURRENT poll period. It backs off while the
+	 * filesystem watcher is delivering events and tightens when it is not, so a
+	 * reader can tell which regime the process is in.
+	 */
+	poll_interval_ms: number /* int64 */;
+	/**
+	 * Notify is the fsnotify accelerator. Absent (nil) means it was never
+	 * asked for; present with Active false means it failed and the poll is
+	 * carrying the whole load, which is a supported state, not an outage.
+	 */
+	notify?: NotifyHealth;
+	detections: DetectionStats;
+	/**
+	 * Parses counts completed parses; Retries counts ErrSaveChanged retries
+	 * across all of them; ParseErrors counts parses that ended in an error.
+	 */
+	parses: number /* int64 */;
+	retries: number /* int64 */;
+	parse_errors: number /* int64 */;
+	median_parse_ms?: number /* int64 */;
+	last_check_at?: string;
+	last_detect_at?: string;
+	cache: CacheHealth;
+}
+/**
+ * NotifyHealth is the filesystem-watcher half of the detector (D15).
+ */
+export interface NotifyHealth {
+	/**
+	 * Active is whether the watcher is running. False with an Error is the
+	 * documented degraded mode: inotify watch limits, an unsupported
+	 * filesystem, permissions — the poll alone is still correct.
+	 */
+	active: boolean;
+	error?: string;
+	/**
+	 * Dirs is how many directories are currently watched (a dir can be removed
+	 * and recreated under us; the watcher re-adds it).
+	 */
+	dirs: number /* int */;
+	/**
+	 * Events is raw events received — every create/write/rename/chmod, which
+	 * are deliberately not interpreted, only used as a poke.
+	 */
+	events: number /* int64 */;
+	/**
+	 * Pokes is checks that ran because of an event rather than the ticker.
+	 */
+	pokes: number /* int64 */;
+	last_event_at?: string;
+}
+/**
+ * DetectionStats attributes each detected save to whichever half of the hybrid
+ * detector saw it FIRST. It is the instrumentation that makes D15 checkable
+ * instead of a belief: MissedByNotify climbing while the watcher is active is
+ * the evidence that the accelerator cannot be trusted alone — and Total minus
+ * MissedByNotify staying flat would be the evidence it is not earning its
+ * dependency.
+ */
+export interface DetectionStats {
+	total: number /* int64 */;
+	/**
+	 * ByNotify is detections whose first sighting came from an fsnotify poke.
+	 */
+	by_notify: number /* int64 */;
+	/**
+	 * ByPoll is detections whose first sighting came from the ticker.
+	 */
+	by_poll: number /* int64 */;
+	/**
+	 * ByManual is detections whose first sighting came from a Kick — the
+	 * refresh button or the refresh_save tool. Counted apart from the poll so a
+	 * player pressing the button does not read as the accelerator failing.
+	 */
+	by_manual: number /* int64 */;
+	/**
+	 * MissedByNotify is the subset of ByPoll where the filesystem watcher was
+	 * active and watching the right directory, and still did not see it.
+	 */
+	missed_by_notify: number /* int64 */;
+}
+/**
+ * CacheHealth is the gob snapshot cache after the last GC pass.
+ */
+export interface CacheHealth {
+	entries: number /* int */;
+	bytes: number /* int64 */;
+	/**
+	 * Removed is entries deleted since start-up: stale schema versions at
+	 * boot, then everything past the per-save keep count.
+	 */
+	removed: number /* int64 */;
+}
+
+//////////
 // source: views.go
 
 /**
@@ -166,6 +337,16 @@ export interface LegHealth {
 	detail?: string;
 }
 /**
+ * SaveKind is which of X4's three ways of writing a save produced this file.
+ * The player thinks in these terms ("my last quicksave"), and the cadence the
+ * freshness thresholds derive from is an AUTOSAVE cadence — a manual save every
+ * half hour says nothing about whether autosave is on.
+ */
+export const SaveKindQuicksave = "quicksave";
+export const SaveKindAutosave = "autosave";
+export const SaveKindManual = "manual";
+export type SaveKind = typeof SaveKindQuicksave | typeof SaveKindAutosave | typeof SaveKindManual;
+/**
  * SaveMeta describes a savegame file as the watcher sees it — before any parse
  * has succeeded, so it holds nothing that requires reading the XML.
  */
@@ -176,8 +357,21 @@ export interface SaveMeta {
 	 * which is what X4 players actually call a save.
 	 */
 	name: string;
+	kind?: SaveKind;
 	size_bytes: number /* int64 */;
 	modified_at: string;
+	/**
+	 * AgeS is how old the file was when the server sent this, in seconds. The
+	 * client counts up from ModifiedAt for the live stamp — a number the server
+	 * wrote a minute ago is not an age — but it needs this once, because the two
+	 * clocks are not the same clock: a LAN tab (or a tab on a machine whose time
+	 * drifted) would otherwise render "in 4 minutes".
+	 */
+	age_s?: number /* int64 */;
+	/**
+	 * ParseMS is how long the parse of this save took; 0 before it has run.
+	 */
+	parse_ms?: number /* int64 */;
 	/**
 	 * Attempt is the retry counter on save.retry events (1-based); 0 elsewhere.
 	 */
@@ -211,6 +405,13 @@ export interface SnapshotMeta {
 	 * the bands a healthy save of this playthrough produces.
 	 */
 	sections?: SectionHealth[];
+	/**
+	 * Rollback is set when GameTimeS went BACKWARDS within one playthrough: the
+	 * player loaded an earlier save. The diff baseline is reset and loss alerts
+	 * are suppressed, because everything that "disappeared" since the previous
+	 * snapshot never happened.
+	 */
+	rollback?: boolean;
 }
 /**
  * SectionHealth is one parsed section's count measured against its expected

@@ -54,6 +54,18 @@ type LegHealth struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// SaveKind is which of X4's three ways of writing a save produced this file.
+// The player thinks in these terms ("my last quicksave"), and the cadence the
+// freshness thresholds derive from is an AUTOSAVE cadence — a manual save every
+// half hour says nothing about whether autosave is on.
+type SaveKind string
+
+const (
+	SaveKindQuicksave SaveKind = "quicksave"
+	SaveKindAutosave  SaveKind = "autosave"
+	SaveKindManual    SaveKind = "manual"
+)
+
 // SaveMeta describes a savegame file as the watcher sees it — before any parse
 // has succeeded, so it holds nothing that requires reading the XML.
 type SaveMeta struct {
@@ -61,8 +73,17 @@ type SaveMeta struct {
 	// Name is the file's base name without extension ("quicksave", "save_003"),
 	// which is what X4 players actually call a save.
 	Name       string    `json:"name"`
+	Kind       SaveKind  `json:"kind,omitempty"`
 	SizeBytes  int64     `json:"size_bytes"`
 	ModifiedAt time.Time `json:"modified_at"`
+	// AgeS is how old the file was when the server sent this, in seconds. The
+	// client counts up from ModifiedAt for the live stamp — a number the server
+	// wrote a minute ago is not an age — but it needs this once, because the two
+	// clocks are not the same clock: a LAN tab (or a tab on a machine whose time
+	// drifted) would otherwise render "in 4 minutes".
+	AgeS int64 `json:"age_s,omitempty"`
+	// ParseMS is how long the parse of this save took; 0 before it has run.
+	ParseMS int64 `json:"parse_ms,omitempty"`
 	// Attempt is the retry counter on save.retry events (1-based); 0 elsewhere.
 	Attempt int `json:"attempt,omitempty"`
 }
@@ -87,6 +108,11 @@ type SnapshotMeta struct {
 	// Sections is the parse-health report: what came out of the save against
 	// the bands a healthy save of this playthrough produces.
 	Sections []SectionHealth `json:"sections,omitempty"`
+	// Rollback is set when GameTimeS went BACKWARDS within one playthrough: the
+	// player loaded an earlier save. The diff baseline is reset and loss alerts
+	// are suppressed, because everything that "disappeared" since the previous
+	// snapshot never happened.
+	Rollback bool `json:"rollback,omitempty"`
 }
 
 // SectionHealth is one parsed section's count measured against its expected

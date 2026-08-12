@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/pequalsnp/x4mcp/internal/api"
 	"github.com/pequalsnp/x4mcp/internal/x4data"
@@ -67,16 +69,29 @@ func main() {
 		fmt.Fprintf(os.Stderr, "x4mcp: %v\n%s", err, transportUsage)
 		os.Exit(2)
 	}
+	// --web is x4cue's own flag and is taken out of the leftovers, so cli.go
+	// stays byte-identical to the copy in the other servers (see web.go).
+	webAddr, rest, err := parseWeb(rest)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "x4mcp: %v\n%s", err, webUsage)
+		os.Exit(2)
+	}
 	// The subcommand is dropped AFTER parsing, not before: with flags
 	// allowed in either position, "serve" may not be the first argument.
 	if len(rest) > 0 && rest[0] == "serve" {
 		rest = rest[1:]
 	}
 	if len(rest) > 0 {
-		fmt.Fprintf(os.Stderr, "x4mcp: unexpected argument %q\n%s", rest[0], transportUsage)
+		fmt.Fprintf(os.Stderr, "x4mcp: unexpected argument %q\n%s%s", rest[0], transportUsage, webUsage)
 		os.Exit(2)
 	}
-	if err := runServer(context.Background(), tr.http, tr.relay); err != nil {
+	// SIGINT/SIGTERM cancel the root context rather than killing the process
+	// outright: with --web there is a watcher to stop, a possibly mid-flight
+	// 16 s parse to cancel, and an HTTP server to drain. Without it, nothing
+	// observable changes.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if err := runServer(ctx, tr.http, tr.relay, webAddr); err != nil {
 		fmt.Fprintln(os.Stderr, "server error:", err)
 		os.Exit(1)
 	}
