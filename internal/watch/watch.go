@@ -2,15 +2,16 @@
 // snapshot is published", and refuses to be wrong about whether the save had
 // finished being written.
 //
-// The detector is a HYBRID, and the split of responsibility is the whole design
-// (tech-design D15). A filesystem watcher is an ACCELERATOR: any event in a
-// watched directory pokes the checker to run its normal pass immediately, and
-// no meaning is ever read into which event arrived. The poll is the
-// GUARANTEE: it runs regardless, so a missed event costs seconds of latency
-// rather than a save. Neither mechanism is trusted alone — X4 takes 20–60 s to
-// write a late-game save, under Proton that is Wine translating Windows file
-// ops, and no event sequence known in advance means "the save is complete".
-// Only quiescence does.
+// Detection is a 2 s stat-poll with a settle gate, and nothing else
+// (tech-design D1, D15). Polling a local filesystem is not an API call: a stat
+// reads cached inode metadata, there is no network, no rate limit and no
+// per-call cost, so a handful every 2 s is free and the argument against
+// polling — which is an argument against polling something REMOTE — does not
+// transfer. What a filesystem event could tell us is "something happened",
+// which is never the question: X4 takes 20–60 s to write a late-game save, and
+// under Proton that is Wine translating Windows file ops, so no event sequence
+// known in advance means "the save is complete". Only quiescence does, and only
+// a tick can observe it.
 //
 // Everything downstream of the settle gate is single-threaded by construction:
 // one parse worker, one publish, an atomic.Pointer swap. Readers never lock.
@@ -32,13 +33,11 @@ import (
 	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
 
-// Timing defaults. The poll interval is two-valued on purpose (D15): tight when
-// the filesystem watcher is absent or silent, relaxed while it is delivering,
-// because then the poll is only the backstop for events that never come.
+// Timing defaults. One poll interval, always the same one: the settle gate
+// needs two consecutive identical sightings, so the worst case is two ticks —
+// 4 s in front of a 5–16 s parse of a save the game spent 20–60 s writing.
 const (
 	DefaultPoll        = 2 * time.Second
-	DefaultIdlePoll    = 10 * time.Second
-	DefaultNotifyQuiet = 5 * time.Minute
 	DefaultSettleTicks = 2
 	DefaultCacheKeep   = 3
 )
@@ -58,20 +57,12 @@ type Options struct {
 	// Roots are the save roots to watch; empty means x4save.DefaultSaveRoots(),
 	// which honours the X4MCP_SAVE_DIR override.
 	Roots []string
-	// Poll is the tight floor, IdlePoll the relaxed one used while the
-	// filesystem watcher is delivering events, NotifyQuiet how long without an
-	// event before the watcher is treated as quiet and the floor tightens.
-	Poll        time.Duration
-	IdlePoll    time.Duration
-	NotifyQuiet time.Duration
+	// Poll is how often the save dirs are stat'ed.
+	Poll time.Duration
 	// SettleTicks is how many consecutive identical stats mean "done writing".
 	SettleTicks int
 	// CacheKeep is how many gob cache entries to keep per save path.
 	CacheKeep int
-	// DisableNotify runs poll-only. The watcher already falls back to this when
-	// fsnotify cannot start; the flag is for a machine where it starts and then
-	// misbehaves.
-	DisableNotify bool
 	// Enrich resolves a freshly parsed snapshot against the game install
 	// (api.Service.Enrich). Without it the board shows raw macros.
 	Enrich func(*x4save.Snapshot)
@@ -82,10 +73,9 @@ type Options struct {
 	Emit func(wire.EventType, any)
 	Logf func(string, ...any)
 
-	// Test seams. Unexported so the public surface stays honest: a caller
+	// Test seam. Unexported so the public surface stays honest: a caller
 	// outside this package has no business substituting a clock.
 	clock clock
-	newFS func() (fsWatcher, error)
 }
 
 // Published is one parsed snapshot and everything the board says about it.
@@ -111,21 +101,19 @@ type Watcher struct {
 
 	published atomic.Pointer[Published]
 	reqs      chan *parseReq // cap 1, newest-wins
-	pokes     chan source    // cap 1, coalescing
+	kicks     chan struct{}  // cap 1, coalescing
 	done      chan struct{}
 	startOnce sync.Once
 
 	mu      sync.Mutex
 	st      state
-	fs      fsWatcher
 	det     *detector
 	waiters []chan struct{}
 }
 
 // state is everything the health and freshness surfaces report. It is guarded
 // by Watcher.mu and touched only through small methods, because it is written
-// from the poller, the parse worker and the notify goroutine and read from
-// every HTTP request.
+// from the poller and the parse worker and read from every HTTP request.
 type state struct {
 	dirs []string
 
@@ -135,15 +123,8 @@ type state struct {
 	lastErr     *wire.SaveError
 	rollback    bool
 
-	notifyActive  bool
-	notifyErr     string
-	notifyDirs    int
-	events        int64
-	pokes         int64
-	lastEventAt   time.Time
 	lastCheckAt   time.Time
 	lastDetectAt  time.Time
-	pollInterval  time.Duration
 	detections    wire.DetectionStats
 	parses        int64
 	retries       int64
@@ -166,12 +147,6 @@ func New(opts Options) *Watcher {
 	if opts.Poll <= 0 {
 		opts.Poll = DefaultPoll
 	}
-	if opts.IdlePoll < opts.Poll {
-		opts.IdlePoll = max(DefaultIdlePoll, opts.Poll)
-	}
-	if opts.NotifyQuiet <= 0 {
-		opts.NotifyQuiet = DefaultNotifyQuiet
-	}
 	if opts.SettleTicks <= 0 {
 		opts.SettleTicks = DefaultSettleTicks
 	}
@@ -192,41 +167,32 @@ func New(opts Options) *Watcher {
 	if opts.clock == nil {
 		opts.clock = realClock{}
 	}
-	if opts.newFS == nil {
-		opts.newFS = newFSNotifyWatcher
-	}
 	w := &Watcher{
 		opts:  opts,
 		clock: opts.clock,
 		roots: opts.Roots,
 		reqs:  make(chan *parseReq, 1),
-		pokes: make(chan source, 1),
+		kicks: make(chan struct{}, 1),
 		done:  make(chan struct{}),
 		det:   newDetector(opts.SettleTicks),
 	}
-	w.st.pollInterval = opts.Poll
 	return w
 }
 
-// Start launches the poller, the parse worker and (unless disabled or
-// unavailable) the filesystem watcher. It returns immediately; Wait blocks for
-// shutdown, which ctx triggers.
+// Start launches the poller and the parse worker. It returns immediately; Wait
+// blocks for shutdown, which ctx triggers.
 func (w *Watcher) Start(ctx context.Context) {
 	w.startOnce.Do(func() {
 		// Bound the cache before anything is added to it: a schema bump makes
 		// every existing entry unreadable, and the watcher is about to write a
 		// new one for every save the game produces.
 		w.gcCache()
-		if !w.opts.DisableNotify {
-			w.startNotify(ctx)
-		}
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() { defer wg.Done(); w.poll(ctx) }()
 		go func() { defer wg.Done(); w.work(ctx) }()
 		go func() {
 			wg.Wait()
-			w.closeFS()
 			w.releaseWaiters()
 			close(w.done)
 		}()
@@ -248,8 +214,8 @@ func (w *Watcher) kick(done chan struct{}) {
 		w.mu.Unlock()
 	}
 	select {
-	case w.pokes <- sourceManual:
-	default: // a poke is already queued; it will pick the waiters up
+	case w.kicks <- struct{}{}:
+	default: // a kick is already queued; it will pick the waiters up
 	}
 }
 
@@ -361,49 +327,27 @@ func (w *Watcher) poll(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case s := <-w.pokes:
-			src = s
-			if s == sourceNotify {
-				w.bump(func(st *state) { st.pokes++ })
-			}
-		case <-w.clock.After(w.pollInterval()):
+		case <-w.kicks:
+			src = sourceManual
+		case <-w.clock.After(w.opts.Poll):
 			src = sourcePoll
 		}
 	}
 }
 
-// pollInterval is the current floor: relaxed while the filesystem watcher is
-// delivering, tight when it is absent, failed, quiet — or when a save is
-// mid-settle. Reported in the health payload so which regime the process is in
-// is never a guess.
-//
-// The mid-settle case is what makes the hybrid actually faster rather than
-// theoretically faster. Events arrive WHILE a save is being written and stop
-// the moment it is finished, so the sighting that proves quiescence can never
-// come from an event — it has to come from the next tick. Relaxing to 10 s
-// there would make the accelerated path SLOWER than a plain 2 s poll, which is
-// the opposite of the point.
-func (w *Watcher) pollInterval() time.Duration {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	d := w.opts.Poll
-	notifyLive := w.st.notifyActive && !w.st.lastEventAt.IsZero() &&
-		w.clock.Now().Sub(w.st.lastEventAt) < w.opts.NotifyQuiet
-	if notifyLive && !w.det.settling() {
-		d = w.opts.IdlePoll
-	}
-	w.st.pollInterval = d
-	return d
-}
-
-// check is one pass: re-derive the watched dirs, stat the newest save, feed the
+// check is one pass: re-derive the save dirs, stat the newest save, feed the
 // settle gate, and dispatch a parse if it fired.
+//
+// The dirs are re-derived every time rather than resolved once at start-up,
+// which is what recovers from a save directory being deleted and recreated — a
+// reinstall, a Proton prefix rebuild, a profile removed. A stat over a handful
+// of directories is cached inode metadata; doing it every 2 s costs nothing
+// worth optimising away.
 func (w *Watcher) check(ctx context.Context, src source) {
 	if ctx.Err() != nil {
 		return
 	}
 	dirs := x4save.SaveDirs(w.roots...)
-	w.syncWatches(dirs)
 
 	var cand candidate
 	if latest, ok := x4save.LatestSave(w.roots...); ok {
@@ -413,9 +357,8 @@ func (w *Watcher) check(ctx context.Context, src source) {
 	w.mu.Lock()
 	w.st.dirs = dirs
 	w.st.lastCheckAt = w.clock.Now()
-	notifyActive := w.st.notifyActive
-	fire := w.det.observe(cand, src, notifyActive)
-	first, firstNotify := w.det.firstSource, w.det.firstNotify
+	fire := w.det.observe(cand, src)
+	first := w.det.firstSource
 	// A caller waiting on a kick is waiting for the pipeline to be DONE with
 	// whatever is newest on disk. If the gate is still settling — the file is
 	// mid-write — the wait continues into the next check rather than answering
@@ -428,17 +371,10 @@ func (w *Watcher) check(ctx context.Context, src source) {
 		w.st.lastDetectAt = w.clock.Now()
 		w.st.detections.Total++
 		switch first {
-		case sourceNotify:
-			w.st.detections.ByNotify++
 		case sourceManual:
 			w.st.detections.ByManual++
 		default:
 			w.st.detections.ByPoll++
-			// A poll detection is only evidence AGAINST fsnotify if fsnotify
-			// was watching when the save first appeared.
-			if firstNotify {
-				w.st.detections.MissedByNotify++
-			}
 		}
 	}
 	w.mu.Unlock()
@@ -744,15 +680,16 @@ func (w *Watcher) Freshness() wire.Freshness {
 	return f
 }
 
-// Health is the watcher's section of the health drawer, and the evidence for
-// D15: the detection counters are how a hybrid that is quietly running on one
-// leg would ever be noticed.
+// Health is the watcher's section of the health drawer: what it is watching,
+// how often, and what that has found. LastCheckAt is the one that matters most
+// — a poll that has stopped ticking is a board that has quietly stopped being
+// live, and the timestamp is how anyone would ever see it.
 func (w *Watcher) Health() wire.WatchHealth {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	h := wire.WatchHealth{
 		Dirs:           append([]string(nil), w.st.dirs...),
-		PollIntervalMS: w.st.pollInterval.Milliseconds(),
+		PollIntervalMS: w.opts.Poll.Milliseconds(),
 		Detections:     w.st.detections,
 		Parses:         w.st.parses,
 		Retries:        w.st.retries,
@@ -762,20 +699,6 @@ func (w *Watcher) Health() wire.WatchHealth {
 	}
 	if len(h.Dirs) == 0 {
 		h.Dirs = w.watchRoots()
-	}
-	if !w.opts.DisableNotify {
-		n := &wire.NotifyHealth{
-			Active: w.st.notifyActive,
-			Error:  w.st.notifyErr,
-			Dirs:   w.st.notifyDirs,
-			Events: w.st.events,
-			Pokes:  w.st.pokes,
-		}
-		if !w.st.lastEventAt.IsZero() {
-			at := w.st.lastEventAt
-			n.LastEventAt = &at
-		}
-		h.Notify = n
 	}
 	if !w.st.lastCheckAt.IsZero() {
 		at := w.st.lastCheckAt

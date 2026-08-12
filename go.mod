@@ -4,7 +4,6 @@ go 1.26.4
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/fsnotify/fsnotify v1.10.1
 	github.com/hashicorp/yamux v0.1.2
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 )

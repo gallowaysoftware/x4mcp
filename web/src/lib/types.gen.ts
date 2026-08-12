@@ -112,25 +112,15 @@ export interface SilencePolicy {
 	lost_s: number /* int */;
 }
 /**
- * WatchHealth is the watcher's own report: what it is watching, how it is
- * finding saves, and what that has cost. It is the health drawer's watch
- * section, and it is also the evidence for D15 — the hybrid detector's
- * counters are how "fsnotify is missing saves" would ever be noticed.
+ * WatchHealth is the watcher's own report: what it is watching, how often, and
+ * what that has cost. It is the health drawer's watch section.
  */
 export interface WatchHealth {
 	dirs: string[];
 	/**
-	 * PollIntervalMS is the CURRENT poll period. It backs off while the
-	 * filesystem watcher is delivering events and tightens when it is not, so a
-	 * reader can tell which regime the process is in.
+	 * PollIntervalMS is the stat-poll period (D1: 2 s, one value, always).
 	 */
 	poll_interval_ms: number /* int64 */;
-	/**
-	 * Notify is the fsnotify accelerator. Absent (nil) means it was never
-	 * asked for; present with Active false means it failed and the poll is
-	 * carrying the whole load, which is a supported state, not an outage.
-	 */
-	notify?: NotifyHealth;
 	detections: DetectionStats;
 	/**
 	 * Parses counts completed parses; Retries counts ErrSaveChanged retries
@@ -140,66 +130,31 @@ export interface WatchHealth {
 	retries: number /* int64 */;
 	parse_errors: number /* int64 */;
 	median_parse_ms?: number /* int64 */;
+	/**
+	 * LastCheckAt is when the poll last ran. A poll that has stopped ticking is
+	 * a board that has quietly stopped being live; this is how it shows.
+	 */
 	last_check_at?: string;
 	last_detect_at?: string;
 	cache: CacheHealth;
 }
 /**
- * NotifyHealth is the filesystem-watcher half of the detector (D15).
- */
-export interface NotifyHealth {
-	/**
-	 * Active is whether the watcher is running. False with an Error is the
-	 * documented degraded mode: inotify watch limits, an unsupported
-	 * filesystem, permissions — the poll alone is still correct.
-	 */
-	active: boolean;
-	error?: string;
-	/**
-	 * Dirs is how many directories are currently watched (a dir can be removed
-	 * and recreated under us; the watcher re-adds it).
-	 */
-	dirs: number /* int */;
-	/**
-	 * Events is raw events received — every create/write/rename/chmod, which
-	 * are deliberately not interpreted, only used as a poke.
-	 */
-	events: number /* int64 */;
-	/**
-	 * Pokes is checks that ran because of an event rather than the ticker.
-	 */
-	pokes: number /* int64 */;
-	last_event_at?: string;
-}
-/**
- * DetectionStats attributes each detected save to whichever half of the hybrid
- * detector saw it FIRST. It is the instrumentation that makes D15 checkable
- * instead of a belief: MissedByNotify climbing while the watcher is active is
- * the evidence that the accelerator cannot be trusted alone — and Total minus
- * MissedByNotify staying flat would be the evidence it is not earning its
- * dependency.
+ * DetectionStats counts detected saves and says what found each one. Manual is
+ * kept apart from the poll for one reason: a player leaning on the refresh
+ * button should not make the poll look like it is doing more work than it is.
  */
 export interface DetectionStats {
 	total: number /* int64 */;
 	/**
-	 * ByNotify is detections whose first sighting came from an fsnotify poke.
-	 */
-	by_notify: number /* int64 */;
-	/**
-	 * ByPoll is detections whose first sighting came from the ticker.
+	 * ByPoll is detections whose first sighting came from the ticker, which is
+	 * every save the game writes on its own.
 	 */
 	by_poll: number /* int64 */;
 	/**
 	 * ByManual is detections whose first sighting came from a Kick — the
-	 * refresh button or the refresh_save tool. Counted apart from the poll so a
-	 * player pressing the button does not read as the accelerator failing.
+	 * refresh button or the refresh_save tool.
 	 */
 	by_manual: number /* int64 */;
-	/**
-	 * MissedByNotify is the subset of ByPoll where the filesystem watcher was
-	 * active and watching the right directory, and still did not see it.
-	 */
-	missed_by_notify: number /* int64 */;
 }
 /**
  * CacheHealth is the gob snapshot cache after the last GC pass.

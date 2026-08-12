@@ -54,69 +54,37 @@ type SilencePolicy struct {
 	LostS      int `json:"lost_s"`
 }
 
-// WatchHealth is the watcher's own report: what it is watching, how it is
-// finding saves, and what that has cost. It is the health drawer's watch
-// section, and it is also the evidence for D15 — the hybrid detector's
-// counters are how "fsnotify is missing saves" would ever be noticed.
+// WatchHealth is the watcher's own report: what it is watching, how often, and
+// what that has cost. It is the health drawer's watch section.
 type WatchHealth struct {
 	Dirs []string `json:"dirs"`
-	// PollIntervalMS is the CURRENT poll period. It backs off while the
-	// filesystem watcher is delivering events and tightens when it is not, so a
-	// reader can tell which regime the process is in.
-	PollIntervalMS int64 `json:"poll_interval_ms"`
-	// Notify is the fsnotify accelerator. Absent (nil) means it was never
-	// asked for; present with Active false means it failed and the poll is
-	// carrying the whole load, which is a supported state, not an outage.
-	Notify     *NotifyHealth  `json:"notify,omitempty"`
-	Detections DetectionStats `json:"detections"`
+	// PollIntervalMS is the stat-poll period (D1: 2 s, one value, always).
+	PollIntervalMS int64          `json:"poll_interval_ms"`
+	Detections     DetectionStats `json:"detections"`
 	// Parses counts completed parses; Retries counts ErrSaveChanged retries
 	// across all of them; ParseErrors counts parses that ended in an error.
-	Parses        int64       `json:"parses"`
-	Retries       int64       `json:"retries"`
-	ParseErrors   int64       `json:"parse_errors"`
-	MedianParseMS int64       `json:"median_parse_ms,omitempty"`
-	LastCheckAt   *time.Time  `json:"last_check_at,omitempty"`
-	LastDetectAt  *time.Time  `json:"last_detect_at,omitempty"`
-	Cache         CacheHealth `json:"cache"`
+	Parses        int64 `json:"parses"`
+	Retries       int64 `json:"retries"`
+	ParseErrors   int64 `json:"parse_errors"`
+	MedianParseMS int64 `json:"median_parse_ms,omitempty"`
+	// LastCheckAt is when the poll last ran. A poll that has stopped ticking is
+	// a board that has quietly stopped being live; this is how it shows.
+	LastCheckAt  *time.Time  `json:"last_check_at,omitempty"`
+	LastDetectAt *time.Time  `json:"last_detect_at,omitempty"`
+	Cache        CacheHealth `json:"cache"`
 }
 
-// NotifyHealth is the filesystem-watcher half of the detector (D15).
-type NotifyHealth struct {
-	// Active is whether the watcher is running. False with an Error is the
-	// documented degraded mode: inotify watch limits, an unsupported
-	// filesystem, permissions — the poll alone is still correct.
-	Active bool   `json:"active"`
-	Error  string `json:"error,omitempty"`
-	// Dirs is how many directories are currently watched (a dir can be removed
-	// and recreated under us; the watcher re-adds it).
-	Dirs int `json:"dirs"`
-	// Events is raw events received — every create/write/rename/chmod, which
-	// are deliberately not interpreted, only used as a poke.
-	Events int64 `json:"events"`
-	// Pokes is checks that ran because of an event rather than the ticker.
-	Pokes       int64      `json:"pokes"`
-	LastEventAt *time.Time `json:"last_event_at,omitempty"`
-}
-
-// DetectionStats attributes each detected save to whichever half of the hybrid
-// detector saw it FIRST. It is the instrumentation that makes D15 checkable
-// instead of a belief: MissedByNotify climbing while the watcher is active is
-// the evidence that the accelerator cannot be trusted alone — and Total minus
-// MissedByNotify staying flat would be the evidence it is not earning its
-// dependency.
+// DetectionStats counts detected saves and says what found each one. Manual is
+// kept apart from the poll for one reason: a player leaning on the refresh
+// button should not make the poll look like it is doing more work than it is.
 type DetectionStats struct {
 	Total int64 `json:"total"`
-	// ByNotify is detections whose first sighting came from an fsnotify poke.
-	ByNotify int64 `json:"by_notify"`
-	// ByPoll is detections whose first sighting came from the ticker.
+	// ByPoll is detections whose first sighting came from the ticker, which is
+	// every save the game writes on its own.
 	ByPoll int64 `json:"by_poll"`
 	// ByManual is detections whose first sighting came from a Kick — the
-	// refresh button or the refresh_save tool. Counted apart from the poll so a
-	// player pressing the button does not read as the accelerator failing.
+	// refresh button or the refresh_save tool.
 	ByManual int64 `json:"by_manual"`
-	// MissedByNotify is the subset of ByPoll where the filesystem watcher was
-	// active and watching the right directory, and still did not see it.
-	MissedByNotify int64 `json:"missed_by_notify"`
 }
 
 // CacheHealth is the gob snapshot cache after the last GC pass.

@@ -43,12 +43,11 @@ func TestEndToEndSaveToStream(t *testing.T) {
 	hub := NewHub()
 	w := watch.New(watch.Options{
 		// Faster than production so the test is not mostly sleeping; the
-		// mechanism is identical, and the accelerator makes the poll interval
-		// irrelevant to detection anyway.
-		Poll:     50 * time.Millisecond,
-		IdlePoll: 200 * time.Millisecond,
-		Emit:     hub.Publish,
-		Logf:     func(string, ...any) {},
+		// mechanism is identical at 2 s, and the number of ticks a detection
+		// costs is the same either way.
+		Poll: 50 * time.Millisecond,
+		Emit: hub.Publish,
+		Logf: func(string, ...any) {},
 	})
 	w.Start(ctx)
 	defer func() { cancel(); w.Wait() }()

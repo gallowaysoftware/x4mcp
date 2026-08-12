@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/pequalsnp/x4mcp/internal/wire"
 	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
 
+// The poll is the whole detector (D1, D15): a tick sees the file, the next tick
+// proves it stopped changing, and only then is 5–16 s of CPU spent on it.
 func TestWatcherDetectsBySettledPoll(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -24,9 +25,19 @@ func TestWatcherDetectsBySettledPoll(t *testing.T) {
 	if f := r.w.Freshness(); f.State != wire.FreshnessStateStartup {
 		t.Errorf("state before any save = %q, want startup", f.State)
 	}
+	if got := r.w.Health().PollIntervalMS; got != DefaultPoll.Milliseconds() {
+		t.Errorf("poll interval = %d ms, want the 2 s floor D1 specifies", got)
+	}
 
 	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
-	r.settle()
+
+	// One sighting is not a finished save. X4 spends 20–60 s writing one, so a
+	// file that merely EXISTS is very often a file being written.
+	r.tick()
+	if n := r.rec.count(wire.EventTypeSaveDetected); n != 0 {
+		t.Fatalf("detected after a single sighting (%d events); the settle gate is not holding", n)
+	}
+	r.tick()
 
 	meta := r.rec.wait(t, wire.EventTypeSnapshotReady, 1).(wire.SnapshotMeta)
 	if meta.GameGUID != "guid-a" {
@@ -63,36 +74,8 @@ func TestWatcherDetectsBySettledPoll(t *testing.T) {
 	}
 }
 
-// The accelerator's whole claim is that it removes waiting: an event has to
-// produce a detection with the clock standing still. If this test ever needs a
-// tick to pass, fsnotify is contributing nothing and D15 is wrong.
-func TestWatcherDetectsByNotifyPokeWithoutTicking(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	r := newRig(t)
-	r.start(ctx)
-
-	path := r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
-	// X4 writing a save produces some sequence of these; which one arrives is
-	// never interpreted, so any of them must be enough to provoke a check.
-	r.pokeFS(path, fsnotify.Create)
-	r.pokeFS(path, fsnotify.Write)
-
-	meta := r.rec.wait(t, wire.EventTypeSnapshotReady, 1).(wire.SnapshotMeta)
-	if meta.Save.Path != path {
-		t.Errorf("parsed %q, want %q", meta.Save.Path, path)
-	}
-	h := r.w.Health()
-	if h.Detections.ByNotify != 1 || h.Detections.MissedByNotify != 0 {
-		t.Errorf("detections = %+v, want the fs watcher credited", h.Detections)
-	}
-	if h.Notify == nil || !h.Notify.Active || h.Notify.Events != 2 || h.Notify.Pokes != 2 {
-		t.Errorf("notify health = %+v, want 2 events and 2 pokes", h.Notify)
-	}
-}
-
-// A save the player asked for is not the accelerator missing one: a refresh
-// press must not read as evidence against fsnotify.
+// A save the player asked for is not one the poll was too slow to find, so the
+// refresh button is counted apart from the ticker.
 func TestWatcherAttributesAManualKick(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -100,96 +83,17 @@ func TestWatcherAttributesAManualKick(t *testing.T) {
 	r.start(ctx)
 
 	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
-	// Two kicks, no tick and no event: the settle can only be manual.
+	// Two kicks with the clock standing still: the settle can only be manual.
 	r.kick()
 	r.kick()
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
 
 	d := r.w.Health().Detections
-	if d.ByManual != 1 || d.ByPoll != 0 || d.ByNotify != 0 || d.MissedByNotify != 0 {
+	if d.ByManual != 1 || d.ByPoll != 0 {
 		t.Errorf("detections = %+v, want the one detection credited to the kick", d)
 	}
-	if d.Total != d.ByManual+d.ByPoll+d.ByNotify {
+	if d.Total != d.ByManual+d.ByPoll {
 		t.Errorf("detections = %+v, want the total to be the sum of its parts", d)
-	}
-}
-
-// The guarantee half: with fsnotify unavailable, the same save is still found.
-// A machine at its inotify limit is a supported machine, not a broken one.
-func TestWatcherDetectsWhenNotifyCannotStart(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	var logged []string
-	boom := errors.New("too many open files")
-	r := newRig(t, func(o *Options) {
-		o.newFS = func() (fsWatcher, error) { return nil, boom }
-		o.Logf = func(format string, args ...any) { logged = append(logged, format) }
-	})
-	r.start(ctx)
-
-	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
-	r.settle()
-	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
-
-	h := r.w.Health()
-	if h.Notify == nil || h.Notify.Active {
-		t.Fatalf("notify health = %+v, want present and inactive", h.Notify)
-	}
-	if !strings.Contains(h.Notify.Error, boom.Error()) {
-		t.Errorf("notify error = %q, want the reason it could not start", h.Notify.Error)
-	}
-	if h.Detections.ByPoll != 1 || h.Detections.MissedByNotify != 0 {
-		// Not a miss: the watcher was never up, so it cannot have missed
-		// anything. Counting it would poison the evidence for D15.
-		t.Errorf("detections = %+v, want one poll detection and no miss", h.Detections)
-	}
-	if len(logged) == 0 || !strings.Contains(logged[0], "WARN") {
-		t.Errorf("logged = %v, want one WARN about the degraded mode", logged)
-	}
-	if got := r.w.Health().PollIntervalMS; got != DefaultPoll.Milliseconds() {
-		t.Errorf("poll interval = %d ms, want the tight floor %d ms", got, DefaultPoll.Milliseconds())
-	}
-}
-
-// A save the fs watcher was up for and did not report is the number that would
-// prove the accelerator cannot be trusted alone. It has to be counted
-// separately from "the poll happened to get there first".
-func TestWatcherCountsSavesTheNotifierMissed(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	r := newRig(t)
-	r.start(ctx)
-
-	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
-	r.settle() // no fsnotify event was ever delivered
-	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
-
-	h := r.w.Health()
-	if h.Detections.ByPoll != 1 || h.Detections.MissedByNotify != 1 {
-		t.Errorf("detections = %+v, want the miss recorded against the fs watcher", h.Detections)
-	}
-}
-
-// The poll relaxes while events are arriving and tightens when they stop: the
-// backstop should be cheap when it is redundant and prompt when it is not.
-func TestWatcherPollIntervalFollowsTheNotifier(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	r := newRig(t)
-	r.start(ctx)
-
-	if got := r.w.Health().PollIntervalMS; got != DefaultPoll.Milliseconds() {
-		t.Errorf("before any event: %d ms, want the tight floor", got)
-	}
-	r.pokeFS(filepath.Join(r.dir, "quicksave.xml.gz"), fsnotify.Write)
-	if got := r.w.Health().PollIntervalMS; got != DefaultIdlePoll.Milliseconds() {
-		t.Errorf("while events arrive: %d ms, want the relaxed floor", got)
-	}
-	// Long enough with nothing from the watcher and it stops counting.
-	r.advance(DefaultNotifyQuiet + time.Minute)
-	r.tick()
-	if got := r.w.Health().PollIntervalMS; got != DefaultPoll.Milliseconds() {
-		t.Errorf("after the watcher went quiet: %d ms, want the tight floor back", got)
 	}
 }
 
@@ -657,35 +561,29 @@ func TestWatcherStopsCleanly(t *testing.T) {
 		return ch
 	}():
 	}
-	r.fs.mu.Lock()
-	closed := r.fs.closed
-	r.fs.mu.Unlock()
-	if !closed {
-		t.Error("the filesystem watcher was left open")
-	}
 }
 
-// Everything above drives a FAKE filesystem watcher, which proves the plumbing
-// and nothing about the dependency. This one uses the real fsnotify against a
-// real directory, with the poll set far enough out that it cannot be what finds
-// the save: if inotify does not deliver here, nothing arrives at all.
+// Everything above drives a FAKE clock, which proves the sequencing and nothing
+// about the filesystem. This one is the real thing end to end: a real temp
+// directory, a real wall clock, a real save file dropped into it while the
+// watcher is running, and no help of any kind — no kick, no event, nothing but
+// stat() on a timer.
 //
-// It skips rather than hangs where the watcher cannot start (a container at its
-// inotify limit is exactly the machine D15 says must still work — the poll
-// covers it there, and this test is not about the poll).
-func TestWatcherRealFSNotifyDeliversWithoutWaitingForThePoll(t *testing.T) {
+// The interval is scaled down so the test is not mostly sleeping (the mechanism
+// is identical at 2 s; the number of ticks needed is the same), and the latency
+// is logged in ticks as well as milliseconds so a change in the settle gate
+// shows up here as a number rather than as a pass.
+func TestWatcherRealPollDetectsASaveDroppedIntoADirectory(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	dir := t.TempDir()
 	t.Setenv("X4MCP_CACHE_DIR", t.TempDir())
 	rec := newRecorder()
 
+	const poll = 100 * time.Millisecond
 	w := New(Options{
-		Roots: []string{dir},
-		// A poll that cannot possibly fire inside this test: the only thing
-		// that can produce a detection is an inotify event.
-		Poll:        10 * time.Minute,
-		IdlePoll:    10 * time.Minute,
-		SettleTicks: 2,
+		Roots:       []string{dir},
+		Poll:        poll,
+		SettleTicks: DefaultSettleTicks,
 		Emit:        rec.emit,
 		Logf:        func(string, ...any) {},
 		Load: func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
@@ -697,47 +595,30 @@ func TestWatcherRealFSNotifyDeliversWithoutWaitingForThePoll(t *testing.T) {
 	// goroutines stop, and they stop when ctx does.
 	defer func() { cancel(); w.Wait() }()
 
-	// Give the watch a moment to be added (the first check runs on start-up).
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if h := w.Health(); h.Notify != nil && h.Notify.Active && h.Notify.Dirs > 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Skip("fsnotify could not watch the temp dir on this machine; the poll covers that case")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
 	start := time.Now()
 	writeSave(t, filepath.Join(dir, "quicksave.xml.gz"), "guid-a", 1000, 500, time.Now())
-	// Keep the directory stirring the way a real save does. The events X4
-	// produces stop the instant the file is final, so the sighting that PROVES
-	// quiescence can only ever come from a tick — here the poll is 10 minutes
-	// away, so chmod (an event that changes neither size nor mtime) stands in
-	// for it, and also proves the loop does not care which op it was handed.
-	stop := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			_ = os.Chmod(filepath.Join(dir, "quicksave.xml.gz"), 0o644)
-			time.Sleep(20 * time.Millisecond)
-		}
-	}()
-	rec.wait(t, wire.EventTypeSnapshotReady, 1)
-	close(stop)
-	t.Logf("real fsnotify: detected and published in %s with the poll at 10m", time.Since(start))
+	meta := rec.wait(t, wire.EventTypeSnapshotReady, 1).(wire.SnapshotMeta)
+	latency := time.Since(start)
+	t.Logf("real poll at %s: written -> snapshot.ready in %s (%.1f ticks)",
+		poll, latency.Round(time.Millisecond), float64(latency)/float64(poll))
 
-	h := w.Health()
-	if h.Notify.Events == 0 {
-		t.Error("no fsnotify events were received")
+	if meta.Save.Name != "quicksave" {
+		t.Errorf("published %q, want the save that was dropped in", meta.Save.Name)
 	}
-	if h.Detections.ByNotify != 1 {
-		t.Errorf("detections = %+v, want the one detection credited to fsnotify", h.Detections)
+	// The settle gate costs at least one interval, and the whole detection has
+	// to fit inside a handful: a poll that needed many ticks would mean
+	// sightings are being dropped somewhere.
+	if latency < poll {
+		t.Errorf("detected in %s, faster than one %s tick — the settle gate cannot have run", latency, poll)
+	}
+	if latency > 20*poll {
+		t.Errorf("detected in %s, want a few %s ticks", latency, poll)
+	}
+	if d := w.Health().Detections; d.Total != 1 || d.ByPoll != 1 {
+		t.Errorf("detections = %+v, want exactly one, found by the poll", d)
+	}
+	if h := w.Health(); h.LastCheckAt == nil || h.LastCheckAt.Before(start) {
+		t.Errorf("last check = %v, want a stamp from this run: a poll that stops ticking must be visible", h.LastCheckAt)
 	}
 }
 
@@ -778,9 +659,11 @@ func TestSnapshotReportsWhyItHasNothing(t *testing.T) {
 }
 
 // A save directory can disappear under the watcher — a Proton prefix rebuilt, a
-// reinstall, a profile deleted — and fsnotify drops the watch when it does.
-// Nothing would ever re-add it if the watch list were only built at start-up.
-func TestWatchListIsResyncedAfterADirectoryIsRecreated(t *testing.T) {
+// reinstall, a profile deleted — and come back later. Because every pass
+// re-derives the dirs from the roots instead of resolving them once at start-up,
+// that costs nothing: the readdir that finds the newest save is the same readdir
+// that notices the directory is there again.
+func TestWatchDirsFollowTheFilesystem(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	root := t.TempDir()
@@ -792,22 +675,23 @@ func TestWatchListIsResyncedAfterADirectoryIsRecreated(t *testing.T) {
 	r.start(ctx)
 	r.tick()
 
-	if got := r.fs.WatchList(); len(got) != 2 {
+	if got := r.w.Health().Dirs; len(got) != 2 {
 		t.Fatalf("watching %v, want the root and the save dir", got)
 	}
 	if err := os.RemoveAll(filepath.Join(root, "71052239")); err != nil {
 		t.Fatal(err)
 	}
 	r.tick()
-	if got := r.fs.WatchList(); len(got) != 1 {
+	if got := r.w.Health().Dirs; len(got) != 1 {
 		t.Errorf("watching %v after the dir went away, want just the root", got)
 	}
 
-	// Recreated: the watch comes back, and a save in it is still found.
+	// Recreated: the dir is back in the watch list, and a save in it is found
+	// with no restart and no re-registration of anything.
 	writeSave(t, filepath.Join(profile, "quicksave.xml.gz"), "guid-a", 1000, 500, r.clock.Now())
 	r.settle()
-	if got := r.fs.WatchList(); len(got) != 2 {
-		t.Errorf("watching %v after the dir came back, want it re-added", got)
+	if got := r.w.Health().Dirs; len(got) != 2 {
+		t.Errorf("watching %v after the dir came back, want it back in the list", got)
 	}
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
 }

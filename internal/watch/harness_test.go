@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/pequalsnp/x4mcp/internal/wire"
 	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
@@ -30,7 +29,7 @@ type fakeClock struct {
 	waiters []*fakeWaiter
 	// parks counts every timer ever registered. The loop parks on a timer at
 	// the end of each pass, so "one more park than before" is exactly "the pass
-	// I triggered has finished" — including the passes a poke interrupts, where
+	// I triggered has finished" — including the passes a kick interrupts, where
 	// the abandoned timer is still sitting in waiters and counting it would
 	// prove nothing.
 	parks int64
@@ -106,72 +105,6 @@ func (c *fakeClock) awaitPark(t *testing.T, n int64) {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatalf("the watch loop never parked again (parks was %d)", n)
-	}
-}
-
-// ---- fake filesystem watcher ---------------------------------------------
-
-type fakeFS struct {
-	mu     sync.Mutex
-	dirs   []string
-	events chan fsnotify.Event
-	errs   chan error
-	closed bool
-}
-
-func newFakeFS() *fakeFS {
-	return &fakeFS{events: make(chan fsnotify.Event, 16), errs: make(chan error, 4)}
-}
-
-func (f *fakeFS) Add(dir string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, d := range f.dirs {
-		if d == dir {
-			return nil
-		}
-	}
-	f.dirs = append(f.dirs, dir)
-	return nil
-}
-
-func (f *fakeFS) Remove(dir string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	kept := f.dirs[:0]
-	for _, d := range f.dirs {
-		if d != dir {
-			kept = append(kept, d)
-		}
-	}
-	f.dirs = kept
-	return nil
-}
-
-func (f *fakeFS) WatchList() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.dirs...)
-}
-
-func (f *fakeFS) Events() <-chan fsnotify.Event { return f.events }
-func (f *fakeFS) Errors() <-chan error          { return f.errs }
-
-func (f *fakeFS) Close() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.closed = true
-	return nil
-}
-
-// poke delivers an event the way X4 would: some file operation, in some
-// directory, of a kind nothing downstream is allowed to interpret.
-func (f *fakeFS) poke(t *testing.T, path string, op fsnotify.Op) {
-	t.Helper()
-	select {
-	case f.events <- fsnotify.Event{Name: path, Op: op}:
-	case <-time.After(2 * time.Second):
-		t.Fatal("fake fsnotify event queue is full")
 	}
 }
 
@@ -302,13 +235,12 @@ func stubSnapshot(path, guid string, gameTime float64, money int64) *x4save.Snap
 	}
 }
 
-// rig is a watcher wired to a fake clock, a fake filesystem watcher and a
-// scripted loader, over a temp save dir. Nothing in it touches a real save.
+// rig is a watcher wired to a fake clock and a scripted loader, over a temp
+// save dir. Nothing in it touches a real save.
 type rig struct {
 	t     *testing.T
 	dir   string
 	clock *fakeClock
-	fs    *fakeFS
 	rec   *recorder
 	w     *Watcher
 	load  func(context.Context, string, x4save.LoadOptions) (*x4save.Snapshot, error)
@@ -318,7 +250,7 @@ func newRig(t *testing.T, mut ...func(*Options)) *rig {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("X4MCP_CACHE_DIR", t.TempDir())
-	r := &rig{t: t, dir: dir, clock: newFakeClock(), fs: newFakeFS(), rec: newRecorder()}
+	r := &rig{t: t, dir: dir, clock: newFakeClock(), rec: newRecorder()}
 	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return stubSnapshot(path, "guid-a", 1000, 500), nil
 	}
@@ -330,7 +262,6 @@ func newRig(t *testing.T, mut ...func(*Options)) *rig {
 			return r.load(ctx, path, lo)
 		},
 		clock: r.clock,
-		newFS: func() (fsWatcher, error) { return r.fs, nil },
 	}
 	for _, m := range mut {
 		m(&opts)
@@ -346,8 +277,8 @@ func (r *rig) start(ctx context.Context) {
 	r.clock.awaitPark(r.t, 0)
 }
 
-// tick advances past any poll interval and waits for the resulting check.
-func (r *rig) tick() { r.advance(DefaultIdlePoll * 2) }
+// tick advances past the poll interval and waits for the resulting check.
+func (r *rig) tick() { r.advance(DefaultPoll * 2) }
 
 // advance moves the clock by d and waits for the pass it provokes to finish.
 //
@@ -371,15 +302,6 @@ func (r *rig) kick() {
 	r.t.Helper()
 	n := r.clock.parked()
 	r.w.Kick()
-	r.clock.awaitPark(r.t, n)
-}
-
-// pokeFS delivers a filesystem event and waits for the check it provokes —
-// no clock advance, which is the whole point of the accelerator.
-func (r *rig) pokeFS(path string, op fsnotify.Op) {
-	r.t.Helper()
-	n := r.clock.parked()
-	r.fs.poke(r.t, path, op)
 	r.clock.awaitPark(r.t, n)
 }
 

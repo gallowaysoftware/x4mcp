@@ -85,7 +85,7 @@ func TestDetectorSettleGate(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			d := newDetector(DefaultSettleTicks)
 			for i, cand := range c.seq {
-				if got := d.observe(cand, sourcePoll, false); got != c.want[i] {
+				if got := d.observe(cand, sourcePoll); got != c.want[i] {
 					t.Errorf("sighting %d (%s size=%d): parse=%v, want %v",
 						i, cand.path, cand.size, got, c.want[i])
 				}
@@ -94,9 +94,10 @@ func TestDetectorSettleGate(t *testing.T) {
 	}
 }
 
-// Attribution is the evidence for D15. It has to survive the settle gate: the
-// mechanism that saw the save FIRST is the one that gets the credit, even when
-// the sighting that finally settles it comes from the other one.
+// Attribution has to survive the settle gate: whatever saw the save FIRST gets
+// the credit, even when the sighting that finally settles it came from the
+// other one. A kick that lands on a save the ticker had already spotted is the
+// ticker's find, not the button's.
 func TestDetectorAttributesFirstSighting(t *testing.T) {
 	t0 := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)
 	c := candidate{path: "/saves/quicksave.xml.gz", size: 100, modTime: t0}
@@ -106,22 +107,18 @@ func TestDetectorAttributesFirstSighting(t *testing.T) {
 		first, then source
 		want        source
 	}{
-		{name: "watcher first", first: sourceNotify, then: sourcePoll, want: sourceNotify},
-		{name: "poll first", first: sourcePoll, then: sourceNotify, want: sourcePoll},
+		{name: "poll first", first: sourcePoll, then: sourceManual, want: sourcePoll},
 		{name: "manual kick first", first: sourceManual, then: sourcePoll, want: sourceManual},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			d := newDetector(DefaultSettleTicks)
-			d.observe(c, tc.first, true)
-			if !d.observe(c, tc.then, true) {
+			d.observe(c, tc.first)
+			if !d.observe(c, tc.then) {
 				t.Fatal("second identical sighting should settle")
 			}
 			if d.firstSource != tc.want {
 				t.Errorf("firstSource = %s, want %s", d.firstSource, tc.want)
-			}
-			if !d.firstNotify {
-				t.Error("firstNotify should record that the fs watcher was up")
 			}
 		})
 	}

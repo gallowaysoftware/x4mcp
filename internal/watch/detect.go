@@ -2,22 +2,18 @@ package watch
 
 import "time"
 
-// source is which half of the hybrid detector saw a save first (D15). It is
-// carried through the settle gate so a detection can be attributed after the
-// fact — the counters in the health payload are the only way anyone will ever
-// find out whether fsnotify is missing saves in practice.
+// source is what caused the sighting that first saw a save (D1, D15). The
+// ticker finds everything on its own; a manual kick is counted apart from it so
+// that a player pressing refresh does not read as the poll having been slow.
 type source int
 
 const (
-	sourcePoll   source = iota // the ticker: the correctness floor
-	sourceNotify               // an fsnotify event poked the checker
+	sourcePoll   source = iota // the ticker: the whole detector
 	sourceManual               // Kick(): refresh_save, or POST /api/admin/refresh-save
 )
 
 func (s source) String() string {
 	switch s {
-	case sourceNotify:
-		return "fsnotify"
 	case sourceManual:
 		return "manual"
 	default:
@@ -46,9 +42,9 @@ func (c candidate) same(o candidate) bool {
 //
 // It is separated from the loop that feeds it because everything interesting
 // about detection is a SEQUENCE — a file growing, a quicksave replaced by an
-// autosave mid-write, the same save seen twice by two different mechanisms —
-// and a sequence is testable in a table exactly when no clock, no filesystem
-// and no goroutine is involved in deciding it.
+// autosave mid-write, a save that failed to parse sitting there unchanged — and
+// a sequence is testable in a table exactly when no clock, no filesystem and no
+// goroutine is involved in deciding it.
 type detector struct {
 	// settleTicks is how many consecutive identical sightings mean "done
 	// writing". Two is the floor that means anything: one is just "I saw it".
@@ -56,11 +52,8 @@ type detector struct {
 
 	cur    candidate // the sighting being watched for stability
 	stable int       // consecutive sightings identical to cur
-	// firstSource is who saw cur first, and whether the filesystem watcher was
-	// running at that moment — an attribution is only evidence against fsnotify
-	// if fsnotify was actually watching.
+	// firstSource is what saw cur first: the ticker, or a kick that beat it.
 	firstSource source
-	firstNotify bool
 	// dispatched is the last candidate handed to the parse worker. It is set on
 	// DISPATCH, not on success: a save that fails to parse must not be retried
 	// every tick forever, so it is only reconsidered when the file changes.
@@ -74,18 +67,9 @@ func newDetector(settleTicks int) *detector {
 	return &detector{settleTicks: settleTicks}
 }
 
-// settling reports whether a save has been seen but not yet proved finished.
-// The poll runs at its tight interval while this is true: the sighting that
-// settles a save can only come from a tick, because the events stop arriving
-// exactly when the file stops changing.
-func (d *detector) settling() bool {
-	return !d.cur.zero() && d.stable > 0 && d.stable < d.settleTicks && !d.cur.same(d.dispatched)
-}
-
 // observe folds one sighting of the newest save into the gate and reports
-// whether it should be parsed now. notifyActive says whether the filesystem
-// watcher was running, for the attribution counters.
-func (d *detector) observe(c candidate, src source, notifyActive bool) bool {
+// whether it should be parsed now.
+func (d *detector) observe(c candidate, src source) bool {
 	if c.zero() {
 		// No saves at all — the startup state on a fresh machine. Forget any
 		// half-settled candidate; a save appearing later starts over.
@@ -101,7 +85,7 @@ func (d *detector) observe(c candidate, src source, notifyActive bool) bool {
 		return false
 	case !c.same(d.cur):
 		d.cur, d.stable = c, 1
-		d.firstSource, d.firstNotify = src, notifyActive
+		d.firstSource = src
 		return false
 	default:
 		d.stable++
