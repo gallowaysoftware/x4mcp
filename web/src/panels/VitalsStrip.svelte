@@ -14,6 +14,13 @@
 	 * change-against-memory, and a number that shifts left when it loses a digit
 	 * has to be re-read from scratch every time.
 	 *
+	 * The frozen box belongs to the CELL, not to the value: the `∅` branch and
+	 * the number branch render inside the same `.cell` span, and `UnknownValue`
+	 * takes the line box of the type it stands in for. Hanging the width off
+	 * `.val` — which exists only in the known branch — means the whole strip
+	 * jumps the moment the first save lands, which is the one transition every
+	 * board makes, once, while the player is watching it.
+	 *
 	 * **Standing counts carry no severity suffix** (design §2's amber lifecycle).
 	 * `IDLE 6` is a fact, not an alarm — a count earns its `▲` only while its
 	 * condition set holds something new since the player last touched the board.
@@ -37,22 +44,41 @@
 
 	let { board, onhealth }: Props = $props();
 
+	/** The one reason four different cells share, written once. */
+	const PARSE_PENDING = 'no save has been parsed yet';
+
 	const vitals = $derived(board.vitals);
 	const credits = $derived(vitals.credits);
 	const delta = $derived(vitals.credits_delta);
 	const series = $derived((vitals.credits_series ?? []).map((s) => s.credits));
-	const wars = $derived(vitals.wars ?? []);
+	/**
+	 * ABSENT is not "no wars". The server sends no war data at all until the F3
+	 * schema bump, so `undefined` means the board has never looked — and "NO
+	 * WARS SEEN" from a build with no war data source is a false all-clear about
+	 * the one subject the player most wants an all-clear about. An empty array
+	 * is a real observation and keeps its copy.
+	 */
+	const wars = $derived(vitals.wars);
 
 	/**
-	 * The four counts, in their frozen order. `published` gates every one of
-	 * them: before the first parse the wire's counts are plain zeros, and "0
-	 * ships" is a claim nobody made.
+	 * The four counts, in their frozen order.
+	 *
+	 * Two different unknowns gate them. `published` is "no save has been parsed
+	 * yet" — the wire's counts are plain zeros before the first parse, and "0
+	 * ships" is a claim nobody made. An absent VALUE is the stronger one: this
+	 * build cannot compute that field at all (threats needs the F3 bump), so no
+	 * parse will ever fill it in and `hasSnapshot` is the wrong question.
 	 */
 	const counts = $derived([
-		{ key: 'fleet', label: 'FLEET', value: vitals.counts.fleet },
-		{ key: 'stations', label: 'STN', value: vitals.counts.stations },
-		{ key: 'idle', label: 'IDLE', value: vitals.counts.idle },
-		{ key: 'threats', label: 'THREAT', value: vitals.counts.threats },
+		{ key: 'fleet', label: 'FLEET', value: vitals.counts.fleet, reason: PARSE_PENDING },
+		{ key: 'stations', label: 'STN', value: vitals.counts.stations, reason: PARSE_PENDING },
+		{ key: 'idle', label: 'IDLE', value: vitals.counts.idle, reason: PARSE_PENDING },
+		{
+			key: 'threats',
+			label: 'THREAT',
+			value: vitals.counts.threats,
+			reason: 'this build cannot see attackers — threat vision lands with the F3 schema bump',
+		},
 	]);
 </script>
 
@@ -60,21 +86,29 @@
 	<div class="v1">
 		<span class="field field-credits">
 			<span class="t-micro lbl">CREDITS</span>
-			{#if credits === undefined}
-				<UnknownValue label="credits" reason="no save has been parsed yet" />
-			{:else}
-				<span class="t-glance val">{formatCredits(credits)}<span class="unit">{CREDITS_UNIT}</span></span>
-			{/if}
+			<span class="cell cell-credits">
+				{#if credits === undefined}
+					<UnknownValue size="glance" label="credits" reason={PARSE_PENDING} />
+				{:else}
+					<span class="t-glance val">{formatCredits(credits)}<span class="unit">{CREDITS_UNIT}</span></span>
+				{/if}
+			</span>
 		</span>
 
 		<span class="field field-delta">
-			{#if delta === undefined}
-				<UnknownValue label="no baseline" reason="nothing to compare against yet — one snapshot, or a new playthrough" />
-			{:else}
-				<!-- design §3: signed, true minus, and NEVER coloured. The sign
-				     carries direction; colour on this board means severity. -->
-				<span class="t-emph val">{DELTA} {formatDelta(delta)}</span>
-			{/if}
+			<span class="cell cell-delta">
+				{#if delta === undefined}
+					<UnknownValue
+						size="emph"
+						label="no baseline"
+						reason="nothing to compare against yet — one snapshot, or a new playthrough"
+					/>
+				{:else}
+					<!-- design §3: signed, true minus, and NEVER coloured. The sign
+					     carries direction; colour on this board means severity. -->
+					<span class="t-emph val">{DELTA} {formatDelta(delta)}</span>
+				{/if}
+			</span>
 		</span>
 
 		<span class="field field-spark">
@@ -85,32 +119,47 @@
 		{#each counts as count (count.key)}
 			<span class="field field-count">
 				<span class="t-micro lbl">{count.label}</span>
-				{#if board.published}
-					<span class="t-num-l val">{formatCount(count.value)}</span>
+				<span class="cell cell-count">
+					{#if board.published && count.value !== undefined}
+						<span class="t-num-l val">{formatCount(count.value)}</span>
+					{:else}
+						<UnknownValue size="num-l" label={count.label.toLowerCase()} reason={count.reason} />
+					{/if}
+				</span>
+				<!-- The suffix gets a cell of its own for the same reason the value
+				     does: a `▲` that appears when something goes new must not push
+				     the next count sideways. -->
+				<span class="cell cell-sev">
 					{#if board.countHasNew(`${count.key}:`)}
 						<SeverityDot sev="amber" label="{count.label} has something new" />
 					{/if}
-				{:else}
-					<UnknownValue label={count.label.toLowerCase()} reason="no save has been parsed yet" />
-				{/if}
+				</span>
 			</span>
 		{/each}
 
 		<span class="field field-wars">
-			{#if wars.length === 0}
-				<span class="t-micro lbl quiet">NO WARS SEEN</span>
-			{:else}
-				{#each wars as war (war.faction_a + war.faction_b)}
-					<!-- design §4: presence + offer counts only. No phase words —
-					     "who is winning" is an interpretation, and this is an
-					     instrument. -->
-					<span class="t-micro war"
-						>{shortFaction(war.faction_a)}{ARROWS}{shortFaction(war.faction_b)}
-						{MIDDOT}
-						{war.offers}</span
-					>
-				{/each}
-			{/if}
+			<span class="cell cell-wars">
+				{#if wars === undefined}
+					<UnknownValue
+						size="micro"
+						label="wars"
+						reason="this build has no war data source — war chips land with the F3 schema bump"
+					/>
+				{:else if wars.length === 0}
+					<span class="t-micro lbl quiet">NO WARS SEEN</span>
+				{:else}
+					{#each wars as war (war.faction_a + war.faction_b)}
+						<!-- design §4: presence + offer counts only. No phase words —
+						     "who is winning" is an interpretation, and this is an
+						     instrument. -->
+						<span class="t-micro war"
+							>{shortFaction(war.faction_a)}{ARROWS}{shortFaction(war.faction_b)}
+							{MIDDOT}
+							{war.offers}</span
+						>
+					{/each}
+				{/if}
+			</span>
 		</span>
 	</div>
 
@@ -165,23 +214,35 @@
 		margin-left: 6px;
 		color: var(--text-mid);
 	}
-	/* The frozen slots. Widths are in `ch` because the face is monospace: one
+	/* The frozen cells. Widths are in `ch` because the face is monospace: one
 	 * `ch` is one glyph, so these are literally "this many characters wide" and
-	 * they hold whatever the empire grows into. */
-	.field-credits .val {
+	 * they hold whatever the empire grows into.
+	 *
+	 * They hang off the CELL, never off `.val`: `.val` exists only in the known
+	 * branch, so a width there is a width that arrives with the first save.
+	 * (`cell`, not `slot` — `slot` is app.css's panel box, and reusing the name
+	 * would draw a bordered panel around every number on the strip.) */
+	.cell {
 		display: inline-block;
+	}
+	.cell-credits {
 		min-width: 15ch;
 	}
-	.field-delta {
+	.cell-delta {
 		min-width: 14ch;
 	}
 	.field-spark {
 		min-width: 130px;
 	}
-	.field-count .val {
-		display: inline-block;
+	.cell-count {
 		min-width: 4ch;
 		text-align: right;
+	}
+	.cell-sev {
+		min-width: 2ch;
+	}
+	.cell-wars {
+		min-width: 18ch;
 	}
 	.field-wars {
 		gap: 14px;

@@ -77,6 +77,8 @@
 
 	const watchDir = $derived(board.state.vitals.freshness.watch_dirs[0]);
 	const parses = $derived(board.state.watch?.parses);
+	/** Absent, not zero: the wire makes "this build cannot see attackers" expressible. */
+	const threats = $derived(board.vitals.counts.threats);
 </script>
 
 <svelte:window onkeydown={onkeydown} />
@@ -156,11 +158,22 @@
 		<section class="slot slot-threats" aria-label="threats">
 			<div class="t-micro slot-head">THREATS</div>
 			<p class="t-body slot-note">
-				{#if board.published}
-					{formatCount(board.vitals.counts.threats)} known {MIDDOT}
+				{#if !board.published}
+					<UnknownValue label="threats" reason="no save has been parsed yet" />
+				{:else if threats === undefined}
+					<!-- design §5's threat empty state is honest about VISION, not
+					     about danger. This build has no attacker data at all, so
+					     "0 known" would be the 117-blueprints bug wearing a
+					     number: a count nobody computed, read as an all-clear. -->
+					<UnknownValue
+						label="threats"
+						reason="this build cannot see attackers — threat vision lands with the F3 schema bump"
+					/>
+					{MIDDOT}
 					<UnknownValue label="coverage" reason="sector coverage lands with the threat view" />
 				{:else}
-					<UnknownValue label="threats" reason="no save has been parsed yet" />
+					{formatCount(threats)} known {MIDDOT}
+					<UnknownValue label="coverage" reason="sector coverage lands with the threat view" />
 				{/if}
 			</p>
 		</section>

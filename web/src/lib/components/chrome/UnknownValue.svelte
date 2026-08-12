@@ -19,25 +19,35 @@
 	 *             only once there is somewhere to seed; without it the box is
 	 *             inert text and takes no focus, because a button that does
 	 *             nothing is worse than no button.
+	 *   size      which type slot this box is standing in for. The TEXT stays at
+	 *             caption size in every variant — an admission does not get to
+	 *             shout at 34 px — but the LINE BOX matches the value it
+	 *             replaces, so a panel does not change height when the first
+	 *             real number lands (design §4's MFD rule). Default `caption`:
+	 *             the box in running text, where nothing is being reserved.
 	 */
 	import { GLYPH_UNKNOWN } from '../../glyphs';
+
+	/** The type slots a `∅` box can stand in for; see `app.css`'s `.t-*` ramp. */
+	type Size = 'caption' | 'micro' | 'emph' | 'num-l' | 'glance';
 
 	interface Props {
 		label?: string;
 		reason?: string;
 		onexplain?: () => void;
+		size?: Size;
 	}
 
-	let { label = 'unknown', reason, onexplain }: Props = $props();
+	let { label = 'unknown', reason, onexplain, size = 'caption' }: Props = $props();
 
 	const text = $derived(`${GLYPH_UNKNOWN} ${label}`);
 	const hint = $derived(reason ?? `${label} is unknown`);
 </script>
 
 {#if onexplain}
-	<button class="unknown t-caption" type="button" title={hint} onclick={onexplain}>{text}</button>
+	<button class="unknown t-caption u-{size}" type="button" title={hint} onclick={onexplain}>{text}</button>
 {:else}
-	<span class="unknown t-caption" title={hint}>{text}</span>
+	<span class="unknown t-caption u-{size}" title={hint}>{text}</span>
 {/if}
 
 <style>
@@ -49,6 +59,22 @@
 		color: var(--text-dim);
 		padding: 0 5px;
 		white-space: nowrap;
+	}
+	/* The line boxes of docs/design.md §3's ramp, so the ∅ box occupies exactly
+	 * the room the value it replaces would have. Height only — the type stays
+	 * caption. */
+	.u-caption,
+	.u-micro {
+		line-height: 16px;
+	}
+	.u-emph {
+		line-height: 20px;
+	}
+	.u-num-l {
+		line-height: 28px;
+	}
+	.u-glance {
+		line-height: 36px;
 	}
 	button.unknown {
 		background: none;

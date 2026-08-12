@@ -73,6 +73,15 @@ export interface BoardState {
 	 */
 	parseStartedAtMS?: number;
 
+	/**
+	 * Client wall-clock at the moment the current freshness block ARRIVED. The
+	 * save's age is counted from here plus the server's own `age_s`, because
+	 * `modified_at` is a server timestamp read against a client clock and the
+	 * two clocks are not the same clock: a client an hour behind would render a
+	 * forty-minute-old save as `just now` and never escalate it.
+	 */
+	freshnessAtMS: number;
+
 	/** Work the store owes the server, drained by dispatching the answer back. */
 	needsResync: boolean;
 	needsVitals: boolean;
@@ -90,7 +99,7 @@ export type BoardAction =
 	| { kind: 'connected' }
 	| { kind: 'disconnected' }
 	| { kind: 'event'; event: BoardEvent; atMS: number }
-	| { kind: 'vitals'; vitals: VitalsView };
+	| { kind: 'vitals'; vitals: VitalsView; atMS: number };
 
 /** design §6's startup state: watching, and honest that it has seen nothing. */
 export function initialBoardState(): BoardState {
@@ -98,9 +107,14 @@ export function initialBoardState(): BoardState {
 		vitals: {
 			freshness: { state: FreshnessStateStartup, watch_dirs: [] },
 			legs: [],
-			counts: { fleet: 0, stations: 0, idle: 0, threats: 0 },
+			// `threats` is absent, not 0: this build has no threat vision at all,
+			// and the wire type is a pointer for exactly that reason.
+			counts: { fleet: 0, stations: 0, idle: 0 },
 		},
 		silence: { heartbeat_s: 15, stale_s: 45, lost_s: 60 },
+		// No freshness block has arrived yet; startup carries no save, so there
+		// is nothing to date. The first bootstrap stamps it.
+		freshnessAtMS: 0,
 		lastSeq: 0,
 		awaitingFirstEvent: false,
 		connected: false,
@@ -135,6 +149,7 @@ export function reduce(state: BoardState, action: BoardAction): BoardState {
 				watch: view.watch,
 				silence: view.silence,
 				lastSeq: view.last_event_seq,
+				freshnessAtMS: action.atMS,
 				needsResync: false,
 				needsVitals: false,
 				// A parse already in flight when we arrived: we did not see it
@@ -150,7 +165,7 @@ export function reduce(state: BoardState, action: BoardAction): BoardState {
 		case 'disconnected':
 			return { ...state, connected: false };
 		case 'vitals':
-			return { ...state, vitals: action.vitals, needsVitals: false };
+			return { ...state, vitals: action.vitals, freshnessAtMS: action.atMS, needsVitals: false };
 		case 'event':
 			return reduceEvent(state, action.event, action.atMS);
 	}
@@ -205,6 +220,7 @@ function applyPayload(state: BoardState, event: BoardEvent, atMS: number): Board
 				...state,
 				detected: event.data,
 				parseStartedAtMS: atMS,
+				freshnessAtMS: atMS,
 				vitals: withFreshness(state.vitals, {
 					state: FreshnessStateParsing,
 					save: event.data,
@@ -214,6 +230,7 @@ function applyPayload(state: BoardState, event: BoardEvent, atMS: number): Board
 			return {
 				...state,
 				detected: event.data,
+				freshnessAtMS: atMS,
 				vitals: withFreshness(state.vitals, {
 					state: FreshnessStateRetrying,
 					save: event.data,
@@ -224,6 +241,7 @@ function applyPayload(state: BoardState, event: BoardEvent, atMS: number): Board
 			return {
 				...state,
 				parseStartedAtMS: undefined,
+				freshnessAtMS: atMS,
 				vitals: withFreshness(state.vitals, {
 					state:
 						event.data.kind === SaveErrorKindSchema
@@ -239,6 +257,7 @@ function applyPayload(state: BoardState, event: BoardEvent, atMS: number): Board
 				...state,
 				snapshot: meta,
 				parseStartedAtMS: undefined,
+				freshnessAtMS: atMS,
 				// Views are fetched, never pushed (tech-design §1.3): the event
 				// is a wake-up and this flag is the store's to-do list.
 				needsVitals: true,

@@ -217,7 +217,30 @@ describe('saveAgeS', () => {
 		expect(saveAgeS(fresh({ state: 'startup' }), NOW)).toBeUndefined();
 	});
 
-	it('never goes negative when the two clocks disagree', () => {
+	it('counts from the age the SERVER measured, not from a clock comparison', () => {
+		// The wire type says why (`SaveMeta.AgeS`): the two clocks are not the
+		// same clock. Here the client is an hour behind, so `modified_at` reads
+		// as the future — and the save is really 50 minutes old, past STALE_S.
+		// Clamping that comparison to 0 does not save it; the clamp IS the lie.
+		const skewedMS = 60 * 60 * 1000;
+		const f = fresh({ save: { ...save(0), modified_at: new Date(NOW + skewedMS).toISOString(), age_s: 50 * 60 } });
+		const arrivedAtMS = NOW - 30_000;
+
+		expect(saveAgeS(f, NOW, arrivedAtMS)).toBe(50 * 60 + 30);
+		const rendered = renderFreshness({ freshness: f, connection: 'live', nowMS: NOW, freshnessAtMS: arrivedAtMS });
+		expect(rendered.state).toBe('stale');
+		expect(flatten(rendered.segments)).toContain('50m ago');
+	});
+
+	it('keeps ageing between payloads, from the arrival moment', () => {
+		const f = fresh({ save: { ...save(0), age_s: 60 } });
+		expect(saveAgeS(f, NOW, NOW - 90_000)).toBe(150);
+	});
+
+	it('falls back to modified_at when the server sent no age, and never goes negative', () => {
+		// `age_s` is omitted when it rounds to zero, which is the one case where
+		// the two methods agree anyway.
 		expect(saveAgeS(fresh({ save: save(-120) }), NOW)).toBe(0);
+		expect(saveAgeS(fresh({ save: save(120) }), NOW, NOW - 5000)).toBe(120);
 	});
 });

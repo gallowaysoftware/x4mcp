@@ -107,8 +107,9 @@ func counts(snap *x4save.Snapshot) wire.Counts {
 			c.Idle++
 		}
 	}
-	// Threats needs the knownto/attacker data from the F3 bump (F13a); it
-	// stays 0 rather than being guessed at.
+	// Threats needs the knownto/attacker data from the F3 bump (F13a). It stays
+	// nil — ABSENT, so the board draws its ∅ box — rather than 0, which would
+	// be this build claiming nobody is hunting the player.
 	return c
 }
 

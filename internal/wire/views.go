@@ -36,7 +36,13 @@ type Counts struct {
 	Fleet    int `json:"fleet"`
 	Stations int `json:"stations"`
 	Idle     int `json:"idle"`
-	Threats  int `json:"threats"`
+	// Threats is a POINTER because this build cannot derive it at all: the
+	// knownto/attacker data arrives with the F3 schema bump (S6/F13a). A plain
+	// int would leave the board printing THREAT 0 at 22 px — "no one is hunting
+	// you", the 117-blueprints doctrine, from a field nobody computed. nil is
+	// absent on the wire and renders as the dotted ∅ box, which is the truth:
+	// unknown, not zero.
+	Threats *int `json:"threats,omitempty"`
 }
 
 // WarChip is one faction pair currently at war, with how many war-related

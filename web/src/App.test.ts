@@ -11,11 +11,52 @@
  * parsed the board shows no numbers, and it says so.
  */
 import { render } from 'svelte/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App.svelte';
+import { board } from './lib/stores/board.svelte';
+import type { StateView } from './lib/types.gen';
 
 const body = render(App).body;
+
+const AT = '2026-08-12T21:58:00Z';
+
+/** A real parse, with the fields this build genuinely computes and no others. */
+const PARSED: StateView = {
+	build: { version: 'v1', hash: 'abc123', schema_version: 24, started_at: AT },
+	vitals: {
+		freshness: {
+			state: 'current',
+			watch_dirs: ['/srv/save'],
+			save: { path: '/srv/save/quicksave.xml.gz', name: 'quicksave', size_bytes: 1, modified_at: AT, age_s: 4 },
+		},
+		legs: [],
+		counts: { fleet: 111, stations: 12, idle: 0 },
+		credits: 5_492_825,
+	},
+	snapshot: {
+		game_guid: 'guid-1',
+		save: { path: '/srv/save/quicksave.xml.gz', name: 'quicksave', size_bytes: 1, modified_at: AT, age_s: 4 },
+		schema_version: 24,
+		parsed_at: AT,
+		parse_ms: 9400,
+		game_time_s: 1,
+		save_date: AT,
+		game_version: '9.00',
+		player_name: 'Test Pilot',
+	},
+	watch: {
+		dirs: ['/srv/save'],
+		poll_interval_ms: 2000,
+		detections: { total: 3, by_poll: 3, by_manual: 0 },
+		parses: 3,
+		retries: 0,
+		parse_errors: 0,
+		cache: { entries: 3, bytes: 1000, removed: 0 },
+	},
+	last_event_seq: 10,
+	silence: { heartbeat_s: 15, stale_s: 45, lost_s: 60 },
+};
 
 describe('the board at rest', () => {
 	it('assembles every slot', () => {
@@ -50,5 +91,42 @@ describe('the board at rest', () => {
 
 	it('is never blank — the lane proves it is alive instead', () => {
 		expect(body).toContain('no alerts');
+	});
+});
+
+describe('the board with a save behind it', () => {
+	afterEach(() => {
+		board.stop();
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
+
+	it('still refuses to print a threat count this build cannot compute', async () => {
+		// Proven live against a real fixture before the fix: the strip printed
+		// THREAT 0 at 22 px and the panel printed "0 known", from a field the
+		// server hard-codes because the data lands with the F3 bump. A parsed
+		// save is not a licence to invent the fields it does not carry.
+		vi.useFakeTimers();
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {} });
+		vi.stubGlobal(
+			'EventSource',
+			class {
+				readyState = 1;
+				onopen: (() => void) | null = null;
+				onerror: (() => void) | null = null;
+				addEventListener(): void {}
+				close(): void {}
+			},
+		);
+		vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, statusText: 'OK', json: async () => PARSED }));
+
+		board.start();
+		await vi.advanceTimersByTimeAsync(0);
+		const live = render(App).body;
+
+		expect(live).toContain('0 idle of 111'); // it really is published
+		expect(live).not.toContain('0 known');
+		expect(live).toContain('∅ threat');
+		expect(live).toContain('cannot see attackers');
 	});
 });

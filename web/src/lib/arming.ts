@@ -20,12 +20,18 @@
 import { CHECK, GLYPH_INFO } from './glyphs';
 
 /**
- * - `unarmed`  the player has not been through the gesture yet
- * - `armed`    audio is unlocked and the chime will sound
- * - `blocked`  the player wants it, the browser refuses (autoplay policy)
- * - `muted`    the player turned it off deliberately
+ * - `unarmed`      the player has not been through the gesture yet
+ * - `armed`        audio is unlocked and the chime will sound
+ * - `blocked`      the player wants it, the browser refuses (autoplay policy)
+ * - `muted`        the player turned it off deliberately
+ * - `unavailable`  this browser has no Web Audio at all — no click can fix it
+ *
+ * `unavailable` is not pedantry. Without it the only honest answer is `blocked`,
+ * whose copy promises that one click on this page will help; on a browser with
+ * no AudioContext that click never succeeds, the item never turns done, and the
+ * first-run checklist becomes a permanent dead end that owns the alert lane.
  */
-export type ChimeState = 'unarmed' | 'armed' | 'blocked' | 'muted';
+export type ChimeState = 'unarmed' | 'armed' | 'blocked' | 'muted' | 'unavailable';
 
 /** `unavailable` is a browser with no Notification API at all, not a refusal. */
 export type NotifyState = 'unavailable' | 'default' | 'granted' | 'denied';
@@ -83,6 +89,16 @@ function watchItem(state: ArmingState): ArmingItem {
 
 function chimeItem(state: ArmingState): ArmingItem {
 	switch (state.chime) {
+		case 'unavailable':
+			return {
+				key: 'chime',
+				text: 'chime unavailable — this browser has no Web Audio',
+				// Answered: there is nothing to enable. Nagging about a thing the
+				// player cannot change is how a checklist becomes wallpaper.
+				done: true,
+				glyph: GLYPH_INFO,
+				note: 'reds will not sound — the pinned row is the only alarm',
+			};
 		case 'armed':
 			return { key: 'chime', text: 'chime armed', done: true, glyph: CHECK };
 		case 'muted':
@@ -162,7 +178,13 @@ export interface ArmingBadge {
  */
 export function armingBadges(state: ArmingState): ArmingBadge[] {
 	const badges: ArmingBadge[] = [];
-	if (state.chime === 'blocked') {
+	if (state.chime === 'unavailable') {
+		badges.push({
+			text: 'MUTED',
+			title: 'this browser has no Web Audio — reds pin in the lane but nothing will sound',
+			tone: 'amber',
+		});
+	} else if (state.chime === 'blocked') {
 		badges.push({
 			text: 'MUTED',
 			title: 'chime blocked by the browser — open HEALTH and arm it',
@@ -192,6 +214,7 @@ export function armingBadges(state: ArmingState): ArmingBadge[] {
 export function armingConditionKeys(state: ArmingState): string[] {
 	const keys: string[] = [];
 	if (state.chime === 'blocked') keys.push('arming:chime-blocked');
+	if (state.chime === 'unavailable') keys.push('arming:chime-unavailable');
 	if (state.watchDirs.length === 0) keys.push('arming:no-watch-dir');
 	return keys;
 }
@@ -215,7 +238,10 @@ export function parseChimeIntent(raw: string | null): ChimeIntent {
  * now. This is the honesty join: intent alone would let a board claim "armed"
  * on a page that has had no gesture and therefore cannot make a sound.
  */
-export function resolveChime(intent: ChimeIntent, audioUnlocked: boolean): ChimeState {
+export function resolveChime(intent: ChimeIntent, audioUnlocked: boolean, audioAvailable = true): ChimeState {
+	// Availability outranks intent, including a deliberate mute: "muted" invites
+	// an unmute that cannot work, and the badge is the same MUTED either way.
+	if (!audioAvailable) return 'unavailable';
 	if (intent === 'muted') return 'muted';
 	if (intent === 'unarmed') return 'unarmed';
 	return audioUnlocked ? 'armed' : 'blocked';

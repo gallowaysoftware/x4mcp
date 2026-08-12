@@ -32,6 +32,15 @@ describe('resolveChime — the honesty join', () => {
 		expect(resolveChime('unarmed', true)).toBe('unarmed');
 	});
 
+	it('says UNAVAILABLE, not blocked, when the browser has no Web Audio at all', () => {
+		// `blocked` promises that one click on this page will help. Where there
+		// is no AudioContext that click can never succeed, so the item would
+		// never turn done and the first-run card would own the lane forever.
+		expect(resolveChime('armed', false, false)).toBe('unavailable');
+		expect(resolveChime('unarmed', false, false)).toBe('unavailable');
+		expect(resolveChime('muted', false, false)).toBe('unavailable');
+	});
+
 	it('persists intent only, and treats anything else as unarmed', () => {
 		expect(parseChimeIntent('armed')).toBe('armed');
 		expect(parseChimeIntent('muted')).toBe('muted');
@@ -42,7 +51,7 @@ describe('resolveChime — the honesty join', () => {
 
 describe('the MUTED badge (design §7)', () => {
 	it('is amber and permanent whenever the chime cannot sound', () => {
-		for (const chime of ['blocked', 'muted', 'unarmed'] as const) {
+		for (const chime of ['blocked', 'muted', 'unarmed', 'unavailable'] as const) {
 			const badges = armingBadges(arming({ chime }));
 			expect(badges[0]?.text).toBe('MUTED');
 			expect(badges[0]?.tone).toBe('amber');
@@ -80,6 +89,15 @@ describe('the checklist (design §7)', () => {
 		expect(armingComplete(arming({ chime: 'muted' }))).toBe(true);
 	});
 
+	it('is not a dead end on a browser that cannot ever play a sound', () => {
+		const items = armingItems(arming({ chime: 'unavailable' }));
+		const chime = items.find((i) => i.key === 'chime');
+		expect(armingComplete(arming({ chime: 'unavailable' }))).toBe(true);
+		expect(chime?.done).toBe(true);
+		expect(chime?.action).toBeUndefined();
+		expect(chime?.text).toContain('no Web Audio');
+	});
+
 	it('comes straight back when a state regresses', () => {
 		// No "dismissed" flag exists, which is exactly why a revoked permission
 		// can bring the card back at all.
@@ -103,6 +121,7 @@ describe('arming conditions', () => {
 	it('lights the beacon only for silences the player did not choose', () => {
 		expect(armingConditionKeys(arming({ chime: 'blocked' }))).toContain('arming:chime-blocked');
 		expect(armingConditionKeys(arming({ chime: 'muted' }))).toEqual([]);
+		expect(armingConditionKeys(arming({ chime: 'unavailable' }))).toContain('arming:chime-unavailable');
 		expect(armingConditionKeys(arming({ watchDirs: [] }))).toContain('arming:no-watch-dir');
 	});
 });

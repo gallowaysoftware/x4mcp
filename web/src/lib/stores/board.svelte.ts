@@ -46,10 +46,15 @@ import {
 	markInteraction,
 	newSince,
 	observe,
+	prime,
 	type BeaconState,
 	type SeenState,
 } from '../seen';
 import { hasSnapshot, initialBoardState, reduce, type BoardAction, type BoardState } from '../reducer';
+
+/** The retry ladder for a failed bootstrap or refetch: 1 s, doubling, capped. */
+const RETRY_MIN_MS = 1000;
+const RETRY_MAX_MS = 15000;
 
 export class Board {
 	#board = $state<BoardState>(initialBoardState());
@@ -57,15 +62,28 @@ export class Board {
 	#connection = $state<ConnectionState>('live');
 	#lastContactAtMS = $state(Date.now());
 	/**
-	 * Deliberately per-tab and not persisted. A reload therefore re-arms
-	 * standing ambers until the first click, which is the right way round: the
-	 * alternative — remembering "seen" across reloads — would let an amber that
-	 * arrived while the tab was closed come up already marked as seen, and a
-	 * missed alarm is a far worse failure than one extra amber beacon.
+	 * Deliberately per-tab and not persisted: what the player has been shown is
+	 * a fact about this session, not about this playthrough.
+	 *
+	 * It stays UNPRIMED until the first bootstrap lands, and is primed with
+	 * whatever is standing at that moment (`#bootstrap`). That is the difference
+	 * between an instrument and a decoration: an amber that was already true
+	 * when the tab opened is not an arrival, and a board opened once on a second
+	 * monitor and never touched again would otherwise sit amber forever —
+	 * because the one gesture that clears it is the gesture this product says
+	 * will not happen.
 	 */
 	#seen = $state<SeenState>(emptySeen(Date.now()));
 	#chimeIntent = $state<ChimeIntent>('unarmed');
+	/**
+	 * What the audio device will do RIGHT NOW, re-read every tick rather than
+	 * remembered from the arming click. Browsers suspend an AudioContext behind
+	 * a background tab or an audio-device change, and a cached "unlocked" is
+	 * precisely the silently disarmed alarm design §7 calls the worst honesty
+	 * failure this product can have.
+	 */
 	#chimeUnlocked = $state(false);
+	#chimeAvailable = $state(true);
 	#notify = $state<NotifyState>('default');
 	#drawer = $state(false);
 	/** Set when the bootstrap itself fails: an empty board that says why. */
@@ -76,6 +94,12 @@ export class Board {
 	#ticker: ReturnType<typeof setInterval> | undefined;
 	#resyncing = false;
 	#vitalsInFlight = false;
+	/** Set while a `connect()` WE asked for is in flight, so its `onopen` is not read as a reconnect. */
+	#connecting = false;
+	#streamStarted = false;
+	/** Earliest wall-clock at which the tick may retry the work that failed. */
+	#retryAtMS = 0;
+	#retryBackoffMS = RETRY_MIN_MS;
 
 	// ---- reads -------------------------------------------------------------
 
@@ -108,6 +132,7 @@ export class Board {
 			connection: this.#connection,
 			nowMS: this.#nowMS,
 			parseStartedAtMS: this.#board.parseStartedAtMS,
+			freshnessAtMS: this.#board.freshnessAtMS,
 			lastContactAtMS: this.#lastContactAtMS,
 		}),
 	);
@@ -116,7 +141,7 @@ export class Board {
 
 	arming: ArmingState = $derived({
 		watchDirs: this.#board.vitals.freshness.watch_dirs,
-		chime: resolveChime(this.#chimeIntent, this.#chimeUnlocked),
+		chime: resolveChime(this.#chimeIntent, this.#chimeUnlocked, this.#chimeAvailable),
 		notify: this.#notify,
 	});
 
@@ -177,14 +202,15 @@ export class Board {
 	start(): void {
 		this.#chimeIntent = parseChimeIntent(readStorage(CHIME_INTENT_KEY));
 		this.#notify = notifyState();
+		this.#chimeAvailable = this.#chime.available;
 		// Re-derive whether audio can actually play, every boot. A previous
 		// session's "armed" proves nothing about this page: autoplay policy is
 		// per-document and a browser restart resets it.
-		if (this.#chimeIntent === 'armed') void this.#chime.unlock().then((ok) => (this.#chimeUnlocked = ok));
+		if (this.#chimeIntent === 'armed') void this.#chime.unlock().then(() => this.#readChime());
 
 		this.#stream = new EventStream(
 			{
-				onOpen: () => this.#dispatch({ kind: 'connected' }),
+				onOpen: () => this.#opened(),
 				onEvent: (event) => this.#dispatch({ kind: 'event', event, atMS: Date.now() }),
 				onClosed: () => this.#dispatch({ kind: 'disconnected' }),
 			},
@@ -204,16 +230,58 @@ export class Board {
 	}
 
 	/**
-	 * The 1 Hz tick: advance the clock, sample the stream's liveness, run the
-	 * two-stage silence ladder, and re-observe the amber set. Text swaps only —
+	 * The 1 Hz tick: advance the clock, sample the stream's liveness, re-read
+	 * the audio device, run the two-stage silence ladder, re-observe the amber
+	 * set, and retry whatever the last attempt failed to do. Text swaps only —
 	 * design §8 keeps every one of these out of CSS.
 	 */
 	#tick(): void {
 		const now = Date.now();
 		this.#nowMS = now;
 		if (this.#stream !== undefined) this.#lastContactAtMS = this.#stream.sample(now);
+		this.#readChime();
 		this.#connection = connectionState(this.#board.silence, (now - this.#lastContactAtMS) / 1000);
 		this.#seen = observe(this.#seen, this.amberConditions, now);
+		this.#retryPending(now);
+	}
+
+	/** Ask the device, never the memory of a click (design §7). */
+	#readChime(): void {
+		this.#chimeUnlocked = this.#chime.unlocked;
+		this.#chimeAvailable = this.#chime.available;
+	}
+
+	/**
+	 * The board's to-do list, retried on a capped backoff.
+	 *
+	 * Nothing else retries: a failed bootstrap used to leave a tab that looked
+	 * alive and was permanently empty, recoverable only by a manual reload —
+	 * which is the most likely sequence there is for a board that autostarts on
+	 * a second monitor before the service is up.
+	 */
+	#retryPending(nowMS: number): void {
+		if (nowMS < this.#retryAtMS) return;
+		if (this.#bootstrapError !== undefined || this.#board.needsResync) {
+			this.#backOff(nowMS);
+			void this.#bootstrap();
+			return;
+		}
+		if (this.#board.needsVitals) {
+			this.#backOff(nowMS);
+			void this.#loadVitals();
+		}
+	}
+
+	#backOff(nowMS: number): void {
+		this.#retryAtMS = nowMS + this.#retryBackoffMS;
+		// A gaming PC that is off should not be hammered; a process that is
+		// restarting should be found quickly. Same shape as the stream's own.
+		this.#retryBackoffMS = Math.min(this.#retryBackoffMS * 2, RETRY_MAX_MS);
+	}
+
+	#retriesSucceeded(): void {
+		this.#retryAtMS = 0;
+		this.#retryBackoffMS = RETRY_MIN_MS;
 	}
 
 	// ---- interactions ------------------------------------------------------
@@ -241,7 +309,7 @@ export class Board {
 	/** The arming gesture: this click is what unlocks audio, so it plays once. */
 	async armChime(): Promise<void> {
 		const ok = await this.#chime.unlock();
-		this.#chimeUnlocked = ok;
+		this.#readChime();
 		this.#chimeIntent = 'armed';
 		writeStorage(CHIME_INTENT_KEY, 'armed');
 		if (ok) this.#chime.play();
@@ -283,9 +351,31 @@ export class Board {
 	}
 
 	/**
-	 * Perform the work the reducer asked for. The flags are cleared here rather
-	 * than on the response, so an event arriving mid-flight cannot queue a
-	 * second identical refetch.
+	 * A stream that opened. The FIRST open is the one we asked for at boot;
+	 * every one after it is a reconnect, and a reconnect may well be a different
+	 * process — the hub sends nothing at all when a client's cursor is ahead of
+	 * the new process's sequence, so nothing would ever tell us. Refetching
+	 * `/api/state` is what turns a restart into a board that is current instead
+	 * of a board showing a dead process's numbers with a live process's
+	 * liveness. `#connecting` is what keeps that from being a loop: a connect we
+	 * drove ourselves is not news.
+	 */
+	#opened(): void {
+		this.#dispatch({ kind: 'connected' });
+		if (this.#connecting) {
+			this.#connecting = false;
+			return;
+		}
+		void this.#bootstrap();
+	}
+
+	/**
+	 * Perform the work the reducer asked for. The flags are cleared by the
+	 * RESPONSE (the reducer clears them when the answer is dispatched), never
+	 * before the request — a refetch that fails must leave its to-do item in
+	 * place, or the board silently keeps stale data forever. The in-flight
+	 * guards live in the two loaders, so a second event arriving mid-flight
+	 * cannot queue a duplicate request either.
 	 */
 	#drain(): void {
 		if (this.#board.buildChanged) {
@@ -295,42 +385,58 @@ export class Board {
 			location.reload();
 			return;
 		}
-		if (this.#board.needsResync && !this.#resyncing) {
-			this.#board = { ...this.#board, needsResync: false };
+		if (this.#board.needsResync) {
 			void this.#bootstrap();
 			return;
 		}
-		if (this.#board.needsVitals && !this.#vitalsInFlight) {
-			this.#board = { ...this.#board, needsVitals: false };
-			void this.#loadVitals();
-		}
+		if (this.#board.needsVitals) void this.#loadVitals();
 	}
 
 	async #bootstrap(): Promise<void> {
+		if (this.#resyncing) return;
 		this.#resyncing = true;
 		try {
 			const view = await fetchState();
 			this.#bootstrapError = undefined;
+			this.#retriesSucceeded();
 			this.#dispatch({ kind: 'bootstrap', state: view, atMS: Date.now() });
+			// The boot inventory (design §2): whatever is amber in the first
+			// state this tab ever sees was already standing when it opened, so
+			// it is not an arrival and must not light the ambient channel.
+			if (!this.#seen.primed) this.#seen = prime(this.#seen, this.amberConditions, Date.now());
 			// tech-design §2: a resync refetches state AND resubscribes. The
 			// browser would otherwise keep resuming from the cursor that fell
 			// off the ring, and resync every single time.
-			this.#stream?.connect(this.#board.lastSeq);
+			this.#connect();
 		} catch (err) {
 			this.#bootstrapError = err instanceof Error ? err.message : String(err);
+			// The stream does not depend on the bootstrap having worked. It is
+			// the thing that notices the server coming back, and a board that
+			// never subscribed because one fetch failed at boot is a dead alarm
+			// that looks like an alarm.
+			if (!this.#streamStarted) this.#connect();
 		} finally {
 			this.#resyncing = false;
 		}
 	}
 
+	#connect(): void {
+		this.#streamStarted = true;
+		this.#connecting = true;
+		this.#stream?.connect(this.#board.lastSeq);
+	}
+
 	async #loadVitals(): Promise<void> {
+		if (this.#vitalsInFlight) return;
 		this.#vitalsInFlight = true;
 		try {
 			const vitals = await fetchVitals();
-			this.#dispatch({ kind: 'vitals', vitals });
+			this.#retriesSucceeded();
+			this.#dispatch({ kind: 'vitals', vitals, atMS: Date.now() });
 		} catch {
 			// Keep the previous view at full brightness: it is not wrong, it is
-			// old, and the freshness stamp is what says so.
+			// old, and the freshness stamp is what says so. `needsVitals` stays
+			// set, so the tick tries again.
 		} finally {
 			this.#vitalsInFlight = false;
 		}

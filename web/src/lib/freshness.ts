@@ -127,6 +127,8 @@ export interface FreshnessInput {
 	nowMS: number;
 	/** Client wall-clock at the moment `save.parsing` arrived; drives the 1 Hz blocks. */
 	parseStartedAtMS?: number | undefined;
+	/** Client wall-clock at the moment this freshness block arrived; `age_s` counts up from here. */
+	freshnessAtMS?: number | undefined;
 	/** Last moment the stream was known to be alive; the connection-lost stamp names it. */
 	lastContactAtMS?: number | undefined;
 }
@@ -185,9 +187,32 @@ export function parseBlocks(elapsedS: number, medianParseMS: number | undefined)
 	return GLYPH_BLOCK_FULL.repeat(filled) + GLYPH_BLOCK_EMPTY.repeat(5 - filled);
 }
 
-/** Age of the described save in seconds, from the client's clock. */
-export function saveAgeS(f: Freshness, nowMS: number): number | undefined {
-	const modified = f.save?.modified_at;
+/**
+ * Age of the described save in seconds.
+ *
+ * The server's own `age_s` is preferred over `modified_at`, and the wire type
+ * says why: the two clocks are not the same clock. `modified_at` is a server
+ * timestamp; subtracting it from a client clock that is an hour behind renders a
+ * forty-minute-old save as `just now` and — because the escalation ladder runs
+ * off this number — that save never ages, never stales and never says a word.
+ * Clamping the negative to 0 does not save it; it *is* the lie.
+ *
+ * So: take the age the server measured when it wrote the payload, and count up
+ * from the moment the payload arrived here. Both halves of that are measured on
+ * ONE clock each, and neither is compared with the other.
+ *
+ * `age_s` is omitted when it rounds to zero (`omitempty`), which is why the
+ * fallback stays: a save that arrived less than a second old is one the two
+ * methods agree about anyway.
+ */
+export function saveAgeS(f: Freshness, nowMS: number, arrivedAtMS?: number): number | undefined {
+	const save = f.save;
+	if (save === undefined) return undefined;
+	const serverAgeS = save.age_s;
+	if (serverAgeS !== undefined && arrivedAtMS !== undefined && arrivedAtMS > 0) {
+		return Math.max(0, serverAgeS + (nowMS - arrivedAtMS) / 1000);
+	}
+	const modified = save.modified_at;
 	if (modified === undefined) return undefined;
 	const t = Date.parse(modified);
 	if (Number.isNaN(t)) return undefined;
@@ -200,7 +225,7 @@ export function saveAgeS(f: Freshness, nowMS: number): number | undefined {
  */
 export function renderFreshness(input: FreshnessInput): FreshnessRender {
 	const { freshness: f, connection, nowMS } = input;
-	const ageS = saveAgeS(f, nowMS);
+	const ageS = saveAgeS(f, nowMS, input.freshnessAtMS);
 	const state = ageS === undefined ? f.state : ageState(f.state, ageS);
 
 	// design §6, connection lost: the block is replaced wholesale. The panels

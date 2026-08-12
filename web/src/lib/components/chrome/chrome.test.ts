@@ -35,6 +35,15 @@ describe('UnknownValue', () => {
 		expect(render(UnknownValue).body).not.toContain('<button');
 		expect(render(UnknownValue, { props: { onexplain: () => {} } }).body).toContain('<button');
 	});
+
+	it('takes the line box of the value it stands in for, at caption size', () => {
+		// design §4's MFD rule needs the ∅ box to hold the room; design §3 says
+		// the box is caption type. Both, so the strip neither jumps nor shouts.
+		const out = render(UnknownValue, { props: { label: 'credits', size: 'glance' } }).body;
+		expect(out).toContain('u-glance');
+		expect(out).toContain('t-caption');
+		expect(render(UnknownValue).body).toContain('u-caption');
+	});
 });
 
 describe('SeverityDot', () => {

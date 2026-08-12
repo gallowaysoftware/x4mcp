@@ -28,10 +28,35 @@ export type ConditionKey = string;
 export interface SeenState {
 	readonly lastInteractionAtMS: number;
 	readonly firstSeenMS: Readonly<Record<ConditionKey, number>>;
+	/**
+	 * Has the boot inventory been taken? A tab that has just opened has observed
+	 * nothing yet, so the ambers the world hands it in its first breath are not
+	 * *arrivals* — they were already standing when the board came up, and the
+	 * mark has to be moved past them or every one of them is "new" forever.
+	 * Until the inventory is taken, nothing can be new: the board has no
+	 * before-picture to call anything a change against.
+	 */
+	readonly primed: boolean;
 }
 
 export function emptySeen(nowMS: number): SeenState {
-	return { lastInteractionAtMS: nowMS, firstSeenMS: {} };
+	return { lastInteractionAtMS: nowMS, firstSeenMS: {}, primed: false };
+}
+
+/**
+ * Take the boot inventory: everything standing right now is what the board
+ * arrived to, not news.
+ *
+ * This is the fix for the failure design §2's amber lifecycle exists to
+ * prevent. Seeding the interaction mark at construction is not enough — the
+ * first observation happens later (a tick, a bootstrap), so every already-
+ * standing condition is first seen AFTER the mark and classified new for the
+ * rest of the session. On a second-monitor instrument that is opened once and
+ * never touched, the one gesture that would clear it is the one the product
+ * says will not happen, and the resting board glows amber forever.
+ */
+export function prime(state: SeenState, keys: readonly ConditionKey[], nowMS: number): SeenState {
+	return { ...observe(state, keys, nowMS), lastInteractionAtMS: nowMS, primed: true };
 }
 
 /**
@@ -71,12 +96,19 @@ export function observe(state: SeenState, keys: readonly ConditionKey[], nowMS: 
  * the next one to arrive lights the beacon.
  */
 export function markInteraction(state: SeenState, nowMS: number): SeenState {
-	if (state.lastInteractionAtMS === nowMS) return state;
-	return { ...state, lastInteractionAtMS: nowMS };
+	if (state.lastInteractionAtMS === nowMS && state.primed) return state;
+	// A real interaction is an inventory too, and a better one: the player has
+	// just looked at the board with their own eyes.
+	return { ...state, lastInteractionAtMS: nowMS, primed: true };
 }
 
-/** The subset of `keys` the player has not been shown since their last interaction. */
+/**
+ * The subset of `keys` the player has not been shown since their last
+ * interaction — and nothing at all before the boot inventory is taken, because
+ * a board that has never seen the world cannot call any of it a change.
+ */
 export function newSince(state: SeenState, keys: readonly ConditionKey[]): ConditionKey[] {
+	if (!state.primed) return [];
 	return keys.filter((key) => {
 		const first = state.firstSeenMS[key];
 		return first !== undefined && first > state.lastInteractionAtMS;

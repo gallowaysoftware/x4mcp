@@ -147,7 +147,10 @@
 	<p class="row">
 		{#if board.arming.chime === 'armed'}
 			<button class="act t-micro" type="button" onclick={() => board.muteChime()}>mute chime</button>
-		{:else}
+		{:else if board.arming.chime !== 'unavailable'}
+			<!-- No enable button where there is no Web Audio at all: a control
+			     that cannot do the thing it names is the same lie as a badge
+			     that says armed when nothing will sound. -->
 			<button class="act t-micro" type="button" onclick={() => void board.armChime()}>enable + test chime</button>
 		{/if}
 		<button class="act t-micro" type="button" onclick={() => void board.refresh()}>refresh save now</button>

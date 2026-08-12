@@ -184,7 +184,11 @@ describe('legs', () => {
 describe('playthrough change', () => {
 	it('drops the baseline instead of reporting it as zero', () => {
 		let s = booted();
-		s = reduce(s, { kind: 'vitals', vitals: { ...stateView().vitals, credits_delta: 500, credits_series: [] } });
+		s = reduce(s, {
+			kind: 'vitals',
+			vitals: { ...stateView().vitals, credits_delta: 500, credits_series: [] },
+			atMS: NOW,
+		});
 		s = reduce(s, {
 			kind: 'event',
 			event: ev(11, 'playthrough.changed', { game_guid: 'guid-2', label: 'Second Empire' }),
@@ -274,7 +278,7 @@ describe('sequence discipline', () => {
 
 	it('clears the vitals flag when the refetch lands', () => {
 		let s = reduce(booted(), { kind: 'event', event: ev(11, 'snapshot.ready', snapshotMeta()), atMS: NOW });
-		s = reduce(s, { kind: 'vitals', vitals: { ...stateView().vitals, credits: 1 } });
+		s = reduce(s, { kind: 'vitals', vitals: { ...stateView().vitals, credits: 1 }, atMS: NOW });
 		expect(s.needsVitals).toBe(false);
 		expect(s.vitals.credits).toBe(1);
 	});
