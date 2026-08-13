@@ -25,6 +25,15 @@ func (s source) String() string {
 // agree on all three fields are taken to be the same bytes: X4 writes a save in
 // place over 20–60 s, and size+mtime holding still is the only quiescence
 // signal available without reading 100 MB to find out.
+//
+// KNOWN BLIND SPOT (D5), inherent to a stat gate rather than a bug in it:
+// different bytes with identical size AND mtime are indistinguishable here, so
+// such a write is never detected. It takes a deliberate `touch -r` or an
+// archiver that restores a same-sized save over its own timestamp; X4 itself
+// cannot produce it, since every write it makes moves the mtime. The only cure
+// is hashing 100 MB every 2 s, which costs more than the case is worth. It is
+// recorded here, and in the health drawer's watch section, rather than papered
+// over: a watcher that cannot see something must say so.
 type candidate struct {
 	path    string
 	size    int64
@@ -64,9 +73,11 @@ type detector struct {
 	// finished at exactly the size and mtime that was dispatched.
 	dispatched candidate
 
-	// seen is the previous listing of every save on disk, by path. It is what
-	// makes choose able to answer "what changed?" rather than only "what is
-	// newest?"; nil before the first listing, which is not the same as empty.
+	// seen is what the last pass DECIDED ABOUT, by path — not simply the last
+	// listing. It is what makes choose able to answer "what changed?" rather
+	// than only "what is newest?", and a file lands in it once it is unchanged
+	// or has been dispatched, never merely because it was listed (see choose).
+	// nil before the first listing, which is not the same as empty.
 	seen map[string]candidate
 }
 
@@ -90,16 +101,39 @@ type detector struct {
 // deleted) does it fall back to the newest on disk, which is also the only
 // honest answer at start-up: nothing was observed to happen, so the newest save
 // is the best guess at the one being played.
+//
+// # What "seen" may record
+//
+// `seen` is the record "changed" is judged against, so a file recorded into it
+// has been decided about — permanently. It used to be written from the WHOLE
+// listing on every pass, which meant a changed file that merely lost the
+// newest-first tie-break was filed as seen without ever being chosen, and was
+// therefore never changed again. Restoring two backups in one tick (`cp -p
+// backup/*.xml.gz saves/`, an unpacked archive, an rsync) is enough: the older
+// of the two is invisible from that moment on, and no amount of refreshing —
+// the button and refresh_save both ask this same question — brings it back.
+//
+// So a file is recorded only once the pipeline is done with it: unchanged
+// (nothing to decide), or dispatched to the parser. Everything else stays out,
+// which turns the changed set into a work queue that drains newest-first — one
+// file per settle, each keeping the gate until it fires, none of them dropped.
 func (d *detector) choose(all []candidate) candidate {
+	// The FIRST listing is not an observation of change: nothing was watched
+	// before it, so every file in it would read as new and the queue above would
+	// walk backwards through the player's whole save directory, parsing each one
+	// in turn. Start-up records the lot and falls back to the newest.
+	first := d.seen == nil
 	seen := make(map[string]candidate, len(all))
 	var changed candidate
 	for _, c := range all {
-		seen[c.path] = c
-		if was, ok := d.seen[c.path]; !ok || !was.same(c) {
+		was, known := d.seen[c.path]
+		if !first && (!known || !was.same(c)) && !c.same(d.dispatched) {
 			if changed.zero() {
 				changed = c // newest first, so the first one found is the newest
 			}
+			continue // deliberately NOT recorded — see above
 		}
+		seen[c.path] = c
 	}
 	d.seen = seen
 	if !changed.zero() {

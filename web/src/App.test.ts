@@ -130,4 +130,35 @@ describe('the board with a save behind it', () => {
 		expect(live).toContain('∅ threat');
 		expect(live).toContain('cannot see attackers');
 	});
+
+	it('prints no fleet or station number when the parse found no ownership', async () => {
+		// PRD risk #1 one field over: the save parsed, the playthrough identity
+		// is intact, freshness is green — and the ownership attribute moved, so
+		// the server sends no counts at all. Every tile that reads one has to
+		// admit it, and "0 idle of 0" under a green stamp is not an admission.
+		vi.useFakeTimers();
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {} });
+		vi.stubGlobal(
+			'EventSource',
+			class {
+				readyState = 1;
+				onopen: (() => void) | null = null;
+				onerror: (() => void) | null = null;
+				addEventListener(): void {}
+				close(): void {}
+			},
+		);
+		const unread: StateView = { ...PARSED, vitals: { ...PARSED.vitals, counts: {} } };
+		vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, statusText: 'OK', json: async () => unread }));
+
+		board.start();
+		await vi.advanceTimersByTimeAsync(0);
+		const live = render(App).body;
+
+		expect(live).toContain('∅ idle ships');
+		expect(live).toContain('∅ stations');
+		expect(live).toContain('no player-owned assets this build recognises');
+		expect(live).not.toContain('idle of');
+		expect(live).not.toContain('NaN');
+	});
 });

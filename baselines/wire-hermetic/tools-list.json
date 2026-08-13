@@ -1802,7 +1802,10 @@
               }
             },
             "workforce": {
-              "type": "integer"
+              "type": [
+                "null",
+                "integer"
+              ]
             },
             "subordinates": {
               "type": "integer"
@@ -2588,7 +2591,10 @@
                     }
                   },
                   "workforce": {
-                    "type": "integer"
+                    "type": [
+                      "null",
+                      "integer"
+                    ]
                   },
                   "subordinates": {
                     "type": "integer"

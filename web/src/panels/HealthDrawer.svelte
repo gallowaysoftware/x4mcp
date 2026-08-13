@@ -86,6 +86,18 @@
 			start-up
 		</p>
 		<!--
+		  The watcher's own blind spot, stated where the answer to "why did it not
+		  see that?" is looked for. Detection is a stat poll: a file is the same
+		  file when its size and mtime are, so a rewrite that changes neither is
+		  invisible. X4 cannot produce one (every write it makes moves the mtime);
+		  a `touch -r`, or an archiver restoring a same-sized save over its own
+		  timestamp, can. Hashing 100 MB every two seconds is the only cure and it
+		  costs more than the case is worth — so it is said out loud instead.
+		-->
+		<p class="row t-body dim">
+			detection compares size + mtime · a rewrite that changes neither is not seen
+		</p>
+		<!--
 		  "Am I niced?" — the one question about x4cue's cost that a player can
 		  feel the answer to through the game, and it used to be answerable only
 		  from ps. This is what the kernel actually granted the thread that read

@@ -108,19 +108,35 @@ func (s *Server) legs() []wire.LegHealth {
 	return []wire.LegHealth{leg}
 }
 
+// counts is the three tallies beside the balance, and the presence rule they
+// share.
+//
+// A parse that happened is not a fleet that was counted — the same sentence as
+// the one above Credits, and the same defence. len(snap.Ships) is 0 both when
+// the player owns no ships and when the parser never found the player's
+// property at all, and the second is one attribute rename away (PRD risk #1)
+// with the playthrough identity intact, so nothing else on the board goes amber
+// about it. So the parser records whether it found the ownership vocabulary
+// (x4save.Snapshot.PlayerAssetsSeen) and all three counts stay ABSENT when it
+// did not: the strip draws three ∅ boxes instead of FLEET 0 STN 0 IDLE 0.
+//
+// When it DID, a zero is published as a zero: "no stations yet" is a true and
+// extremely common thing to say about an early empire.
 func counts(snap *x4save.Snapshot) wire.Counts {
-	c := wire.Counts{
-		Fleet:    len(snap.Ships),
-		Stations: len(snap.Stations),
-	}
-	for _, sh := range snap.Ships {
-		if idle(sh) {
-			c.Idle++
-		}
-	}
 	// Threats needs the knownto/attacker data from the F3 bump (F13a). It stays
 	// nil — ABSENT, so the board draws its ∅ box — rather than 0, which would
 	// be this build claiming nobody is hunting the player.
+	var c wire.Counts
+	if !snap.PlayerAssetsSeen {
+		return c
+	}
+	fleet, stations, idleShips := len(snap.Ships), len(snap.Stations), 0
+	for _, sh := range snap.Ships {
+		if idle(sh) {
+			idleShips++
+		}
+	}
+	c.Fleet, c.Stations, c.Idle = &fleet, &stations, &idleShips
 	return c
 }
 

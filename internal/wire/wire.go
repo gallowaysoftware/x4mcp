@@ -101,7 +101,17 @@ type SnapshotMeta struct {
 	ParseMS       int64     `json:"parse_ms"`
 	// GameTimeS is in-game elapsed seconds. A regression means the player loaded
 	// an earlier save (design §6 rollback).
-	GameTimeS   float64   `json:"game_time_s"`
+	//
+	// A POINTER, because that regression is decided by SUBTRACTION and 0 is the
+	// most dangerous number this field can hold. Move the `time=` attribute in
+	// <info><game> — a game update mid-session is all it takes — and the first
+	// save this build cannot read the clock of reads as second zero, which is
+	// "earlier" than the 164 hours before it. The watcher then declares a
+	// rollback nobody performed, resets the diff baseline and suppresses the
+	// loss alerts that baseline exists to raise, on a perfectly good save, with
+	// the stamp reading `loaded an earlier save`. nil is absent on the wire and
+	// means unread: nothing is compared against it in either direction.
+	GameTimeS   *float64  `json:"game_time_s,omitempty"`
 	SaveDate    time.Time `json:"save_date"`
 	GameVersion string    `json:"game_version"`
 	PlayerName  string    `json:"player_name"`

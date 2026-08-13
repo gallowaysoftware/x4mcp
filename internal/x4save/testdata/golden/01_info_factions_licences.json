@@ -22,6 +22,7 @@
       "Kingdom End"
     ],
     "money_seen": true,
+    "game_time_seen": true,
     "relations": [
       {
         "faction": "argon",
@@ -38,6 +39,7 @@
     ],
     "ships": null,
     "stations": null,
+    "player_assets_seen": false,
     "owned_sectors": null,
     "blueprints_seen": false,
     "other_counts": {}

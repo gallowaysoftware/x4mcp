@@ -253,6 +253,13 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleEvents is one SSE connection, start to finish.
+//
+// The deferred teardown is the last thing standing between a wedged hub and a
+// browser that never learns anything is wrong, so Hub.unsubscribe is required
+// never to block: this handler returning is what lets net/http finish the
+// response and the kernel send a FIN, and a connection that cannot close is a
+// connection the client will keep reading as alive.
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	after := lastEventID(r)
 	c, replay := s.opts.Hub.subscribe(after)

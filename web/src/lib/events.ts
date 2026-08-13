@@ -10,33 +10,34 @@
  * from the newest `id:` it saw, and the server prefers the header — so the two
  * mechanisms compose without the client having to rewrite its URL.
  *
- * ## Liveness, and an honest gap
+ * ## Liveness is BYTES RECEIVED. Nothing else counts.
  *
- * design §6 measures silence against the hub's 15 s heartbeat. That heartbeat
- * is an SSE **comment** (`: heartbeat`), and comments are invisible to
- * `EventSource` — no JS event fires, by specification. So the client cannot
- * count heartbeats; it counts two other things that are just as true on the
- * v1.0 same-machine posture:
+ * design §6 measures silence against the hub's 15 s heartbeat, and the client
+ * now receives that heartbeat: it is a named event (`heartbeat`), not the SSE
+ * comment it used to be, because comments fire no JS event by specification and
+ * a client cannot count what the browser never hands it.
  *
- *   1. every event that arrives, and
- *   2. the connection still being OPEN, sampled once a second.
+ * This module therefore stamps `#lastContactAtMS` in exactly three places, and
+ * every one of them is bytes arriving from the server: an event, a heartbeat,
+ * and the open handshake. It used to stamp a fourth — once a second, for as
+ * long as `readyState` was OPEN — and that one was not evidence of anything.
+ * A socket is open until somebody closes it, and the cases where nobody does
+ * are precisely the cases the silence ladder exists for:
  *
- * When the x4cue process dies, its socket closes, `readyState` leaves OPEN
- * within milliseconds and the two-stage timer starts — which is exactly the
- * state design §6 says this posture means. The heartbeat still earns its keep
- * at the transport layer: it is what keeps the socket (and any proxy) from
- * idling out, and what makes a dead peer surface as a closed socket rather than
- * as an indefinite hang.
+ *   - a server frozen rather than killed (SIGSTOP, a cgroup freezer, a
+ *     debugger, a suspended host): TCP stays ESTABLISHED and not one byte
+ *     arrives, indefinitely — no bug required anywhere for this;
+ *   - a wedged hub that has stopped writing but cannot close the connection;
+ *   - a LAN client whose network drops without the socket erroring (PRD §12.8).
  *
- * The case this does NOT catch is a LAN client whose network drops without the
- * socket erroring — `readyState` stays OPEN and nothing arrives. Closing that
- * gap needs the heartbeat promoted from a comment to a named event, which is a
- * server change; it is recorded here rather than papered over, and it only
- * bites a posture (PRD §12.8, LAN clients) that v1.0 does not ship.
+ * Measured against the old rule: five minutes — and an hour — of total silence
+ * on an open socket still read as `connection = live`, with the stamp saying
+ * `quicksave · 5m ago` and alert intake never pausing. The 44/45/60 s ladder was
+ * right the whole time; its input was a tautology.
  */
 
 import type { BoardEvent } from './types';
-import type { EventType } from './types.gen';
+import { EventTypeHeartbeat, type EventType } from './types.gen';
 
 export interface EventStreamHandlers {
 	onOpen: () => void;
@@ -44,7 +45,12 @@ export interface EventStreamHandlers {
 	onClosed: () => void;
 }
 
-/** Every event name the hub emits, so one listener per name can be attached. */
+/**
+ * Every event name the hub emits that CARRIES BOARD STATE, so one listener per
+ * name can be attached. The heartbeat is deliberately not in this list: it has
+ * no sequence, no payload and nothing for the reducer to fold — its entire job
+ * is to be a byte that arrived, and it gets its own listener in `connect`.
+ */
 const EVENT_NAMES: readonly EventType[] = [
 	'save.detected',
 	'save.parsing',
@@ -60,7 +66,11 @@ export class EventStream {
 	#source: EventSource | undefined;
 	#handlers: EventStreamHandlers;
 	#closed = false;
-	/** Wall-clock ms of the last proof the stream was alive. */
+	/**
+	 * Wall-clock ms of the last BYTES that arrived from the server — an event, a
+	 * heartbeat, or the open handshake. Never a clock tick: see the module
+	 * comment for what happens when a board is allowed to prove its own liveness.
+	 */
 	#lastContactAtMS: number;
 
 	constructor(handlers: EventStreamHandlers, nowMS: number = Date.now()) {
@@ -68,12 +78,9 @@ export class EventStream {
 		this.#lastContactAtMS = nowMS;
 	}
 
+	/** What the store's 1 Hz tick runs the silence ladder against. */
 	get lastContactAtMS(): number {
 		return this.#lastContactAtMS;
-	}
-
-	get open(): boolean {
-		return this.#source?.readyState === 1; // EventSource.OPEN
 	}
 
 	/**
@@ -89,6 +96,8 @@ export class EventStream {
 		this.#source = source;
 
 		source.onopen = () => {
+			// A response arrived: headers, and the hub's `retry:` line behind
+			// them. Real bytes, so real contact.
 			this.#lastContactAtMS = Date.now();
 			this.#handlers.onOpen();
 		};
@@ -102,15 +111,13 @@ export class EventStream {
 		for (const name of EVENT_NAMES) {
 			source.addEventListener(name, (e) => this.#dispatch(name, e as MessageEvent<string>));
 		}
-	}
-
-	/**
-	 * Sample liveness. Called from the one 1 Hz clock rather than from a timer
-	 * of its own — design §6: one clock, no per-panel drift.
-	 */
-	sample(nowMS: number): number {
-		if (this.open) this.#lastContactAtMS = nowMS;
-		return this.#lastContactAtMS;
+		// The keep-alive, and the only thing on this stream that proves the
+		// server is still there between saves. It is stamped and dropped: there
+		// is no envelope to parse, no seq to advance, and nothing to tell the
+		// reducer — the byte IS the message.
+		source.addEventListener(EventTypeHeartbeat, () => {
+			this.#lastContactAtMS = Date.now();
+		});
 	}
 
 	close(): void {

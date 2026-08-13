@@ -61,7 +61,7 @@ describe('the MFD rule: nothing moves when the first save lands', () => {
 		// The one transition every board makes, once, while the player watches.
 		// Widths hung off `.val` would jump here, because `.val` exists only in
 		// the known branch.
-		const before = body(false, vitals({ credits: undefined }));
+		const before = body(false, vitals({ credits: undefined, counts: {} }));
 		const after = body(true, vitals({ credits: 12_405_882, credits_delta: 4000 }));
 		expect(cells(before)).toEqual(cells(after));
 		expect(cells(before)).toContain('cell-credits');
@@ -69,7 +69,7 @@ describe('the MFD rule: nothing moves when the first save lands', () => {
 	});
 
 	it('gives each ∅ box the line box of the value it stands in for', () => {
-		const before = body(false, vitals({ credits: undefined }));
+		const before = body(false, vitals({ credits: undefined, counts: {} }));
 		// 34/36 credits, 22/28 counts: an unknown that keeps caption leading
 		// would shrink the whole strip until the first save arrived.
 		expect(before).toContain('u-glance');
@@ -93,6 +93,48 @@ describe('counts this build cannot compute', () => {
 		const after = body(true, vitals({ counts: { fleet: 111, stations: 12, idle: 0, threats: 3 } }));
 		expect(after).not.toContain('∅ threat');
 		expect(after).toContain('>3<');
+	});
+});
+
+describe('counts nobody read', () => {
+	/**
+	 * The same failure as the balance one, three cells to the right. A patch
+	 * moves the attribute a save marks player property with: it still parses,
+	 * still carries its playthrough identity, so freshness is green, the leg is
+	 * up and the beacon never moves — and the wire's counts used to be `len()`
+	 * of an empty slice. FLEET 0 STN 0 IDLE 0, at 22 px, about an empire that is
+	 * all still there.
+	 */
+	it('shows ∅ after a successful parse, not 0', () => {
+		const out = body(true, vitals({ counts: {} }));
+		expect(out).toContain('∅ fleet');
+		expect(out).toContain('∅ stn');
+		expect(out).toContain('∅ idle');
+		expect(out).not.toContain('t-num-l'); // the value branch never rendered
+	});
+
+	it('says which unknown it is: parsed, and no assets in it', () => {
+		expect(body(true, vitals({ counts: {} }))).toContain('no player-owned assets this build recognises');
+		expect(body(false, vitals({ counts: {} }))).toContain('no save has been parsed yet');
+	});
+
+	it('treats a JSON null exactly like an absent field', () => {
+		// `omitempty` is a serialisation detail; a producer that spells the same
+		// unknown as `null` must not get a number out of the strip.
+		const nulled = { fleet: null, stations: null, idle: null } as unknown as VitalsView['counts'];
+		const out = body(true, vitals({ counts: nulled }));
+		expect(out).toContain('∅ fleet');
+		expect(out).not.toContain('t-num-l');
+	});
+
+	it('still prints counts of zero, which are real things to be', () => {
+		// The other half of the doctrine: an empire with no stations yet has a
+		// fact about itself. Suppressing that would be the same bug facing the
+		// other way.
+		const out = body(true, vitals({ counts: { fleet: 0, stations: 0, idle: 0 } }));
+		expect(out).not.toContain('∅ fleet');
+		expect(out).not.toContain('∅ stn');
+		expect(out).toContain('t-num-l');
 	});
 });
 

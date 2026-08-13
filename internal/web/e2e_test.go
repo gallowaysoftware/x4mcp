@@ -138,8 +138,8 @@ func TestEndToEndSaveToStream(t *testing.T) {
 	if state.Vitals.Credits == nil {
 		t.Error("credits should be known once a save is parsed")
 	}
-	if state.Vitals.Counts.Fleet == 0 {
-		t.Error("the fixture has ships; the count should show them")
+	if state.Vitals.Counts.Fleet == nil || *state.Vitals.Counts.Fleet == 0 {
+		t.Errorf("the fixture has ships; the count should show them, got %v", state.Vitals.Counts.Fleet)
 	}
 	if len(state.Watch.Dirs) == 0 || !strings.HasPrefix(state.Watch.Dirs[0], saveDir) {
 		t.Errorf("watch dirs = %v, want the temp save dir", state.Watch.Dirs)

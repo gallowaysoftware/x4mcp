@@ -193,3 +193,110 @@ func TestDetectorChoosesWhatChanged(t *testing.T) {
 		})
 	}
 }
+
+// Two saves restored in ONE tick, which is what restoring a backup actually
+// looks like: `cp -p backup/*.xml.gz saves/`, an unpacked tarball, an rsync of a
+// directory. Both files change between two listings, only one can be chosen
+// first — and the one that lost the tie-break used to be recorded into `d.seen`
+// in the very same pass. "Changed" is judged against that record, so from that
+// moment it had never changed and never would: not on the next poll, not on the
+// refresh button, not on refresh_save. Permanently invisible.
+//
+// Both must be detected, newest first, each getting the settle gate to itself.
+func TestDetectorSeesEverySaveRestoredInOneTick(t *testing.T) {
+	t0 := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)
+	c := func(name string, size int64, mod time.Duration) candidate {
+		return candidate{path: "/saves/" + name, size: size, modTime: t0.Add(mod)}
+	}
+	// Newest first, as x4save.ListSaves returns them. The two restored files
+	// keep their original timestamps, so they land OLDER than what is there.
+	live := c("quicksave.xml.gz", 100, 0)
+	newer := c("save_002.xml.gz", 200, -2*time.Hour)
+	older := c("save_001.xml.gz", 300, -3*time.Hour)
+
+	cases := []struct {
+		name     string
+		restored []candidate
+		want     []candidate // dispatched, in order
+	}{
+		{
+			// The control, which passed all along: one file, one settle.
+			name:     "one restore",
+			restored: []candidate{newer},
+			want:     []candidate{newer},
+		},
+		{
+			name:     "two restores in one tick",
+			restored: []candidate{newer, older},
+			want:     []candidate{newer, older},
+		},
+		{
+			name:     "three, in newest-first order",
+			restored: []candidate{newer, older, c("save_000.xml.gz", 400, -4*time.Hour)},
+			want:     []candidate{newer, older, c("save_000.xml.gz", 400, -4*time.Hour)},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDetector(DefaultSettleTicks)
+			// Start-up: one save on disk, seen and settled, nothing outstanding.
+			for range DefaultSettleTicks {
+				d.observe(d.choose([]candidate{live}), sourcePoll)
+			}
+
+			listing := append([]candidate{live}, tc.restored...)
+			var dispatched []candidate
+			// Ten quiet ticks after the restore. Nothing else changes on disk —
+			// exactly the case where "what is newest?" has no answer left and
+			// "what changed?" has to keep the ones it has not dealt with.
+			for range 10 {
+				cand := d.choose(listing)
+				if d.observe(cand, sourcePoll) {
+					dispatched = append(dispatched, cand)
+				}
+			}
+
+			if len(dispatched) != len(tc.want) {
+				t.Fatalf("dispatched %s, want %s", paths(dispatched), paths(tc.want))
+			}
+			for i, want := range tc.want {
+				if !dispatched[i].same(want) {
+					t.Errorf("dispatch %d = %q, want %q", i, dispatched[i].path, want.path)
+				}
+			}
+		})
+	}
+}
+
+// And the other half of the same rule: a file the gate has already dealt with
+// must not come back round. Without it the queue above never drains and every
+// save on disk is re-parsed forever.
+func TestDetectorDoesNotReDispatchWhatItHasSeen(t *testing.T) {
+	t0 := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)
+	quick := candidate{path: "/saves/quicksave.xml.gz", size: 100, modTime: t0}
+	restored := candidate{path: "/saves/save_001.xml.gz", size: 300, modTime: t0.Add(-3 * time.Hour)}
+
+	d := newDetector(DefaultSettleTicks)
+	dispatches := 0
+	listing := []candidate{quick}
+	for i := range 12 {
+		if i == 4 {
+			listing = []candidate{quick, restored} // the restore lands
+		}
+		if d.observe(d.choose(listing), sourcePoll) {
+			dispatches++
+		}
+	}
+	if dispatches != 2 {
+		t.Errorf("dispatched %d times over 12 quiet ticks, want exactly 2 (the save that was there, and the one restored)", dispatches)
+	}
+}
+
+func paths(cs []candidate) []string {
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, c.path)
+	}
+	return out
+}

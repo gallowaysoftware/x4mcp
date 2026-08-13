@@ -30,7 +30,7 @@ func TestJSONNames(t *testing.T) {
 		},
 		{
 			name: "snapshot meta",
-			in:   SnapshotMeta{GameGUID: "g", SchemaVersion: 25, ParseMS: 9123, GameTimeS: 1234.5},
+			in:   SnapshotMeta{GameGUID: "g", SchemaVersion: 25, ParseMS: 9123, GameTimeS: ptr(1234.5)},
 			want: []string{`"game_guid":"g"`, `"schema_version":25`, `"parse_ms":9123`, `"game_time_s":1234.5`},
 		},
 		{
@@ -39,9 +39,12 @@ func TestJSONNames(t *testing.T) {
 			want: []string{`"leg":"canon"`, `"up":false`, `"detail":"connection refused"`},
 		},
 		{
-			name: "vitals counts always present",
-			in:   VitalsView{Freshness: Freshness{State: FreshnessStateStartup, WatchDirs: []string{"/saves"}}},
-			want: []string{`"state":"startup"`, `"watch_dirs":["/saves"]`, `"fleet":0`},
+			name: "vitals counts, when they were really counted",
+			in: VitalsView{
+				Freshness: Freshness{State: FreshnessStateStartup, WatchDirs: []string{"/saves"}},
+				Counts:    Counts{Fleet: ptr(94), Stations: ptr(17), Idle: ptr(6)},
+			},
+			want: []string{`"state":"startup"`, `"watch_dirs":["/saves"]`, `"fleet":94`, `"stations":17`, `"idle":6`},
 		},
 	}
 	for _, c := range cases {
@@ -69,20 +72,54 @@ func TestUnknownIsOmittedNotZero(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	got := string(b)
-	for _, key := range []string{`"credits"`, `"credits_delta"`, `"credits_series"`, `"save"`, `"parsed_at"`, `"error"`} {
+	// The counts are on this list for the same reason credits is: three cells
+	// beside it that used to be len() of a slice, and a length cannot say "I
+	// never found the player's property".
+	for _, key := range []string{
+		`"credits"`, `"credits_delta"`, `"credits_series"`, `"save"`, `"parsed_at"`, `"error"`,
+		`"fleet"`, `"stations"`, `"idle"`,
+	} {
 		if strings.Contains(got, key) {
 			t.Errorf("unknown %s should be omitted, got %s", key, got)
 		}
 	}
 
 	// A known zero, on the other hand, must survive: a player who really has
-	// 0 Cr is in trouble and deserves to see it.
+	// 0 Cr is in trouble and deserves to see it, and an empire with no stations
+	// yet has a fact about itself, not a gap.
 	var broke int64
-	b, err = json.Marshal(VitalsView{Credits: &broke})
+	b, err = json.Marshal(VitalsView{Credits: &broke, Counts: Counts{Fleet: ptr(0), Stations: ptr(0), Idle: ptr(0)}})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if !strings.Contains(string(b), `"credits":0`) {
-		t.Errorf("a known zero balance must serialize, got %s", b)
+	for _, want := range []string{`"credits":0`, `"fleet":0`, `"stations":0`, `"idle":0`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("a known zero must serialize (%s), got %s", want, b)
+		}
 	}
 }
+
+// TestSnapshotMetaOmitsAnUnreadGameClock is the same rule on the field the
+// rollback verdict is computed from. `game_time_s: 0` is not "the game just
+// started" — it is a subtraction the watcher will lose, and losing it fabricates
+// a rollback that resets the diff baseline and suppresses loss alerts.
+func TestSnapshotMetaOmitsAnUnreadGameClock(t *testing.T) {
+	b, err := json.Marshal(SnapshotMeta{GameGUID: "g"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(b), `"game_time_s"`) {
+		t.Errorf("an unread game clock must be omitted, got %s", b)
+	}
+	// And a real zero — the first seconds of a brand-new game — is still a
+	// number the server knows.
+	b, err = json.Marshal(SnapshotMeta{GameGUID: "g", GameTimeS: ptr(0.0)})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"game_time_s":0`) {
+		t.Errorf("a known zero game clock must serialize, got %s", b)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

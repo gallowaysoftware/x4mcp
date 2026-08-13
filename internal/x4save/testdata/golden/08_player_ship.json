@@ -18,6 +18,7 @@
     "location_raw": "{20004,5010011}",
     "dlcs": null,
     "money_seen": true,
+    "game_time_seen": true,
     "relations": null,
     "ships": [
       {
@@ -90,6 +91,7 @@
       }
     ],
     "stations": null,
+    "player_assets_seen": true,
     "owned_sectors": null,
     "blueprints_seen": false,
     "sectors": [

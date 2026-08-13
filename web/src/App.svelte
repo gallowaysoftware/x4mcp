@@ -79,6 +79,21 @@
 	const parses = $derived(board.state.watch?.parses);
 	/** Absent, not zero: the wire makes "this build cannot see attackers" expressible. */
 	const threats = $derived(board.vitals.counts.threats);
+	/**
+	 * The asset counts, absent for the same kind of reason: a parse that never
+	 * found the player's property publishes no count rather than a zero, so
+	 * these tiles must ask whether there IS a number and not merely whether a
+	 * save has been read.
+	 */
+	const idle = $derived(board.vitals.counts.idle);
+	const fleet = $derived(board.vitals.counts.fleet);
+	const stations = $derived(board.vitals.counts.stations);
+	/** One sentence, four tiles: why a count this build cannot show is missing. */
+	const countReason = $derived(
+		board.published
+			? 'this save parsed, and no player-owned assets this build recognises were in it'
+			: 'no save has been parsed yet',
+	);
 </script>
 
 <svelte:window onkeydown={onkeydown} />
@@ -135,11 +150,10 @@
 		<section class="slot slot-tiles-a" aria-label="idle ships and why">
 			<div class="t-micro slot-head">IDLE SHIPS &amp; WHY</div>
 			<p class="t-body slot-note">
-				{#if board.published}
-					{formatCount(board.vitals.counts.idle)} idle of {formatCount(board.vitals.counts.fleet)} {MIDDOT} the
-					why-chain lands with the panels
+				{#if idle != null && fleet != null}
+					{formatCount(idle)} idle of {formatCount(fleet)} {MIDDOT} the why-chain lands with the panels
 				{:else}
-					<UnknownValue label="idle ships" reason="no save has been parsed yet" />
+					<UnknownValue label="idle ships" reason={countReason} />
 				{/if}
 			</p>
 		</section>
@@ -147,10 +161,10 @@
 		<section class="slot slot-tiles-b" aria-label="station health">
 			<div class="t-micro slot-head">STATION HEALTH</div>
 			<p class="t-body slot-note">
-				{#if board.published}
-					{formatCount(board.vitals.counts.stations)} stations {MIDDOT} verdicts land with the panels
+				{#if stations != null}
+					{formatCount(stations)} stations {MIDDOT} verdicts land with the panels
 				{:else}
-					<UnknownValue label="stations" reason="no save has been parsed yet" />
+					<UnknownValue label="stations" reason={countReason} />
 				{/if}
 			</p>
 		</section>
@@ -159,7 +173,7 @@
 			<div class="t-micro slot-head">THREATS</div>
 			<p class="t-body slot-note">
 				{#if !board.published}
-					<UnknownValue label="threats" reason="no save has been parsed yet" />
+					<UnknownValue label="threats" reason={countReason} />
 				{:else if threats == null}
 					<!-- design §5's threat empty state is honest about VISION, not
 					     about danger. This build has no attacker data at all, so

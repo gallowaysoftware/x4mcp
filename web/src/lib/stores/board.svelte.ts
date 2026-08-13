@@ -238,7 +238,11 @@ export class Board {
 	#tick(): void {
 		const now = Date.now();
 		this.#nowMS = now;
-		if (this.#stream !== undefined) this.#lastContactAtMS = this.#stream.sample(now);
+		// READ the stream's last contact; never refresh it. The tick's job is to
+		// notice silence, and a tick that stamped contact for an open socket was
+		// answering its own question — an hour of a frozen server reads as `live`
+		// on a connection nobody closed (see events.ts).
+		if (this.#stream !== undefined) this.#lastContactAtMS = this.#stream.lastContactAtMS;
 		this.#readChime();
 		this.#connection = connectionState(this.#board.silence, (now - this.#lastContactAtMS) / 1000);
 		this.#seen = observe(this.#seen, this.amberConditions, now);

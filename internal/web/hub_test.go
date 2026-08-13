@@ -366,7 +366,7 @@ func (b *beatRecorder) Flush() {}
 func (b *beatRecorder) beats() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return bytes.Count(b.buf.Bytes(), []byte(": heartbeat\n\n"))
+	return bytes.Count(b.buf.Bytes(), []byte("event: "+wire.EventTypeHeartbeat+"\n"))
 }
 
 func types(evs []wire.Envelope) []wire.EventType {

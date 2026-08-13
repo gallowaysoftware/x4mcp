@@ -215,6 +215,57 @@ func TestWatcherRollbackOnGameTimeRegression(t *testing.T) {
 	}
 }
 
+// A rollback the player never performed is worse than a missed one: it resets
+// the diff baseline and suppresses loss alerts, which is the board deciding, in
+// silence, to stop watching for exactly the thing it exists to watch for.
+//
+// That is one attribute rename away, and the sequence is the ordinary one: the
+// game updates mid-session. The save before the patch had its `time=` where
+// this build looks, the save after it does not — nothing errors, the
+// playthrough identity is intact, the schema-mismatch guard needs both GameGUID
+// and PlayerName gone — so an unread clock of 0 is "earlier" than the 164 hours
+// before it and the board announces a rollback nobody performed. An unread
+// clock is not a zero, and nothing may be subtracted from it.
+func TestWatcherWillNotInventARollbackFromAnUnreadGameClock(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t)
+	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		return stubSnapshot(path, "guid-a", 591_711, 500), nil
+	}
+	r.start(ctx)
+
+	r.save("quicksave.xml.gz", "guid-a", 591_711, 500, r.clock.Now())
+	r.settle()
+	first := r.rec.wait(t, wire.EventTypeSnapshotReady, 1).(wire.SnapshotMeta)
+	if first.GameTimeS == nil || *first.GameTimeS != 591_711 {
+		t.Fatalf("game_time_s = %v, want the clock the parser read", first.GameTimeS)
+	}
+
+	// The patch lands. Same empire, same player, one attribute somewhere else.
+	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		s := stubSnapshot(path, "guid-a", 0, 480)
+		s.GameTimeSeen = false
+		return s, nil
+	}
+	r.save("save_002.xml.gz", "guid-a", 0, 480, r.clock.Now().Add(time.Minute))
+	r.settle()
+	meta := r.rec.wait(t, wire.EventTypeSnapshotReady, 2).(wire.SnapshotMeta)
+
+	if meta.GameTimeS != nil {
+		t.Errorf("game_time_s = %v on the wire, want it absent: nobody read a clock", *meta.GameTimeS)
+	}
+	if meta.Rollback {
+		t.Error("a rollback was declared against a clock nobody read: the baseline is now reset and loss alerts are suppressed on a perfectly good save")
+	}
+	if p := r.w.Published(); p.Previous == nil {
+		t.Error("the diff baseline was thrown away for a rollback that never happened")
+	}
+	if f := r.w.Freshness(); f.State != wire.FreshnessStateCurrent {
+		t.Errorf("state = %q, want current: nothing was loaded from an earlier save", f.State)
+	}
+}
+
 func TestWatcherParseFailureKeepsThePreviousSnapshot(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -835,6 +886,13 @@ func TestASaveStillBeingWrittenIsNotAFault(t *testing.T) {
 	// The file has NOT changed since the gate fired on it — the case where the
 	// write finished during the last read attempt. Without reconsidering it,
 	// this save would sit there unparsed until the game wrote another one.
+	//
+	// Waiting for the verdict first, because the verdict is what clears the
+	// gate's dispatched marker: a tick that lands between the last read attempt
+	// and stillWriting sees the file as already handed over and does nothing,
+	// which is a race in the TEST and read as the bug (it failed roughly one run
+	// in twenty under -count, on this code and on the code before it).
+	r.awaitParseDone()
 	r.tick()
 	select {
 	case <-attempts:
@@ -1106,6 +1164,61 @@ func TestARestoredSaveIsSeenEvenThoughItIsOlder(t *testing.T) {
 	}
 	if got := r.w.Published().Snapshot.SourcePath; got != restored {
 		t.Errorf("published %s, want the restored save to stay published", got)
+	}
+}
+
+// The same restore, done the way a player actually does it: `cp -p
+// backup/*.xml.gz saves/` — several files landing between two polls, every one
+// of them older than the save already there.
+//
+// The detector can only watch one at a time, and the one that lost the
+// newest-first tie-break used to be written into its "seen" record in the same
+// pass that passed it over. "Changed" is measured against that record, so the
+// loser had, from then on, never changed: three forced refreshes (the button and
+// refresh_save both) could not recover it. Every restored save must be parsed,
+// newest first.
+func TestEveryRestoredSaveInOneTickIsSeen(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t)
+	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		switch {
+		case strings.Contains(path, "restored_b"):
+			return stubSnapshot(path, "guid-b", 400, 90), nil
+		case strings.Contains(path, "restored_a"):
+			return stubSnapshot(path, "guid-a-old", 300, 80), nil
+		}
+		return stubSnapshot(path, "guid-live", 1000, 500), nil
+	}
+	r.start(ctx)
+
+	r.save("quicksave.xml.gz", "guid-live", 1000, 500, r.clock.Now())
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
+
+	// Both land before the next poll, keeping their archive timestamps.
+	restoredB := r.save("restored_b.xml.gz", "guid-b", 400, 90, r.clock.Now().Add(-2*time.Hour))
+	restoredA := r.save("restored_a.xml.gz", "guid-a-old", 300, 80, r.clock.Now().Add(-3*time.Hour))
+
+	// Newest first: B settles and is parsed, then A gets the gate.
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 2)
+	if got := r.w.Published().Snapshot.SourcePath; got != restoredB {
+		t.Fatalf("published %s after the first settle, want the newer restore %s", got, restoredB)
+	}
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 3)
+	if got := r.w.Published().Snapshot.SourcePath; got != restoredA {
+		t.Errorf("published %s, want the OLDER restore %s: it changed on disk and was never looked at", got, restoredA)
+	}
+
+	// And then the disk is quiet, so the watcher is too. A queue that never
+	// drains is the same bug facing the other way.
+	for range 3 {
+		r.settle()
+	}
+	if n := r.rec.count(wire.EventTypeSnapshotReady); n != 3 {
+		t.Errorf("snapshot.ready fired %d times, want 3: three saves changed and nothing else did", n)
 	}
 }
 

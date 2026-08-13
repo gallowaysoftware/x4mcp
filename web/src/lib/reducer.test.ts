@@ -76,10 +76,21 @@ describe('bootstrap', () => {
 	});
 
 	it('does not claim a snapshot exists before one has been published', () => {
-		// The wire's counts are plain ints and a fresh board's are all zero.
-		// "0 ships" is a claim nobody made; the board must render unknown.
+		// It is what the board says INSTEAD of a number it does not have: "no
+		// save has been parsed yet" rather than "this save parsed and the
+		// number was not in it". Two different admissions.
 		const s = booted({ snapshot: undefined });
 		expect(hasSnapshot(s)).toBe(false);
+	});
+
+	it('starts with no counts at all — not with zeros', () => {
+		// A fresh board has parsed nothing, so it has counted nothing. `fleet: 0`
+		// here is a claim about the player's empire made before a single save
+		// was read, and it renders at 22 px.
+		const s = initialBoardState();
+		expect(s.vitals.counts.fleet).toBeUndefined();
+		expect(s.vitals.counts.stations).toBeUndefined();
+		expect(s.vitals.counts.idle).toBeUndefined();
 	});
 
 	it('starts the parse clock from now when it arrives mid-parse', () => {

@@ -164,6 +164,21 @@ async function boot(script: Parameters<typeof fakeFetch>[0]): Promise<Board> {
 	return board;
 }
 
+/**
+ * Advance time the way a LIVE server does: heartbeats at the policy's cadence.
+ *
+ * Time passing is not proof of life — that is the entire point of the silence
+ * ladder — so a test that wants a healthy connection has to send the bytes a
+ * healthy connection sends. Skipping them is how "an hour later, still calm"
+ * quietly became a test of a board that had stopped listening.
+ */
+async function advanceAlive(ms: number, heartbeatMS = 15_000): Promise<void> {
+	for (let left = ms; left > 0; left -= heartbeatMS) {
+		await vi.advanceTimersByTimeAsync(Math.min(heartbeatMS, left));
+		FakeEventSource.last().emit('heartbeat', {});
+	}
+}
+
 // ---- the resting board -----------------------------------------------------
 
 describe('the resting board (design §2)', () => {
@@ -178,9 +193,10 @@ describe('the resting board (design §2)', () => {
 		expect(board.newAmbers).toEqual([]);
 		expect(board.beacon).toBe('gray');
 
-		// An hour of ticking, still untouched, still the all-clear.
-		await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+		// An hour of a healthy server, still untouched, still the all-clear.
+		await advanceAlive(60 * 60 * 1000);
 		expect(board.beacon).toBe('gray');
+		expect(board.connection).toBe('live');
 		board.stop();
 	});
 
@@ -202,6 +218,79 @@ describe('the resting board (design §2)', () => {
 		// And any interaction at all clears it — ambers need no ack.
 		board.markInteraction();
 		expect(board.beacon).toBe('gray');
+		board.stop();
+	});
+});
+
+// ---- silence ---------------------------------------------------------------
+
+describe('the silence ladder (design §6), measured in bytes and not in sockets', () => {
+	it('escalates through silent to connection-lost while the socket stays OPEN', async () => {
+		// The case that needs no bug anywhere to happen: a server that is frozen
+		// rather than dead — SIGSTOP, a cgroup freezer, a debugger, a suspended
+		// host — leaves TCP ESTABLISHED and sends nothing. Nobody closes the
+		// socket, because nobody is running. The board's only honest evidence is
+		// bytes, and there are none.
+		const board = await boot({ state: () => stateView() });
+		const source = FakeEventSource.last();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(board.connection).toBe('live');
+
+		// Not one byte from here on, and the socket never leaves OPEN.
+		await vi.advanceTimersByTimeAsync(43_000); // 44 s: still inside the budget
+		expect(board.connection).toBe('live');
+		expect(board.freshness.paused).toBe(false);
+
+		await vi.advanceTimersByTimeAsync(1000); // 45 s: two missed heartbeats
+		expect(board.connection).toBe('silent');
+		// The stamp stales wholesale — not because the save aged, because the
+		// board can no longer vouch for it.
+		expect(board.freshness.segments.every((s) => s.tone === 'amber')).toBe(true);
+
+		await vi.advanceTimersByTimeAsync(15_000); // 60 s: three
+		expect(board.connection).toBe('lost');
+		expect(board.freshness.paused).toBe(true);
+		expect(board.freshness.boxed).toBe(true);
+		expect(board.amberConditions).toContain('system:connection-lost');
+
+		// The whole point, stated as an assertion: the socket was open the entire
+		// time. A board that reads `readyState === OPEN` as contact reports five
+		// minutes — and an hour — of total silence as `live`.
+		expect(source.readyState).toBe(1);
+		await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+		expect(board.connection).toBe('lost');
+		expect(source.readyState).toBe(1);
+		board.stop();
+	});
+
+	it('is held live by the heartbeat alone — between saves there is nothing else', async () => {
+		const board = await boot({ state: () => stateView() });
+		await vi.advanceTimersByTimeAsync(44_000);
+		expect(board.connection).toBe('live');
+
+		// One named event, no payload, no seq: the byte IS the message. A comment
+		// (`: heartbeat`) fires nothing in a browser and could never do this.
+		FakeEventSource.last().emit('heartbeat', {});
+		await vi.advanceTimersByTimeAsync(44_000);
+		expect(board.connection).toBe('live');
+		expect(board.state.duplicates).toBe(0); // it is not folded into the log
+		expect(board.state.lastSeq).toBe(10); // and it moves no cursor
+
+		// And when the beating stops, so does the board's belief.
+		await vi.advanceTimersByTimeAsync(16_000);
+		expect(board.connection).toBe('lost');
+		board.stop();
+	});
+
+	it('recovers the moment bytes arrive again', async () => {
+		const board = await boot({ state: () => stateView() });
+		await vi.advanceTimersByTimeAsync(61_000);
+		expect(board.connection).toBe('lost');
+
+		FakeEventSource.last().emit('heartbeat', {});
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(board.connection).toBe('live');
+		expect(board.freshness.paused).toBe(false);
 		board.stop();
 	});
 });

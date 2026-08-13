@@ -794,7 +794,7 @@ func (w *Watcher) publish(req *parseReq, snap *x4save.Snapshot, save wire.SaveMe
 		SchemaVersion: x4save.SchemaVersion,
 		ParsedAt:      now,
 		ParseMS:       save.ParseMS,
-		GameTimeS:     snap.GameTimeS,
+		GameTimeS:     gameTimeS(snap),
 		GameVersion:   snap.GameVersion,
 		PlayerName:    snap.PlayerName,
 		Sections:      sections(snap, prev),
@@ -836,7 +836,7 @@ func (w *Watcher) publish(req *parseReq, snap *x4save.Snapshot, save wire.SaveMe
 			GameGUID: meta.GameGUID,
 			Label:    playthroughLabel(snap),
 		})
-	case meta.GameTimeS < prev.Meta.GameTimeS:
+	case rolledBack(prev.Meta.GameTimeS, meta.GameTimeS):
 		// The player loaded an earlier save. Everything that "vanished" since
 		// the previous snapshot never happened, so the baseline resets and the
 		// board says so rather than reporting invented losses.
@@ -874,6 +874,32 @@ func (w *Watcher) publish(req *parseReq, snap *x4save.Snapshot, save wire.SaveMe
 	w.gcCache()
 	w.opts.Emit(wire.EventTypeSnapshotReady, meta)
 	w.emitLeg(true, "")
+}
+
+// gameTimeS is the in-game clock as the WIRE states it: a number when the
+// parser really read one, absent when it did not (x4save.Snapshot.GameTimeSeen).
+func gameTimeS(snap *x4save.Snapshot) *float64 {
+	if !snap.GameTimeSeen {
+		return nil
+	}
+	t := snap.GameTimeS
+	return &t
+}
+
+// rolledBack answers design §6's rollback question — did the in-game clock go
+// BACKWARDS between two consecutive snapshots of one playthrough — and answers
+// "no" whenever either end of the subtraction was never read.
+//
+// That guard is the whole point. A rollback resets the diff baseline and
+// suppresses loss alerts, so a fabricated one is a board that has quietly
+// stopped watching for the losses it exists to catch. An unread clock is a
+// zero, a zero is earlier than everything, and every save after the first would
+// declare one.
+func rolledBack(prev, next *float64) bool {
+	if prev == nil || next == nil {
+		return false
+	}
+	return *next < *prev
 }
 
 func (w *Watcher) emitLeg(up bool, detail string) {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pequalsnp/x4mcp/internal/wire"
@@ -61,6 +62,12 @@ type Hub struct {
 
 type client struct {
 	ch chan wire.Envelope
+	// gone is set by unsubscribe the instant the handler returns, WITHOUT the
+	// hub lock, and is the fan-out's authority on whether this connection still
+	// exists. The map entry it leaves behind is bookkeeping, reclaimed by
+	// reapLocked whenever the lock next becomes available — see unsubscribe for
+	// why the teardown may not wait for it.
+	gone atomic.Bool
 	// resync records that the LAST send overflowed this client's queue and left
 	// a resync in its place. It is an observation, never a latch: a connection
 	// that starts reading again is caught up by its own refetch and is a normal
@@ -92,10 +99,23 @@ func (h *Hub) Publish(typ wire.EventType, data any) {
 	if len(h.ring) > ringSize {
 		h.ring = h.ring[len(h.ring)-ringSize:]
 	}
+	h.reapLocked()
 	for c := range h.clients {
 		h.send(c, env)
 	}
 	h.mu.Unlock()
+}
+
+// reapLocked drops the clients whose handlers have already returned. Called
+// with h.mu held by everything that takes the lock for its own reasons, because
+// unsubscribe is forbidden from waiting for it: whoever holds the lock next is
+// the one who tidies up.
+func (h *Hub) reapLocked() {
+	for c := range h.clients {
+		if c.gone.Load() {
+			delete(h.clients, c)
+		}
+	}
 }
 
 // send queues one event for one client, or gives up on catching it up. Called
@@ -181,6 +201,7 @@ func (h *Hub) LastSeq() int64 {
 func (h *Hub) Clients() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.reapLocked()
 	return len(h.clients)
 }
 
@@ -192,6 +213,7 @@ func (h *Hub) Clients() int {
 func (h *Hub) subscribe(after int64) (*client, []wire.Envelope) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.reapLocked()
 	c := &client{ch: make(chan wire.Envelope, clientQueue)}
 	h.clients[c] = struct{}{}
 
@@ -213,10 +235,29 @@ func (h *Hub) subscribe(after int64) (*client, []wire.Envelope) {
 	return c, replay
 }
 
+// unsubscribe drops a client, and NEVER waits to do it.
+//
+// net/http cannot finish a response until ServeHTTP returns, and it cannot send
+// a FIN until it has finished the response. A teardown that parks on h.mu
+// therefore hands a wedged hub the power to hold every browser socket OPEN for
+// as long as the process lives — and an open socket used to be exactly what the
+// client read as proof of life. (Measured: five minutes and an hour of total
+// silence on an ESTABLISHED connection still read as `live`; one run left
+// httptest.Server blocked in Close for 3m20s.) The stream loop already stops
+// writing when the hub stops making progress; that is worth nothing if the
+// connection it stopped writing to cannot close.
+//
+// So the flag is set first and unconditionally — the fan-out skips a gone
+// client whatever the lock is doing — and the map entry is deleted here only if
+// the lock happens to be free. Otherwise reapLocked collects it on behalf of
+// whoever holds the lock next. No goroutine is parked on a wedged hub either: a
+// background waiter would be the same leak wearing a different hat.
 func (h *Hub) unsubscribe(c *client) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	delete(h.clients, c)
+	c.gone.Store(true)
+	if h.mu.TryLock() {
+		delete(h.clients, c)
+		h.mu.Unlock()
+	}
 }
 
 // stream writes the SSE protocol for one client until ctx ends. Exported
@@ -269,8 +310,12 @@ func (h *Hub) stream(w http.ResponseWriter, r *http.Request, c *client, replay [
 			}
 			flusher.Flush()
 		case <-beat.C:
-			// A comment line: it keeps the connection (and any proxy) alive and
-			// is what the client's silence timers are measured against.
+			// A NAMED EVENT, not the SSE comment this used to be: a comment
+			// keeps the socket warm but fires nothing in the browser, so the
+			// client could never count it and fell back to "is the socket still
+			// OPEN?" — which a frozen or half-open peer answers yes to forever
+			// (wire.EventTypeHeartbeat). These bytes are the client's only
+			// evidence the server is alive, and evidence is the point.
 			//
 			// Which is exactly why it is not written until the hub has been
 			// PROVEN to still work. This loop touches nothing but its own
@@ -284,19 +329,32 @@ func (h *Hub) stream(w http.ResponseWriter, r *http.Request, c *client, replay [
 			//
 			// So the beat means "the hub can still make progress", and when
 			// that stops being true this connection stops writing and lets the
-			// 45 s/60 s ladder do its job. (The handler's deferred unsubscribe
-			// may then park on the same lock — nothing in here can recover a
-			// wedged hub — but the writes have stopped, which is the part the
-			// player can see.)
+			// 45 s/60 s ladder do its job. Returning is also what CLOSES the
+			// socket: the handler's teardown can no longer be held up by the
+			// wedged hub either (see Hub.unsubscribe), so the tab sees both
+			// halves of the truth — no bytes, and then no connection.
 			if !h.alive(h.liveness) {
 				return
 			}
-			if _, err := io.WriteString(w, ": heartbeat\n\n"); err != nil {
+			if err := writeHeartbeat(w); err != nil {
 				return
 			}
 			flusher.Flush()
 		}
 	}
+}
+
+// writeHeartbeat writes the keep-alive as a named event the browser will
+// actually deliver to a listener.
+//
+// No `id:` line: the heartbeat is outside the sequence (wire.EventTypeHeartbeat)
+// and must not become a client's reconnect cursor. The `data:` line is not
+// decoration either — the SSE specification discards an event whose data buffer
+// is empty, so a heartbeat with nothing in it would be exactly as invisible as
+// the comment it replaces.
+func writeHeartbeat(w io.Writer) error {
+	_, err := fmt.Fprintf(w, "event: %s\ndata: {}\n\n", wire.EventTypeHeartbeat)
+	return err
 }
 
 func writeEvent(w io.Writer, env wire.Envelope) error {

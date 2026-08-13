@@ -107,9 +107,11 @@ export function initialBoardState(): BoardState {
 		vitals: {
 			freshness: { state: FreshnessStateStartup, watch_dirs: [] },
 			legs: [],
-			// `threats` is absent, not 0: this build has no threat vision at all,
-			// and the wire type is a pointer for exactly that reason.
-			counts: { fleet: 0, stations: 0, idle: 0 },
+			// EVERY count is absent, not 0. Nothing has been parsed, so nobody has
+			// counted anything — and `fleet: 0` here is a claim about the player's
+			// empire made by a board that has not read a save yet. The wire types
+			// are pointers for exactly this reason.
+			counts: {},
 		},
 		silence: { heartbeat_s: 15, stale_s: 45, lost_s: 60 },
 		// No freshness block has arrived yet; startup carries no save, so there
@@ -128,10 +130,11 @@ export function initialBoardState(): BoardState {
 }
 
 /**
- * Has a snapshot ever been published? The counts in `VitalsView` are plain ints
- * and a fresh board's are all zero, which is a *claim* — "you have no ships" —
- * that nobody made. Every count render goes through this: false means unknown,
- * and unknown renders as the dotted ∅ box (design §3).
+ * Has a snapshot ever been published? It is what the board says INSTEAD of a
+ * number when it has none — the difference between "no save has been parsed
+ * yet" and "this save parsed and the number was not in it", which are two
+ * different admissions and want two different tooltips (design §3). The
+ * presence of the number itself is now the wire's own answer, not this one.
  */
 export function hasSnapshot(state: BoardState): boolean {
 	return state.snapshot !== undefined;

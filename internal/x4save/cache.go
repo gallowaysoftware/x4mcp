@@ -29,14 +29,16 @@ func CacheDir() string {
 }
 
 // schemaVersion is bumped whenever the parser/Snapshot shape changes, so a
-// code change automatically invalidates stale cached snapshots. 26 adds
-// Snapshot.MoneySeen: a v25 entry has no such field, so it gob-decodes to
-// false, and every cached save would come back claiming its balance was never
-// read — the ∅ box on a board that has a perfectly good number. (25 was the gob
-// header, see cacheHeader: a layout change rather than a parser one, where old
-// entries are unreadable by this build and are removed by name, which is
-// cheaper and safer than decoding one to discover it.)
-const schemaVersion = 26
+// code change automatically invalidates stale cached snapshots. 27 adds the
+// other three presence flags — Snapshot.PlayerAssetsSeen, Snapshot.GameTimeSeen
+// and Station.Workforce as a pointer — for the reason 26 added MoneySeen: a v26
+// entry has no such field, so every cached save would come back claiming its
+// fleet was never counted and its clock never read, which is the ∅ box on a
+// board that has perfectly good numbers. (25 was the gob header, see
+// cacheHeader: a layout change rather than a parser one, where old entries are
+// unreadable by this build and are removed by name, which is cheaper and safer
+// than decoding one to discover it.)
+const schemaVersion = 27
 
 // SchemaVersion is the parser's current snapshot schema, exported so the
 // watcher can report it (a schema mismatch is a player-visible state, design

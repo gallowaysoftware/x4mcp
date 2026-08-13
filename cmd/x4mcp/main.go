@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -175,6 +176,16 @@ func runModules(args []string) {
 	}
 }
 
+// countOrUnknown prints a count the parser may not have been able to read as a
+// number or as "?" — never as 0, which is a different thing to say (see
+// x4save.Station.Workforce).
+func countOrUnknown(n *int) string {
+	if n == nil {
+		return "?"
+	}
+	return strconv.Itoa(*n)
+}
+
 // runWorkforce loads and prints per-race workforce food/medical consumption.
 func runWorkforce(args []string) {
 	wf, err := x4data.LoadWorkforce("")
@@ -318,8 +329,8 @@ func runParse(args []string) {
 			if i >= 5 {
 				break
 			}
-			fmt.Printf("  %-8s wf=%-6d subs=%-4d produces=%v storage_wares=%d\n",
-				s.Code, s.Workforce, s.Subordinates, s.Produces, len(s.Storage))
+			fmt.Printf("  %-8s wf=%-6s subs=%-4d produces=%v storage_wares=%d\n",
+				s.Code, countOrUnknown(s.Workforce), s.Subordinates, s.Produces, len(s.Storage))
 		}
 	}
 	if plots := snap.PlotStatuses(); len(plots) > 0 {

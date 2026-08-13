@@ -134,7 +134,10 @@ func TestVitalsOmitsWhatIsNotKnownYet(t *testing.T) {
 
 	res := get(t, ts, "/api/views/vitals")
 	body := readAll(t, res)
-	for _, key := range []string{`"credits"`, `"credits_delta"`, `"credits_series"`, `"wars"`} {
+	for _, key := range []string{
+		`"credits"`, `"credits_delta"`, `"credits_series"`, `"wars"`,
+		`"fleet"`, `"stations"`, `"idle"`,
+	} {
 		if strings.Contains(body, key) {
 			t.Errorf("%s is present before the first parse: %s", key, body)
 		}
@@ -144,7 +147,7 @@ func TestVitalsOmitsWhatIsNotKnownYet(t *testing.T) {
 	// real numbers.
 	src.published = &watch.Published{
 		Snapshot: &x4save.Snapshot{
-			Money: 12_405_882, MoneySeen: true,
+			Money: 12_405_882, MoneySeen: true, PlayerAssetsSeen: true,
 			Ships: []x4save.Ship{{Order: "Mine"}, {}}, Stations: []x4save.Station{{}},
 		},
 		Previous: &x4save.Snapshot{Money: 12_000_000, MoneySeen: true},
@@ -161,8 +164,10 @@ func TestVitalsOmitsWhatIsNotKnownYet(t *testing.T) {
 	if v.CreditsDelta == nil || *v.CreditsDelta != 405_882 {
 		t.Errorf("delta = %v, want the change against the previous snapshot", v.CreditsDelta)
 	}
-	if v.Counts.Fleet != 2 || v.Counts.Stations != 1 || v.Counts.Idle != 1 {
-		t.Errorf("counts = %+v, want 2 ships (1 idle) and 1 station", v.Counts)
+	if v.Counts.Fleet == nil || *v.Counts.Fleet != 2 ||
+		v.Counts.Stations == nil || *v.Counts.Stations != 1 ||
+		v.Counts.Idle == nil || *v.Counts.Idle != 1 {
+		t.Errorf("counts = %s, want 2 ships (1 idle) and 1 station", countsJSON(t, v.Counts))
 	}
 
 	// No predecessor (first parse of a playthrough, or a baseline reset): the
@@ -240,6 +245,91 @@ func TestVitalsWillNotInventABalanceItNeverRead(t *testing.T) {
 	if !strings.Contains(body, `"credits":5492825`) || strings.Contains(body, `"credits_delta"`) {
 		t.Errorf("want the balance and no delta: %s", body)
 	}
+}
+
+// The same failure as the balance one, on the three cells beside it, and the
+// one the board draws largest after CREDITS.
+//
+// Fleet, stations and idle used to be `len()` of a slice. A length has no way to
+// say "the parser never found the player's property", so renaming the attribute
+// a save marks ownership with — the playthrough identity untouched, so the
+// schema-mismatch guard stays quiet — published fleet=0 stations=0 idle=0 with a
+// green stamp, and the board printed FLEET 0 STN 0 IDLE 0 about an empire that
+// is all still there. The section band caught it, but only for whoever opened
+// the health drawer: no amber, no beacon change, the save leg still up.
+func TestVitalsWillNotInventCountsItNeverRead(t *testing.T) {
+	// Two ships (one on an order, one idle) and a station, in the nesting a real
+	// save uses: galaxy > sector > components.
+	const owned = `<?xml version="1.0" encoding="UTF-8"?>
+<savegame>
+<info><game guid="00000000-0000-4000-8000-000000000000" time="591711.4"/><player name="Test Pilot" money="5492825"/></info>
+<universe>
+ <component class="galaxy" macro="xu_ep2_universe_macro"><connections>
+  <connection><component class="sector" macro="cluster_01_sector001_macro"><connections>
+   <connection><component class="ship_m" owner="player" macro="ship_arg_m_miner_solid_01_a_macro" code="AAA-001" id="[0x1]">
+     <orders><order order="MiningRoutine"/></orders></component></connection>
+   <connection><component class="ship_s" owner="player" macro="ship_arg_s_scout_01_a_macro" code="AAA-002" id="[0x2]"/></connection>
+   <connection><component class="station" owner="player" macro="station_arg_prod_01_macro" code="STN-001" id="[0x3]"/></connection>
+  </connections></component></connection>
+ </connections></component>
+</universe>
+</savegame>`
+	// The same save with `owner=` renamed. Byte for byte, the difference a game
+	// patch makes — and every collection comes back empty.
+	movedOwner := strings.ReplaceAll(owned, `owner="player"`, `owned_by="player"`)
+
+	src := &stubSource{freshness: wire.Freshness{State: wire.FreshnessStateCurrent}}
+	_, ts := newTestServer(t, src)
+
+	// The control: with the attribute where this build expects it, the counts
+	// are numbers — including the ZERO ones, which are real answers.
+	src.published = &watch.Published{Snapshot: parseSave(t, owned), Meta: wire.SnapshotMeta{GameGUID: "g"}}
+	body := readAll(t, get(t, ts, "/api/views/vitals"))
+	for _, want := range []string{`"fleet":2`, `"stations":1`, `"idle":1`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("counts that WERE read must be sent (%s): %s", want, body)
+		}
+	}
+
+	moved := parseSave(t, movedOwner)
+	if moved.PlayerName == "" || moved.GameGUID == "" {
+		t.Fatal("the fixture is meant to keep its playthrough identity, so the schema-mismatch guard cannot cover for this")
+	}
+	if len(moved.Ships) != 0 || len(moved.Stations) != 0 {
+		t.Fatalf("the fixture is meant to yield no assets at all; got %d ships and %d stations",
+			len(moved.Ships), len(moved.Stations))
+	}
+	src.published = &watch.Published{Snapshot: moved, Meta: wire.SnapshotMeta{GameGUID: "g"}}
+	body = readAll(t, get(t, ts, "/api/views/vitals"))
+	for _, key := range []string{`"fleet"`, `"stations"`, `"idle"`} {
+		if strings.Contains(body, key) {
+			t.Errorf("a count nobody read was published as a number (%s): %s", key, body)
+		}
+	}
+
+	// The other half of the doctrine: an empire that really owns no stations
+	// says so. Absent is unknown; 0 is a fact about an early game.
+	src.published = &watch.Published{
+		Snapshot: &x4save.Snapshot{PlayerAssetsSeen: true},
+		Meta:     wire.SnapshotMeta{GameGUID: "g"},
+	}
+	body = readAll(t, get(t, ts, "/api/views/vitals"))
+	for _, want := range []string{`"fleet":0`, `"stations":0`, `"idle":0`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a counted zero must survive (%s): %s", want, body)
+		}
+	}
+}
+
+// countsJSON renders the counts the way the browser sees them, so a failure
+// says `{"fleet":2}` rather than three addresses.
+func countsJSON(t *testing.T, c wire.Counts) string {
+	t.Helper()
+	b, err := json.Marshal(c)
+	if err != nil {
+		t.Fatalf("marshal counts: %v", err)
+	}
+	return string(b)
 }
 
 // parseSave runs the shipped parser over a save written to a temp dir. Nothing
@@ -478,40 +568,44 @@ func TestEventStream(t *testing.T) {
 
 	srv.Hub().Publish(wire.EventTypeSaveDetected, wire.SaveMeta{Name: "quicksave", Kind: wire.SaveKindQuicksave})
 
-	var sawRetry, sawHeartbeat bool
-	var id, event, data string
+	var sawRetry bool
+	var beat, detected sseFrame
 	deadline := time.Now().Add(10 * time.Second)
-	for (id == "" || !sawHeartbeat) && time.Now().Before(deadline) {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			t.Fatalf("read: %v", err)
-		}
-		line = strings.TrimRight(line, "\n")
-		switch {
-		case strings.HasPrefix(line, "retry:"):
+	for (detected.id == "" || beat.event == "") && time.Now().Before(deadline) {
+		f := readFrame(t, r)
+		if f.retry != "" {
 			sawRetry = true
-		case strings.HasPrefix(line, ": "):
-			sawHeartbeat = true
-		case strings.HasPrefix(line, "id: "):
-			id = strings.TrimPrefix(line, "id: ")
-		case strings.HasPrefix(line, "event: "):
-			event = strings.TrimPrefix(line, "event: ")
-		case strings.HasPrefix(line, "data: "):
-			data = strings.TrimPrefix(line, "data: ")
+		}
+		switch f.event {
+		case string(wire.EventTypeHeartbeat):
+			beat = f
+		case string(wire.EventTypeSaveDetected):
+			detected = f
 		}
 	}
 	if !sawRetry {
 		t.Error("no retry: hint — EventSource should be told how soon to reconnect")
 	}
-	if !sawHeartbeat {
-		t.Error("no heartbeat comment arrived; the client cannot tell silence from death")
+	// The heartbeat framing, which is the client's ENTIRE evidence that the
+	// server is alive. It used to be an SSE comment, which fires no JS event by
+	// specification, so the client counted the socket being open instead — and a
+	// socket is open until somebody closes it, which a frozen process never
+	// does.
+	if beat.event != string(wire.EventTypeHeartbeat) {
+		t.Error("no heartbeat EVENT arrived; a comment is invisible to EventSource and the client cannot tell silence from death")
 	}
-	if id != "1" || event != string(wire.EventTypeSaveDetected) {
-		t.Errorf("framing: id=%q event=%q, want 1 and save.detected", id, event)
+	if beat.data == "" {
+		t.Error("the heartbeat carries no data: SSE discards an event whose data buffer is empty, so it would be exactly as invisible as the comment it replaced")
+	}
+	if beat.id != "" {
+		t.Errorf("the heartbeat carries id=%q: it is not a point in the log, and stamping one moves the browser's Last-Event-ID onto a sequence the ring cannot replay", beat.id)
+	}
+	if detected.id != "1" {
+		t.Errorf("framing: id=%q, want 1", detected.id)
 	}
 	var env wire.Envelope
-	if err := json.Unmarshal([]byte(data), &env); err != nil {
-		t.Fatalf("data is not an envelope: %v (%s)", err, data)
+	if err := json.Unmarshal([]byte(detected.data), &env); err != nil {
+		t.Fatalf("data is not an envelope: %v (%s)", err, detected.data)
 	}
 	if env.Seq != 1 || env.Type != wire.EventTypeSaveDetected {
 		t.Errorf("envelope = %+v, want seq 1 of save.detected", env)
@@ -531,17 +625,119 @@ func TestEventStream(t *testing.T) {
 	var replayed []string
 	deadline = time.Now().Add(10 * time.Second)
 	for len(replayed) < 2 && time.Now().Before(deadline) {
-		line, err := r2.ReadString('\n')
-		if err != nil {
-			t.Fatalf("read: %v", err)
+		f := readFrame(t, r2)
+		// The keep-alive is not a replayed event, and now that it has a name it
+		// would otherwise be counted as one.
+		if f.event == "" || f.event == string(wire.EventTypeHeartbeat) {
+			continue
 		}
-		if strings.HasPrefix(line, "event: ") {
-			replayed = append(replayed, strings.TrimSpace(strings.TrimPrefix(line, "event: ")))
-		}
+		replayed = append(replayed, f.event)
 	}
 	want := []string{string(wire.EventTypeSaveParsing), string(wire.EventTypeSnapshotReady)}
 	if len(replayed) != 2 || replayed[0] != want[0] || replayed[1] != want[1] {
 		t.Errorf("replayed %v, want %v", replayed, want)
+	}
+}
+
+// A wedged hub must not be able to hold a browser's socket OPEN.
+//
+// Stopping the heartbeat (hub_test.go) is only half the fix, and it is the half
+// the player cannot see: net/http will not finish a response until ServeHTTP
+// returns, and no FIN goes out until it does, so a teardown that parks on h.mu
+// leaves the connection ESTABLISHED and silent for as long as the process lives.
+// The client used to read exactly that state — an open socket — as proof of
+// life, which is how five minutes, and then an hour, of a dead server rendered
+// as `connection = live` with the stamp saying `quicksave · 5m ago`. It also
+// wedged the server's own shutdown: one run left httptest.Server blocked in
+// Close for 3m20s.
+func TestEventsHandlerClosesTheSocketWhenTheHubCannotMakeProgress(t *testing.T) {
+	src := &stubSource{}
+	srv, ts := newTestServer(t, src)
+	hub := srv.Hub()
+	hub.heartbeat = 10 * time.Millisecond
+	hub.liveness = 20 * time.Millisecond
+
+	res, err := ts.Client().Get(ts.URL + "/api/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	// The `retry:` hint: the stream is up and the subscribe is done, so what
+	// follows is about teardown and nothing else.
+	if f := readFrame(t, bufio.NewReader(res.Body)); f.retry == "" {
+		t.Fatalf("the stream never started: %+v", f)
+	}
+
+	// Wedge it exactly as a blocking send under h.mu did. Released by this
+	// defer BEFORE t.Cleanup closes the test server, so a regression here fails
+	// the test instead of hanging the whole binary.
+	hub.mu.Lock()
+	unlocked := false
+	defer func() {
+		if !unlocked {
+			hub.mu.Unlock()
+		}
+	}()
+
+	drained := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(io.Discard, res.Body)
+		drained <- err
+	}()
+	select {
+	case <-drained:
+		// EOF (or a read error): the response finished, so the handler returned
+		// and the socket is closed. That is the whole assertion.
+	case <-time.After(10 * time.Second):
+		t.Fatal("the hub is wedged and the connection is still open: the handler is parked in its deferred unsubscribe, so net/http cannot finish the response and the tab keeps reading an ESTABLISHED socket as a live board")
+	}
+
+	// And the bookkeeping is not leaked: the entry unsubscribe could not delete
+	// is collected by the next holder of the lock.
+	hub.mu.Unlock()
+	unlocked = true
+	deadline := time.Now().Add(5 * time.Second)
+	for hub.Clients() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("clients = %d after the connection closed; the gone client was never reaped", hub.Clients())
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// sseFrame is one SSE block: the fields written before the blank line that ends
+// it. Reading whole frames rather than loose lines is what lets a test say
+// "this event carried no id", which is a property of the frame and invisible
+// line by line.
+type sseFrame struct {
+	id, event, data, retry string
+	comment                bool
+}
+
+func readFrame(t *testing.T, r *bufio.Reader) sseFrame {
+	t.Helper()
+	var f sseFrame
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		line = strings.TrimRight(line, "\n")
+		if line == "" {
+			return f
+		}
+		switch {
+		case strings.HasPrefix(line, ":"):
+			f.comment = true
+		case strings.HasPrefix(line, "id: "):
+			f.id = strings.TrimPrefix(line, "id: ")
+		case strings.HasPrefix(line, "event: "):
+			f.event = strings.TrimPrefix(line, "event: ")
+		case strings.HasPrefix(line, "data: "):
+			f.data = strings.TrimPrefix(line, "data: ")
+		case strings.HasPrefix(line, "retry: "):
+			f.retry = strings.TrimPrefix(line, "retry: ")
+		}
 	}
 }
 

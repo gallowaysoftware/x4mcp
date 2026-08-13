@@ -253,10 +253,13 @@ func stubSnapshot(path, guid string, gameTime float64, money int64) *x4save.Snap
 		StartType:  "x4ep1_gamestart_pirate2",
 		GameTimeS:  gameTime,
 		Money:      money,
-		// A real parse of a real save reads the balance, and a stub that says
-		// otherwise is a stub of a broken save.
-		MoneySeen: true,
-		ParseMS:   7,
+		// A real parse of a real save reads the balance, the clock and the
+		// player's own property; a stub that says otherwise is a stub of a
+		// broken save, and would quietly disarm the rollback and the counts.
+		MoneySeen:        true,
+		GameTimeSeen:     true,
+		PlayerAssetsSeen: true,
+		ParseMS:          7,
 	}
 }
 
@@ -275,6 +278,11 @@ func newRig(t *testing.T, mut ...func(*Options)) *rig {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("X4MCP_CACHE_DIR", t.TempDir())
+	// Belt AND braces. Options.Roots below is what this watcher actually reads,
+	// but SaveRootEnv REPLACES the discovered roots for anything in the process
+	// that falls back to them — so a helper that forgets to pass Roots still
+	// cannot reach, let alone write to, a real X4 save directory.
+	t.Setenv(x4save.SaveRootEnv, dir)
 	r := &rig{t: t, dir: dir, clock: newFakeClock(), rec: newRecorder()}
 	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return stubSnapshot(path, "guid-a", 1000, 500), nil

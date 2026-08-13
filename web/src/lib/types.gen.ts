@@ -22,7 +22,22 @@ export const EventTypePlaythroughChanged = "playthrough.changed";
  * /api/state and the mounted views rather than trying to catch up.
  */
 export const EventTypeResync = "resync";
-export type EventType = typeof EventTypeSaveDetected | typeof EventTypeSaveParsing | typeof EventTypeSaveRetry | typeof EventTypeSaveError | typeof EventTypeSnapshotReady | typeof EventTypeHealthLeg | typeof EventTypePlaythroughChanged | typeof EventTypeResync;
+/**
+ * EventTypeHeartbeat is the keep-alive, and it is a NAMED EVENT rather than
+ * the SSE comment (`: heartbeat`) it used to be for one reason: comments are
+ * invisible to EventSource by specification — no JS event fires for one — so
+ * a client could not count them and had to measure liveness by the socket
+ * still being OPEN instead. A socket is open for as long as nobody closes
+ * it, which a frozen server (SIGSTOP, a cgroup freezer, a debugger, a
+ * suspended host) never does: TCP stays ESTABLISHED, zero bytes arrive, and
+ * the board reports a snapshot from an hour ago as live. Bytes received is
+ * the only honest measure of a stream, and this is the byte.
+ * It carries no Seq and no `id:` (see Hub.stream): it is not a point in the
+ * event log, it never reaches the reducer, and stamping one would move the
+ * browser's Last-Event-ID onto a sequence the ring cannot replay.
+ */
+export const EventTypeHeartbeat = "heartbeat";
+export type EventType = typeof EventTypeSaveDetected | typeof EventTypeSaveParsing | typeof EventTypeSaveRetry | typeof EventTypeSaveError | typeof EventTypeSnapshotReady | typeof EventTypeHealthLeg | typeof EventTypePlaythroughChanged | typeof EventTypeResync | typeof EventTypeHeartbeat;
 /**
  * Envelope wraps every SSE payload. Seq is the process-monotonic sequence that
  * is also the SSE `id:` field, so a reconnecting client sends it back as
@@ -254,11 +269,21 @@ export interface CreditsSample {
  * Counts are the vitals tallies. They carry no severity: whether a count has
  * something new since the player last touched the board is client state (the
  * amber lifecycle, design §2), and the server has no way to know it.
+ * Every field is a POINTER, for the reason Credits is one. Fleet, Stations and
+ * Idle used to be `len()` of a slice, and a length cannot tell "owns none" from
+ * "the parser never found them": rename the ownership attribute a save marks
+ * player property with and every collection comes back empty with the
+ * playthrough identity intact — so the schema-mismatch guard stays quiet, the
+ * stamp stays green, the save leg stays up, and the board draws FLEET 0 STN 0
+ * IDLE 0 at 22 px about an empire of 94 ships. The section band notices, but
+ * only inside the health drawer. Presence is recorded where it is known (the
+ * parser, x4save.Snapshot.PlayerAssetsSeen) and absent here means unknown,
+ * which the client renders as the dotted ∅ box.
  */
 export interface Counts {
-	fleet: number /* int */;
-	stations: number /* int */;
-	idle: number /* int */;
+	fleet?: number /* int */;
+	stations?: number /* int */;
+	idle?: number /* int */;
 	/**
 	 * Threats is a POINTER because this build cannot derive it at all: the
 	 * knownto/attacker data arrives with the F3 schema bump (S6/F13a). A plain
@@ -399,8 +424,16 @@ export interface SnapshotMeta {
 	/**
 	 * GameTimeS is in-game elapsed seconds. A regression means the player loaded
 	 * an earlier save (design §6 rollback).
+	 * A POINTER, because that regression is decided by SUBTRACTION and 0 is the
+	 * most dangerous number this field can hold. Rename the `time=` attribute in
+	 * <info><game> and every save reads as second zero of a new game: the first
+	 * one publishes normally, the second is "earlier" than the one before it, so
+	 * the watcher declares a rollback nobody performed, resets the diff baseline
+	 * and suppresses the loss alerts that baseline exists to raise — on a
+	 * perfectly good save, with the stamp reading `loaded an earlier save`. nil
+	 * is absent on the wire and means unread: nothing is compared against it.
 	 */
-	game_time_s: number /* float64 */;
+	game_time_s?: number /* float64 */;
 	save_date: string;
 	game_version: string;
 	player_name: string;

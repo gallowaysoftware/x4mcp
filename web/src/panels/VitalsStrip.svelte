@@ -81,18 +81,30 @@
 	const wars = $derived(vitals.wars);
 
 	/**
+	 * Why the three asset counts are empty, on the same two-fact pattern as
+	 * credits: pending before the first parse, and after one, a save that was
+	 * read without the player's property being found in it — an ownership
+	 * attribute a patch moved, which leaves freshness green and every section in
+	 * band. FLEET 0 beside a green stamp is the same lie as CREDITS 0.
+	 */
+	const countReason = $derived(
+		board.published
+			? 'this save parsed, and no player-owned assets this build recognises were in it'
+			: PARSE_PENDING,
+	);
+
+	/**
 	 * The four counts, in their frozen order.
 	 *
-	 * Two different unknowns gate them. `published` is "no save has been parsed
-	 * yet" — the wire's counts are plain zeros before the first parse, and "0
-	 * ships" is a claim nobody made. An absent VALUE is the stronger one: this
-	 * build cannot compute that field at all (threats needs the F3 bump), so no
-	 * parse will ever fill it in and `hasSnapshot` is the wrong question.
+	 * One rule gates all of them, and it is the wire's: an absent value is a
+	 * number nobody computed. For threats that is permanent (it needs the F3
+	 * bump); for the other three it is a parse that found no ownership at all.
+	 * Neither is a zero, and the ∅ box says so.
 	 */
 	const counts = $derived([
-		{ key: 'fleet', label: 'FLEET', value: vitals.counts.fleet, reason: PARSE_PENDING },
-		{ key: 'stations', label: 'STN', value: vitals.counts.stations, reason: PARSE_PENDING },
-		{ key: 'idle', label: 'IDLE', value: vitals.counts.idle, reason: PARSE_PENDING },
+		{ key: 'fleet', label: 'FLEET', value: vitals.counts.fleet, reason: countReason },
+		{ key: 'stations', label: 'STN', value: vitals.counts.stations, reason: countReason },
+		{ key: 'idle', label: 'IDLE', value: vitals.counts.idle, reason: countReason },
 		{
 			key: 'threats',
 			label: 'THREAT',
@@ -140,7 +152,7 @@
 			<span class="field field-count">
 				<span class="t-micro lbl">{count.label}</span>
 				<span class="cell cell-count">
-					{#if board.published && count.value != null}
+					{#if count.value != null}
 						<span class="t-num-l val">{formatCount(count.value)}</span>
 					{:else}
 						<UnknownValue size="num-l" label={count.label.toLowerCase()} reason={count.reason} />
