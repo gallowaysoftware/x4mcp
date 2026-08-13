@@ -522,6 +522,13 @@ func TestASaveThatSettlesDuringAParseIsNotDropped(t *testing.T) {
 	r.kick()
 	r.kick()
 
+	// Wait for the worker to drain BEFORE reading parsed. settle() and kick()
+	// synchronise with the poller, never with the parse worker, so reading here
+	// first raced the drain and accused the queue of dropping a save it was
+	// still holding — red on ~38% of 4-core CI runs, and the loudest possible
+	// wrong answer.
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 3)
+
 	mu.Lock()
 	got := slices.Clone(parsed)
 	mu.Unlock()
@@ -529,7 +536,6 @@ func TestASaveThatSettlesDuringAParseIsNotDropped(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("parsed %v, want %v: a save that settled while the worker was busy was dropped, and no refresh brought it back", got, want)
 	}
-	r.rec.wait(t, wire.EventTypeSnapshotReady, 3)
 }
 
 func TestWatcherKickAndRefresh(t *testing.T) {

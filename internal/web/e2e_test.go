@@ -84,6 +84,13 @@ func TestEndToEndSaveToStream(t *testing.T) {
 	for ready.GameGUID == "" {
 		select {
 		case ev := <-events:
+			// A keep-alive is part of the protocol, not a break in the
+			// sequence. Under -race the fixture can take tens of seconds to
+			// parse, so 15 s beats land mid-parse and used to read as a
+			// missing save.parsing.
+			if ev.name == string(wire.EventTypeHeartbeat) {
+				continue
+			}
 			got = append(got, ev.name)
 			if ev.name == string(wire.EventTypeSnapshotReady) {
 				latency = time.Since(wrote)
