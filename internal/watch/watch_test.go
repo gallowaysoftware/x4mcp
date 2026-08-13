@@ -2,11 +2,14 @@ package watch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,6 +50,11 @@ func TestWatcherDetectsBySettledPoll(t *testing.T) {
 		t.Errorf("save kind = %q, want quicksave", meta.Save.Kind)
 	}
 	// The order the board reduces over: detected, then parsing, then ready.
+	//
+	// Waiting for the LAST of them before reading the list, not the third:
+	// publish emits health.leg immediately after snapshot.ready, so a read that
+	// lands between the two sees a list one short and blames the ordering.
+	r.rec.wait(t, wire.EventTypeHealthLeg, 1)
 	want := []wire.EventType{wire.EventTypeSaveDetected, wire.EventTypeSaveParsing, wire.EventTypeSnapshotReady, wire.EventTypeHealthLeg}
 	if got := r.rec.types(); len(got) < len(want) {
 		t.Fatalf("events = %v, want at least %v", got, want)
@@ -107,9 +115,9 @@ func TestWatcherRotationParsesEachNewSave(t *testing.T) {
 	r.settle()
 	first := r.rec.wait(t, wire.EventTypeSnapshotReady, 1).(wire.SnapshotMeta)
 
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return stubSnapshot(path, "guid-a", 2000, 900), nil
-	}
+	})
 	r.save("autosave_01.xml.gz", "guid-a", 2000, 900, r.clock.Now().Add(time.Minute))
 	r.settle()
 	second := r.rec.wait(t, wire.EventTypeSnapshotReady, 2).(wire.SnapshotMeta)
@@ -141,9 +149,9 @@ func TestWatcherPlaythroughSwitchResetsTheBaseline(t *testing.T) {
 	r.settle()
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
 
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return stubSnapshot(path, "guid-b", 12, 500_000), nil
-	}
+	})
 	r.save("save_001.xml.gz", "guid-b", 12, 500_000, r.clock.Now().Add(time.Minute))
 	r.settle()
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 2)
@@ -174,18 +182,18 @@ func TestWatcherRollbackOnGameTimeRegression(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	r := newRig(t)
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return stubSnapshot(path, "guid-a", 9000, 500), nil
-	}
+	})
 	r.start(ctx)
 
 	r.save("quicksave.xml.gz", "guid-a", 9000, 500, r.clock.Now())
 	r.settle()
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
 
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return stubSnapshot(path, "guid-a", 3000, 480), nil
-	}
+	})
 	r.save("save_002.xml.gz", "guid-a", 3000, 480, r.clock.Now().Add(time.Minute))
 	r.settle()
 	meta := r.rec.wait(t, wire.EventTypeSnapshotReady, 2).(wire.SnapshotMeta)
@@ -204,9 +212,9 @@ func TestWatcherRollbackOnGameTimeRegression(t *testing.T) {
 	}
 
 	// And it clears when a later save moves forward again.
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return stubSnapshot(path, "guid-a", 3600, 505), nil
-	}
+	})
 	r.save("save_003.xml.gz", "guid-a", 3600, 505, r.clock.Now().Add(2*time.Minute))
 	r.settle()
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 3)
@@ -230,9 +238,9 @@ func TestWatcherWillNotInventARollbackFromAnUnreadGameClock(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	r := newRig(t)
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return stubSnapshot(path, "guid-a", 591_711, 500), nil
-	}
+	})
 	r.start(ctx)
 
 	r.save("quicksave.xml.gz", "guid-a", 591_711, 500, r.clock.Now())
@@ -243,11 +251,11 @@ func TestWatcherWillNotInventARollbackFromAnUnreadGameClock(t *testing.T) {
 	}
 
 	// The patch lands. Same empire, same player, one attribute somewhere else.
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		s := stubSnapshot(path, "guid-a", 0, 480)
 		s.GameTimeSeen = false
 		return s, nil
-	}
+	})
 	r.save("save_002.xml.gz", "guid-a", 0, 480, r.clock.Now().Add(time.Minute))
 	r.settle()
 	meta := r.rec.wait(t, wire.EventTypeSnapshotReady, 2).(wire.SnapshotMeta)
@@ -277,9 +285,9 @@ func TestWatcherParseFailureKeepsThePreviousSnapshot(t *testing.T) {
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
 	before := r.w.Published()
 
-	r.load = func(context.Context, string, x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(context.Context, string, x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return nil, errors.New("xml token: unexpected EOF")
-	}
+	})
 	r.save("save_001.xml.gz", "guid-a", 1100, 510, r.clock.Now().Add(time.Minute))
 	r.settle()
 	// A parse failure is a HELD verdict until the file stops moving: X4 pauses
@@ -354,12 +362,12 @@ func TestWatcherSurfacesRetryAttempts(t *testing.T) {
 	r.start(ctx)
 
 	seen := make(chan struct{})
-	r.load = func(_ context.Context, path string, opts x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, opts x4save.LoadOptions) (*x4save.Snapshot, error) {
 		opts.OnRetry(1)
 		<-seen
 		opts.OnRetry(2)
 		return stubSnapshot(path, "guid-a", 1000, 500), nil
-	}
+	})
 	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
 	r.settle()
 
@@ -383,38 +391,145 @@ func TestWatcherSurfacesRetryAttempts(t *testing.T) {
 
 // While a 16 s parse runs, more saves land. Parsing each in turn would put the
 // board minutes behind the game; the one that matters is the newest.
+// Newest-wins, and what it is actually for: a queued request for a file that is
+// REWRITTEN before the worker reaches it describes bytes that no longer exist,
+// so the newer stat replaces it and the intermediate is never read.
+//
+// That is the whole of "nobody wants the one before last" — a statement about
+// ONE FILE. It used to be applied across different files as well, which is how
+// a settled save was silently thrown away; that half is the subject of
+// TestASaveThatSettlesDuringAParseIsNotDropped.
 func TestWatcherNewestWins(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	r := newRig(t)
 
 	release := make(chan struct{})
+	var mu sync.Mutex
 	var parsed []string
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		mu.Lock()
 		parsed = append(parsed, filepath.Base(path))
-		if len(parsed) == 1 {
-			<-release // the first parse is still running while saves pile up
+		first := len(parsed) == 1
+		n := len(parsed)
+		mu.Unlock()
+		if first {
+			<-release // the first parse is still running while the save is rewritten
 		}
-		return stubSnapshot(path, "guid-a", float64(1000*len(parsed)), 500), nil
-	}
+		return stubSnapshot(path, "guid-a", float64(1000*n), 500), nil
+	})
 	r.start(ctx)
 
 	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
 	r.settle()
 	r.rec.wait(t, wire.EventTypeSaveParsing, 1)
 
-	r.save("save_001.xml.gz", "guid-a", 2000, 600, r.clock.Now().Add(time.Minute))
+	// The autosave lands and settles, so it is dispatched and queued behind the
+	// quicksave that is still being read.
+	auto := r.save("autosave_01.xml.gz", "guid-a", 2000, 600, r.clock.Now().Add(time.Minute))
 	r.settle()
-	r.save("save_002.xml.gz", "guid-a", 3000, 700, r.clock.Now().Add(2*time.Minute))
+	// Then X4 writes it AGAIN before the worker ever gets to it. The queued
+	// request now points at bytes that are gone.
+	rewritten := r.clock.Now().Add(2 * time.Minute)
+	r.save("autosave_01.xml.gz", "guid-a", 3000, 700, rewritten)
 	r.settle()
 	close(release)
 
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 2)
 	// Give a third parse every chance to happen before asserting it did not.
 	r.settle()
-	if len(parsed) != 2 || parsed[0] != "quicksave.xml.gz" || parsed[1] != "save_002.xml.gz" {
-		t.Errorf("parsed %v, want the first save and then only the newest", parsed)
+	r.settle()
+
+	mu.Lock()
+	got := slices.Clone(parsed)
+	mu.Unlock()
+	want := []string{"quicksave.xml.gz", "autosave_01.xml.gz"}
+	if !slices.Equal(got, want) {
+		t.Errorf("parsed %v, want %v: the superseded stat of one file must not be read", got, want)
 	}
+	// And it was the SECOND write that was read, not the one that was queued
+	// first: the file is stat'ed at dispatch, and that stat is what the board
+	// reports as the save it is showing.
+	if p := r.w.Published(); p == nil || p.Meta.Save.Path != auto {
+		t.Fatalf("published %+v, want the autosave at %s", p, auto)
+	} else if !p.Meta.Save.ModifiedAt.Equal(rewritten.Truncate(time.Second)) {
+		t.Errorf("published modified_at = %s, want the rewrite at %s", p.Meta.Save.ModifiedAt, rewritten)
+	}
+}
+
+// A save that settles while the parse worker is busy must still be parsed.
+//
+// The queue behind the settle gate held exactly ONE request and was newest-wins
+// across DIFFERENT FILES: a save settling while another waited threw the other
+// away. Nothing brought it back. detector.dispatched is set the moment work is
+// submitted — that is what stops `choose` from ever offering the path again —
+// so an evicted request was not deferred, it was gone. The poll did not find
+// it, and neither did either manual refresh path (the button and refresh_save),
+// because both ask the detector the same question.
+//
+// This is the ORDINARY timing rather than a corner case: the gate settles a
+// file every two ticks (4 s) while a real save takes ~11 s to parse
+// (docs/parse-baseline.md §3), so every save that settled during the parse of
+// the one before it went through this window.
+//
+// The commit before this one claimed to have closed exactly this ("a file is
+// now recorded only once the pipeline is done with it"). That was true of
+// detector.choose and false of the queue behind it.
+func TestASaveThatSettlesDuringAParseIsNotDropped(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := newRig(t)
+
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var parsed []string
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+		mu.Lock()
+		parsed = append(parsed, filepath.Base(path))
+		first := len(parsed) == 1
+		mu.Unlock()
+		if first {
+			<-release // the quicksave parse holds the worker while the restores land
+		}
+		switch {
+		case strings.Contains(path, "restored_b"):
+			return stubSnapshot(path, "guid-b", 400, 90), nil
+		case strings.Contains(path, "restored_a"):
+			return stubSnapshot(path, "guid-a-old", 300, 80), nil
+		}
+		return stubSnapshot(path, "guid-live", 1000, 500), nil
+	})
+	r.start(ctx)
+
+	r.save("quicksave.xml.gz", "guid-live", 1000, 500, r.clock.Now())
+	r.settle()
+	r.rec.wait(t, wire.EventTypeSaveParsing, 1)
+
+	// `cp -p backup/*.xml.gz saves/`, landing while that parse holds the worker.
+	// Two distinct files, each settling in its own right, each dispatched — into
+	// a queue that had room for one.
+	r.save("restored_b.xml.gz", "guid-b", 400, 90, r.clock.Now().Add(-2*time.Hour))
+	r.settle()
+	r.save("restored_a.xml.gz", "guid-a-old", 300, 80, r.clock.Now().Add(-3*time.Hour))
+	r.settle()
+
+	close(release)
+
+	// Every chance to recover: the poll, then both manual refresh paths.
+	for range 3 {
+		r.settle()
+	}
+	r.kick()
+	r.kick()
+
+	mu.Lock()
+	got := slices.Clone(parsed)
+	mu.Unlock()
+	want := []string{"quicksave.xml.gz", "restored_b.xml.gz", "restored_a.xml.gz"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("parsed %v, want %v: a save that settled while the worker was busy was dropped, and no refresh brought it back", got, want)
+	}
+	r.rec.wait(t, wire.EventTypeSnapshotReady, 3)
 }
 
 func TestWatcherKickAndRefresh(t *testing.T) {
@@ -496,10 +611,10 @@ func TestWatcherSnapshotProvider(t *testing.T) {
 	// An explicit path is loaded on demand: a client analysing an archived save
 	// must never be silently handed the live one.
 	var asked string
-	r.load = func(_ context.Context, p string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, p string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		asked = p
 		return stubSnapshot(p, "guid-archive", 5, 5), nil
-	}
+	})
 	got, err := r.w.Snapshot(ctx, "/archive/old.xml.gz")
 	if err != nil {
 		t.Fatalf("Snapshot(path): %v", err)
@@ -564,9 +679,9 @@ func TestWatcherOverdueCountsAgainstTheObservedAutosaveCadence(t *testing.T) {
 
 	// A quicksave says nothing about whether autosave is running, so it must
 	// not enter the cadence.
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return stubSnapshot(path, "guid-a", 9000, 500), nil
-	}
+	})
 	r.save("quicksave.xml.gz", "guid-a", 9000, 500, r.clock.Now())
 	r.settle()
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 4)
@@ -689,9 +804,9 @@ func TestSnapshotReportsWhyItHasNothing(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	r := newRig(t)
-	r.load = func(context.Context, string, x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(context.Context, string, x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return nil, errors.New("gzip: invalid header")
-	}
+	})
 	r.start(ctx)
 	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
 
@@ -734,11 +849,11 @@ func TestSnapshotWaitsForTheFirstParseInsteadOfDenyingTheSave(t *testing.T) {
 	r := newRig(t)
 
 	parsing, release := make(chan struct{}), make(chan struct{})
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		close(parsing)
 		<-release
 		return stubSnapshot(path, "guid-a", 1000, 500), nil
-	}
+	})
 	r.start(ctx)
 	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
 	r.settle()
@@ -788,11 +903,11 @@ func TestRefreshWaitsForTheParseOfTheNewestSave(t *testing.T) {
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
 
 	parsing, release := make(chan struct{}), make(chan struct{})
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		close(parsing)
 		<-release
 		return stubSnapshot(path, "guid-a", 2000, 900), nil
-	}
+	})
 	r.save("zzz_new.xml.gz", "guid-a", 2000, 900, r.clock.Now().Add(time.Minute))
 	r.settle()
 	<-parsing
@@ -835,11 +950,11 @@ func TestSnapshotReadyDescribesTheBytesThatWereParsed(t *testing.T) {
 	const truncated, complete = 32_322_750, 64_645_500
 	firstSeen := r.clock.Now()
 	finished := firstSeen.Add(7 * time.Second)
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		snap := stubSnapshot(path, "guid-a", 1000, 500)
 		snap.SourceSize, snap.SourceMod = complete, finished.Unix()
 		return snap, nil
-	}
+	})
 	r.start(ctx)
 
 	// The gate fires on the file as it was mid-write.
@@ -874,10 +989,10 @@ func TestASaveStillBeingWrittenIsNotAFault(t *testing.T) {
 	r := newRig(t)
 
 	attempts := make(chan struct{}, 8)
-	r.load = func(_ context.Context, _ string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, _ string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		attempts <- struct{}{}
 		return nil, fmt.Errorf("%w: quicksave.xml.gz changed while being read (X4 is probably saving)", x4save.ErrSaveChanged)
-	}
+	})
 	r.start(ctx)
 	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
 	r.settle()
@@ -900,6 +1015,12 @@ func TestASaveStillBeingWrittenIsNotAFault(t *testing.T) {
 		t.Fatal("a save that lost every retry was never looked at again")
 	}
 
+	// attempts is signalled on ENTRY to the loader, so that second parse is
+	// still running. Its verdict is what the assertions below are about — and
+	// "why has this caller nothing yet" answers `being parsed right now` while
+	// it is in flight, which is true, but not the sentence under test.
+	r.awaitParseDone()
+
 	if n := r.rec.count(wire.EventTypeSaveError); n != 0 {
 		t.Errorf("save.error fired %d times for a save X4 was still writing", n)
 	}
@@ -918,9 +1039,9 @@ func TestASaveStillBeingWrittenIsNotAFault(t *testing.T) {
 	}
 
 	// Once the write finishes, the ordinary path resumes with no restart.
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return stubSnapshot(path, "guid-a", 1000, 500), nil
-	}
+	})
 	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now().Add(time.Minute))
 	r.settle()
 	r.rec.wait(t, wire.EventTypeSnapshotReady, 1)
@@ -929,30 +1050,98 @@ func TestASaveStillBeingWrittenIsNotAFault(t *testing.T) {
 	}
 }
 
-// A save stamped in the future — copied from another machine, or a clock that
-// moved — is not negative seconds old. The aging decision always clamped it;
-// the field the board renders as "saved N ago" did not.
-func TestFutureStampedSaveNeverReportsANegativeAge(t *testing.T) {
+// A save stamped in the FUTURE has no measurable age, and the wire says so
+// rather than picking a number.
+//
+// It used to be clamped to zero — and zero is "brand new", so the stamp read
+// `quicksave · just now` about a save the player made three quarters of an hour
+// ago, and went on reading it forever: age never grew, so aging and stale never
+// fired. The clamp then shipped as ABSENT (age_s was an int64 with omitempty),
+// which sent the client down its own fallback and made it subtract modified_at
+// from its own clock — the second half of the same lie, and the reason no clock
+// skew is needed anywhere to reproduce this. One file with a forward timestamp
+// is the whole of it.
+func TestFutureStampedSaveHasNoAgeRatherThanZero(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	r := newRig(t)
 	r.start(ctx)
 
-	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now().Add(time.Hour))
+	// Forty-five minutes ahead: past staleAfter in magnitude, so a build that
+	// treats the sign as noise has every chance to say something confident.
+	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now().Add(45*time.Minute))
 	r.settle()
 	meta := r.rec.wait(t, wire.EventTypeSnapshotReady, 1).(wire.SnapshotMeta)
-
 	detected := r.rec.wait(t, wire.EventTypeSaveDetected, 1).(wire.SaveMeta)
 	f := r.w.Freshness()
-	for name, age := range map[string]int64{
+
+	for name, age := range map[string]*int64{
 		"save.detected":  detected.AgeS,
 		"snapshot.ready": meta.Save.AgeS,
 		"freshness.save": f.Save.AgeS,
 		"Meta()":         r.w.Meta().Save.AgeS,
 	} {
-		if age < 0 {
-			t.Errorf("%s age_s = %d; the board would render a save as saved in the future", name, age)
+		if age != nil {
+			t.Errorf("%s age_s = %d, want absent: the server cannot measure the age of a save stamped ahead of its own clock", name, *age)
 		}
+	}
+	// And absent has to survive the encoder as absent — a zero here is what the
+	// client's own fallback used to be triggered by.
+	b, err := json.Marshal(meta.Save)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "age_s") {
+		t.Errorf("save meta = %s, want no age_s key at all", b)
+	}
+	// Nothing derived from the age it does not have gets claimed either.
+	if f.AutosavesOverdue != 0 {
+		t.Errorf("autosaves_overdue = %d, want 0: it is computed from an age that was never measured", f.AutosavesOverdue)
+	}
+
+	// A save whose stamp IS measurable reports a real number.
+	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
+	r.settle()
+	fresh := r.rec.wait(t, wire.EventTypeSnapshotReady, 2).(wire.SnapshotMeta)
+	if fresh.Save.AgeS == nil {
+		t.Fatal("age_s absent for a save stamped now; absent must mean unmeasurable, not old")
+	}
+	if *fresh.Save.AgeS < 0 {
+		t.Errorf("age_s = %d, want a real, non-negative age", *fresh.Save.AgeS)
+	}
+}
+
+// The two ends of ageS, stated directly: a genuine zero is a NUMBER and must
+// reach the wire as one, because "absent" now carries the whole weight of
+// "unmeasurable". An int64 with omitempty could express neither.
+func TestAgeSDistinguishesZeroFromUnmeasurable(t *testing.T) {
+	now := time.Date(2026, 8, 10, 20, 0, 0, 0, time.UTC)
+
+	if got := ageS(now, now); got == nil || *got != 0 {
+		t.Errorf("ageS(now, now) = %v, want a pointer to 0", got)
+	}
+	if got := ageS(now, now.Add(-90*time.Second)); got == nil || *got != 90 {
+		t.Errorf("ageS 90s ago = %v, want a pointer to 90", got)
+	}
+	if got := ageS(now, now.Add(time.Second)); got != nil {
+		t.Errorf("ageS of a save stamped ahead = %d, want nil", *got)
+	}
+
+	// And the encoder keeps them apart, which is the property the client's
+	// absent-branch now depends on.
+	zero := wire.SaveMeta{AgeS: ageS(now, now)}
+	b, err := json.Marshal(zero)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"age_s":0`) {
+		t.Errorf("a zero age encoded as %s, want an explicit age_s: 0", b)
+	}
+	ahead := wire.SaveMeta{AgeS: ageS(now, now.Add(time.Hour))}
+	if b, err := json.Marshal(ahead); err != nil {
+		t.Fatal(err)
+	} else if strings.Contains(string(b), "age_s") {
+		t.Errorf("an unmeasurable age encoded as %s, want no age_s key at all", b)
 	}
 }
 
@@ -965,11 +1154,11 @@ func TestMedianParseTimeIgnoresCacheHits(t *testing.T) {
 	r := newRig(t)
 
 	const realParse, originalCost = 40, 11_395
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		snap := stubSnapshot(path, "guid-a", 1000, 500)
 		snap.ParseMS = realParse
 		return snap, nil
-	}
+	})
 	r.start(ctx)
 	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
 	r.settle()
@@ -977,14 +1166,14 @@ func TestMedianParseTimeIgnoresCacheHits(t *testing.T) {
 
 	// The same save again, answered from the cache: the snapshot it hands back
 	// is the one the expensive parse produced, duration and all.
-	r.load = func(_ context.Context, path string, opts x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, opts x4save.LoadOptions) (*x4save.Snapshot, error) {
 		snap := stubSnapshot(path, "guid-a", 2000, 900)
 		snap.ParseMS = originalCost
 		if opts.OnCacheHit != nil {
 			opts.OnCacheHit()
 		}
 		return snap, nil
-	}
+	})
 	r.save("autosave_01.xml.gz", "guid-a", 2000, 900, r.clock.Now().Add(time.Minute))
 	r.settle()
 	cachedReady := r.rec.wait(t, wire.EventTypeSnapshotReady, 2).(wire.SnapshotMeta)
@@ -1130,12 +1319,12 @@ func TestARestoredSaveIsSeenEvenThoughItIsOlder(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	r := newRig(t)
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		if strings.Contains(path, "restored") {
 			return stubSnapshot(path, "guid-restored", 400, 90), nil
 		}
 		return stubSnapshot(path, "guid-a", 1000, 500), nil
-	}
+	})
 	r.start(ctx)
 
 	r.save("quicksave.xml.gz", "guid-a", 1000, 500, r.clock.Now())
@@ -1181,7 +1370,7 @@ func TestEveryRestoredSaveInOneTickIsSeen(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	r := newRig(t)
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		switch {
 		case strings.Contains(path, "restored_b"):
 			return stubSnapshot(path, "guid-b", 400, 90), nil
@@ -1189,7 +1378,7 @@ func TestEveryRestoredSaveInOneTickIsSeen(t *testing.T) {
 			return stubSnapshot(path, "guid-a-old", 300, 80), nil
 		}
 		return stubSnapshot(path, "guid-live", 1000, 500), nil
-	}
+	})
 	r.start(ctx)
 
 	r.save("quicksave.xml.gz", "guid-live", 1000, 500, r.clock.Now())

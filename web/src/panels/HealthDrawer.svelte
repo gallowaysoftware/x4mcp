@@ -119,7 +119,7 @@
 			{snapshot.save.name} · parsed {formatParseMS(snapshot.parse_ms)} · schema {snapshot.schema_version} · x4 {snapshot.game_version}
 		</p>
 		<p class="row t-body dim">
-			median parse {watch?.median_parse_ms === undefined ? 'not yet known' : formatDurationMS(watch.median_parse_ms)}
+			median parse {watch?.median_parse_ms == null ? 'not yet known' : formatDurationMS(watch.median_parse_ms)}
 			· playthrough {snapshot.game_guid}
 		</p>
 		{#if sections.length === 0}
@@ -154,7 +154,7 @@
 							reason="this leg has not answered since x4cue started"
 						/>{/if}
 				</span>
-				{#if leg.last_round_trip_ms !== undefined}
+				{#if leg.last_round_trip_ms != null}
 					<span class="dim">{formatDurationMS(leg.last_round_trip_ms)}</span>
 				{/if}
 				{#if leg.detail}<span class="amber">{leg.detail}</span>{/if}
@@ -195,7 +195,7 @@
 	{:else}
 		<p class="row t-body dim">
 			{build.version} · {build.hash} · parser schema {build.schema_version} · up since {at(build.started_at) ?? '?'}
-			· RSS {build.rss_bytes === undefined || build.rss_bytes === 0 ? 'unknown' : formatBytes(build.rss_bytes)}
+			· RSS {build.rss_bytes == null || build.rss_bytes === 0 ? 'unknown' : formatBytes(build.rss_bytes)}
 		</p>
 	{/if}
 	<p class="row">

@@ -30,6 +30,7 @@ import {
 	GLYPH_BLOCK_EMPTY,
 	GLYPH_BLOCK_FULL,
 	GLYPH_CLOCK,
+	GLYPH_UNKNOWN,
 	MIDDOT,
 } from './glyphs';
 import { formatAge, formatClock, formatParseMS, plural, shortenPath } from './format';
@@ -56,6 +57,15 @@ export const COPY = {
 			? 'autosaves overdue — is autosave on?'
 			: `${overdue} ${plural(overdue, 'autosave')} overdue — is autosave on?`,
 	rollback: 'loaded an earlier save',
+	/**
+	 * design §3's UNKNOWN treatment, in the stamp: never blank, never `0`, never
+	 * an em dash. A save stamped ahead of the server's clock has no measurable
+	 * age (wire: `SaveMeta.AgeS`), and the board's job at that point is to say
+	 * so — the previous behaviour printed `just now` about it, and went on
+	 * printing it after forty-five minutes.
+	 */
+	ageUnknown: `${GLYPH_UNKNOWN} age`,
+	ageUnknownTooltip: 'save is stamped ahead of the server clock — age unknown',
 	parseError: 'save parse failed — details in health',
 	schemaMismatch: 'game updated? save schema mismatch — x4cue needs an update',
 	connectionLost: 'connection lost — gaming PC off?',
@@ -188,35 +198,38 @@ export function parseBlocks(elapsedS: number, medianParseMS: number | undefined)
 }
 
 /**
- * Age of the described save in seconds.
+ * Age of the described save in seconds, or `undefined` when nobody can say.
  *
- * The server's own `age_s` is preferred over `modified_at`, and the wire type
- * says why: the two clocks are not the same clock. `modified_at` is a server
- * timestamp; subtracting it from a client clock that is an hour behind renders a
- * forty-minute-old save as `just now` and — because the escalation ladder runs
- * off this number — that save never ages, never stales and never says a word.
- * Clamping the negative to 0 does not save it; it *is* the lie.
+ * The age comes from the server's `age_s` and from nowhere else, and the wire
+ * type says why: the two clocks are not the same clock. `modified_at` is a
+ * server timestamp; subtracting it from a client clock that is an hour behind
+ * renders a forty-minute-old save as `just now` and — because the escalation
+ * ladder runs off this number — that save never ages, never stales and never
+ * says a word. Clamping the negative to 0 does not save it; it *is* the lie.
  *
  * So: take the age the server measured when it wrote the payload, and count up
  * from the moment the payload arrived here. Both halves of that are measured on
  * ONE clock each, and neither is compared with the other.
  *
- * `age_s` is omitted when it rounds to zero (`omitempty`), which is why the
- * fallback stays: a save that arrived less than a second old is one the two
- * methods agree about anyway.
+ * `age_s` used to be dropped when it was zero, which is why this function used
+ * to fall back to `modified_at` — and that fallback is how the lie shipped even
+ * with no skew anywhere. A save stamped in the FUTURE was clamped to 0 by the
+ * server, the 0 was dropped as empty, and the absent field sent this code down
+ * the fallback, where the future timestamp clamped to 0 a second time and the
+ * board printed `just now` for as long as the tab stayed open. `age_s` is now a
+ * pointer: a real zero is sent as `0`, and absent means the server could not
+ * measure it at all. There is no second opinion to reach for, so there is no
+ * fallback — an unmeasurable age renders as design §3's ∅, not as a number.
  */
 export function saveAgeS(f: Freshness, nowMS: number, arrivedAtMS?: number): number | undefined {
 	const save = f.save;
 	if (save === undefined) return undefined;
 	const serverAgeS = save.age_s;
-	if (serverAgeS !== undefined && arrivedAtMS !== undefined && arrivedAtMS > 0) {
-		return Math.max(0, serverAgeS + (nowMS - arrivedAtMS) / 1000);
-	}
-	const modified = save.modified_at;
-	if (modified === undefined) return undefined;
-	const t = Date.parse(modified);
-	if (Number.isNaN(t)) return undefined;
-	return Math.max(0, (nowMS - t) / 1000);
+	if (serverAgeS === undefined) return undefined;
+	// Without an arrival moment there is nothing to count up from, but the
+	// server's own measurement is still the truth as of when it was written.
+	if (arrivedAtMS === undefined || arrivedAtMS <= 0) return Math.max(0, serverAgeS);
+	return Math.max(0, serverAgeS + (nowMS - arrivedAtMS) / 1000);
 }
 
 /**
@@ -273,7 +286,7 @@ export function renderFreshness(input: FreshnessInput): FreshnessRender {
 		segments,
 		boxed: state === FreshnessStateSchemaMismatch,
 		paused: false,
-		title: titleFor(f, state, segments),
+		title: titleFor(f, state, segments, ageS),
 	};
 }
 
@@ -338,15 +351,24 @@ function stampSegments(
 	}
 }
 
-/** `quicksave · 4m ago` — the name the player calls the save, and its age. */
+/**
+ * `quicksave · 4m ago` — the name the player calls the save, and its age.
+ *
+ * An age nobody can measure prints as design §3's `∅ age` rather than being
+ * quietly left off: "never blank, never 0" applies here exactly as it does to a
+ * credits figure, and the absence is the interesting part. It is dim, not
+ * amber — an unknown age is not a warning about the game, it is the board
+ * declining to invent a number.
+ */
 function saveStamp(f: Freshness, ageS: number | undefined, ageTone: Tone): Segment[] {
 	const name = f.save?.name;
 	if (name === undefined) return [];
-	if (ageS === undefined) return [{ text: name, tone: 'dim' }];
 	return [
 		{ text: name, tone: 'dim' },
 		{ text: MIDDOT, tone: 'dim' },
-		{ text: formatAge(ageS), tone: ageTone },
+		ageS === undefined
+			? { text: COPY.ageUnknown, tone: 'dim' }
+			: { text: formatAge(ageS), tone: ageTone },
 	];
 }
 
@@ -365,11 +387,22 @@ function currentStamp(f: Freshness, ageS: number | undefined, nowMS: number): Se
 	return [...segments, { text: MIDDOT, tone: 'dim' }, { text: COPY.parsed(parseMS), tone: 'dim' }];
 }
 
-function titleFor(f: Freshness, state: FreshnessState, segments: Segment[]): string {
+function titleFor(
+	f: Freshness,
+	state: FreshnessState,
+	segments: Segment[],
+	ageS: number | undefined,
+): string {
 	const base = flatten(segments);
 	if (state === FreshnessStateAging) return `${base} — ${COPY.agingTooltip(f.autosaves_overdue)}`;
+	const notes: string[] = [];
+	// design §3: an unknown is never left to speak for itself — the ∅ says THAT
+	// the age is unknown and this says WHY, which is the half a player can act
+	// on (the save's timestamp, or the machine's clock, is wrong).
+	if (ageS === undefined && f.save !== undefined) notes.push(COPY.ageUnknownTooltip);
 	const path = f.save?.path ?? f.watch_dirs[0];
-	return path === undefined ? base : `${base} — ${path}`;
+	if (path !== undefined) notes.push(path);
+	return notes.length === 0 ? base : `${base} — ${notes.join(' — ')}`;
 }
 
 /** The stamp as one line of plain text: the accessible name and the tooltip base. */

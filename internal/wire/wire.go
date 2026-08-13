@@ -77,11 +77,27 @@ type SaveMeta struct {
 	SizeBytes  int64     `json:"size_bytes"`
 	ModifiedAt time.Time `json:"modified_at"`
 	// AgeS is how old the file was when the server sent this, in seconds. The
-	// client counts up from ModifiedAt for the live stamp — a number the server
-	// wrote a minute ago is not an age — but it needs this once, because the two
-	// clocks are not the same clock: a LAN tab (or a tab on a machine whose time
-	// drifted) would otherwise render "in 4 minutes".
-	AgeS int64 `json:"age_s,omitempty"`
+	// client counts up from that number rather than subtracting ModifiedAt from
+	// its own clock — the two clocks are not the same clock, and a LAN tab (or a
+	// tab on a machine whose time drifted) would otherwise render "in 4 minutes".
+	//
+	// A POINTER, for the same reason SnapshotMeta.GameTimeS is one: 0 is the
+	// most dangerous number this field can hold. A save can be stamped in the
+	// FUTURE — restored from an archive, written by a dual-boot machine whose
+	// RTC is on local time, or written across an NTP step — and then its age is
+	// not zero, it is UNMEASURABLE: the server has no clock that can subtract
+	// it. It used to be an int64 that clamped such a save to 0 and then dropped
+	// the 0 as empty, so the wire said "no age given" and the client fell back
+	// to subtracting ModifiedAt from its own clock, clamped that to 0 too, and
+	// rendered a 45-minute-old save as `quicksave · just now`, state current,
+	// forever — with no skew between the two machines involved. Aging and stale
+	// never fired, which is the one thing the freshness ladder exists to do.
+	//
+	// So: absent means the server could not measure it, which happens exactly
+	// when the file is stamped ahead of the server's own clock. It never means
+	// zero — a genuinely brand-new save sends age_s: 0. The client renders the
+	// absent case as design §3's ∅ treatment, never as an age.
+	AgeS *int64 `json:"age_s,omitempty"`
 	// ParseMS is how long the parse of this save took; 0 before it has run.
 	ParseMS int64 `json:"parse_ms,omitempty"`
 	// Attempt is the retry counter on save.retry events (1-based); 0 elsewhere.

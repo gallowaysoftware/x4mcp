@@ -271,7 +271,33 @@ type rig struct {
 	clock *fakeClock
 	rec   *recorder
 	w     *Watcher
-	load  func(context.Context, string, x4save.LoadOptions) (*x4save.Snapshot, error)
+
+	// loadFn is the scripted parser, behind a mutex because tests REPLACE it
+	// while the watcher is running — "this save fails, the next one succeeds"
+	// is a sequence several of them need — and the parse worker calls it from
+	// its own goroutine. Written by the test goroutine, read by the worker,
+	// with nothing between them: -race caught it about two runs in nine at
+	// -count=20. The race is the harness's own. Production sets Options.Load
+	// once, before Start, and never touches it again.
+	loadMu sync.Mutex
+	loadFn func(context.Context, string, x4save.LoadOptions) (*x4save.Snapshot, error)
+}
+
+// setLoad swaps the scripted parser. Safe to call while the watcher is running.
+func (r *rig) setLoad(fn func(context.Context, string, x4save.LoadOptions) (*x4save.Snapshot, error)) {
+	r.loadMu.Lock()
+	defer r.loadMu.Unlock()
+	r.loadFn = fn
+}
+
+// load is what the watcher is given as Options.Load: it reads the current
+// script under the lock and calls it OUTSIDE the lock, so a loader that blocks
+// (the way several tests hold a parse open) does not also block setLoad.
+func (r *rig) load(ctx context.Context, path string, lo x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.loadMu.Lock()
+	fn := r.loadFn
+	r.loadMu.Unlock()
+	return fn(ctx, path, lo)
 }
 
 func newRig(t *testing.T, mut ...func(*Options)) *rig {
@@ -284,16 +310,14 @@ func newRig(t *testing.T, mut ...func(*Options)) *rig {
 	// cannot reach, let alone write to, a real X4 save directory.
 	t.Setenv(x4save.SaveRootEnv, dir)
 	r := &rig{t: t, dir: dir, clock: newFakeClock(), rec: newRecorder()}
-	r.load = func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
+	r.setLoad(func(_ context.Context, path string, _ x4save.LoadOptions) (*x4save.Snapshot, error) {
 		return stubSnapshot(path, "guid-a", 1000, 500), nil
-	}
+	})
 	opts := Options{
 		Roots: []string{dir},
 		Emit:  r.rec.emit,
 		Logf:  func(string, ...any) {},
-		Load: func(ctx context.Context, path string, lo x4save.LoadOptions) (*x4save.Snapshot, error) {
-			return r.load(ctx, path, lo)
-		},
+		Load:  r.load,
 		clock: r.clock,
 	}
 	for _, m := range mut {

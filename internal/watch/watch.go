@@ -149,10 +149,15 @@ type Watcher struct {
 	polite bool
 
 	published atomic.Pointer[Published]
-	reqs      chan *parseReq // cap 1, newest-wins
-	kicks     chan struct{}  // cap 1, coalescing
+	kicks     chan struct{} // cap 1, coalescing
+	wake      chan struct{} // cap 1, coalescing: "the parse queue is not empty"
 	done      chan struct{}
 	startOnce sync.Once
+
+	// qmu guards queue, the parse worker's backlog: one request per distinct
+	// save PATH, in the order the settle gate dispatched them. See submit.
+	qmu   sync.Mutex
+	queue []*parseReq
 
 	mu      sync.Mutex
 	st      state
@@ -248,8 +253,8 @@ func New(opts Options) *Watcher {
 		opts:  opts,
 		clock: opts.clock,
 		roots: opts.Roots,
-		reqs:  make(chan *parseReq, 1),
 		kicks: make(chan struct{}, 1),
+		wake:  make(chan struct{}, 1),
 		done:  make(chan struct{}),
 		det:   newDetector(opts.SettleTicks),
 	}
@@ -544,36 +549,96 @@ func (w *Watcher) check(ctx context.Context, src source) {
 	w.submit(&parseReq{cand: cand, waiters: waiters})
 }
 
-// submit hands a parse to the worker, newest-wins: a save that lands while
-// another is being parsed replaces whatever was queued, because nobody wants
-// the one before last. Waiters transfer to the replacement, so a refresh
-// waiting on a superseded request still ends on a real publish.
+// submit hands a parse to the worker: one request per distinct save PATH, in
+// the order the settle gate dispatched them.
+//
+// Newest-wins is a statement about ONE FILE, and that is all it is here. A
+// second stat of a file already queued replaces the queued one — those bytes
+// are superseded and nobody wants the one before last — keeping its waiters and
+// its place in the drain order.
+//
+// It used to be newest-wins across DIFFERENT FILES too, over a channel that
+// held exactly one request: a save settling while another waited threw the
+// other away. That was not a deferral, it was a loss. detector.dispatched is
+// set the moment work is submitted, and that is precisely what stops
+// detector.choose from ever offering the path again — so an evicted request was
+// gone for good. The poll would not find it, and neither would either manual
+// refresh path, because both ask the detector the same question.
+//
+// The window is the ORDINARY timing rather than a corner case: the gate settles
+// a file every two ticks (4 s) while a real save takes ~11 s to parse
+// (docs/parse-baseline.md §3), so every save that settled during the parse of
+// the one before it went through it.
+//
+// The queue cannot grow without bound. It holds at most one entry per distinct
+// path in the watched save directories, and a rewrite of a file already in it
+// replaces that entry rather than adding another.
 func (w *Watcher) submit(req *parseReq) {
-	for {
-		select {
-		case w.reqs <- req:
-			return
-		default:
+	w.qmu.Lock()
+	queued := false
+	for i, q := range w.queue {
+		if q.cand.path != req.cand.path {
+			continue
 		}
-		select {
-		case old := <-w.reqs:
-			req.waiters = append(req.waiters, old.waiters...)
-		default:
-			// The worker took it between the two selects; try again.
-		}
+		// A refresh waiting on the stat being dropped is waiting for THIS FILE
+		// to be dealt with, and it is about to be.
+		req.waiters = append(req.waiters, q.waiters...)
+		w.queue[i], queued = req, true
+		break
 	}
+	if !queued {
+		w.queue = append(w.queue, req)
+	}
+	w.qmu.Unlock()
+	select {
+	case w.wake <- struct{}{}:
+	default: // the worker is already awake, or about to look again anyway
+	}
+}
+
+// nextReq pops the head of the parse queue, or nil when it is empty.
+func (w *Watcher) nextReq() *parseReq {
+	w.qmu.Lock()
+	defer w.qmu.Unlock()
+	if len(w.queue) == 0 {
+		return nil
+	}
+	req := w.queue[0]
+	w.queue[0] = nil // do not pin the request behind the slice header
+	w.queue = w.queue[1:]
+	return req
 }
 
 // ---- the parse worker ----
 
 func (w *Watcher) work(ctx context.Context) {
+	// Shutdown is not a verdict on the queued saves, but a caller blocked on
+	// one still has to be let go.
+	defer w.abandonQueue()
 	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if req := w.nextReq(); req != nil {
+			w.parse(ctx, req)
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case req := <-w.reqs:
-			w.parse(ctx, req)
+		case <-w.wake:
 		}
+	}
+}
+
+// abandonQueue releases anyone waiting on work that shutdown will never do.
+func (w *Watcher) abandonQueue() {
+	w.qmu.Lock()
+	q := w.queue
+	w.queue = nil
+	w.qmu.Unlock()
+	for _, req := range q {
+		closeAll(req.waiters)
 	}
 }
 
@@ -988,18 +1053,26 @@ func (w *Watcher) Freshness() wire.Freshness {
 		parsed := p.Meta.ParsedAt
 		f.ParsedAt = &parsed
 		f.ParseMS = p.Meta.ParseMS
-		age := time.Duration(save.AgeS) * time.Second
-		if cadence := medianInterval(st.saveTimes); cadence > 0 {
-			f.AutosavesOverdue = int(age / cadence)
-		}
-		// Age only overrides the settled states: a parse in flight, an error,
-		// or a rollback is more informative than "this is 25 minutes old".
-		if f.State == wire.FreshnessStateCurrent {
-			switch {
-			case age >= staleAfter:
-				f.State = wire.FreshnessStateStale
-			case age >= agingAfter:
-				f.State = wire.FreshnessStateAging
+		// No age, no ladder and no cadence arithmetic. A save stamped ahead of
+		// this clock cannot be aged (see ageS), and the honest consequence is
+		// that neither of the two things derived from age gets claimed —
+		// "0 autosaves overdue" and "current" are both assertions, and an
+		// unmeasurable age is not evidence for either.
+		if save.AgeS != nil {
+			age := time.Duration(*save.AgeS) * time.Second
+			if cadence := medianInterval(st.saveTimes); cadence > 0 {
+				f.AutosavesOverdue = int(age / cadence)
+			}
+			// Age only overrides the settled states: a parse in flight, an
+			// error, or a rollback is more informative than "this is 25
+			// minutes old".
+			if f.State == wire.FreshnessStateCurrent {
+				switch {
+				case age >= staleAfter:
+					f.State = wire.FreshnessStateStale
+				case age >= agingAfter:
+					f.State = wire.FreshnessStateAging
+				}
 			}
 		}
 	}
@@ -1049,17 +1122,29 @@ func (w *Watcher) Meta() *wire.SnapshotMeta {
 	return &meta
 }
 
-// ageS is how old a save is in whole seconds, and never less than zero.
+// ageS is how old a save is in whole seconds, or nil when that cannot be
+// measured.
 //
-// A save stamped in the FUTURE is a real case — the file came from another
-// machine, or the clock moved — and the aging/stale decision has always clamped
-// it. The field the board renders as "saved N ago" did not, so a save an hour
-// ahead went out as age_s: -3593 and every surface downstream inherited it.
-func ageS(now, mod time.Time) int64 {
-	if d := now.Sub(mod); d > 0 {
-		return int64(d.Seconds())
+// A save stamped in the FUTURE is a real case — restored from an archive, a
+// dual-boot machine whose RTC is on local time, a save written across an NTP
+// step — and there is no honest number for it. This used to clamp it to zero,
+// which is a claim, and the worst available one: zero is "brand new", so the
+// board printed `just now` about a save that was three quarters of an hour old
+// and stayed there, while aging and stale sat silent behind a subtraction that
+// never went positive. Nothing about that involves a second machine or a skewed
+// client; one file with a forward timestamp is the whole reproduction.
+//
+// nil is absent on the wire and means unmeasurable (see wire.SaveMeta.AgeS).
+// Everything downstream must decide what to do about not knowing, which is the
+// point: the ladder does not run and the board says ∅ rather than a number
+// nobody measured.
+func ageS(now, mod time.Time) *int64 {
+	d := now.Sub(mod)
+	if d < 0 {
+		return nil
 	}
-	return 0
+	s := int64(d.Seconds())
+	return &s
 }
 
 // ---- small helpers ----

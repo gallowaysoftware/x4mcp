@@ -16,6 +16,14 @@ import type { Freshness, SaveMeta, SilencePolicy } from './types.gen';
 const NOW = Date.parse('2026-08-12T21:58:00Z');
 const POLICY: SilencePolicy = { heartbeat_s: 15, stale_s: 45, lost_s: 60 };
 
+/**
+ * A save the server could measure: it sends the age it measured, and
+ * `modified_at` alongside it for the surfaces that print a timestamp. The two
+ * are never combined — see `saveAgeS`, and `SaveMeta.AgeS` on the wire.
+ *
+ * Pass `{ age_s: undefined }` for the save the server could NOT measure, which
+ * is the only thing an absent `age_s` means.
+ */
 function save(ageS: number, over: Partial<SaveMeta> = {}): SaveMeta {
 	return {
 		path: '/home/kyle/.config/EgoSoft/X4/12345/save/quicksave.xml.gz',
@@ -23,6 +31,7 @@ function save(ageS: number, over: Partial<SaveMeta> = {}): SaveMeta {
 		kind: 'quicksave',
 		size_bytes: 104_857_600,
 		modified_at: new Date(NOW - ageS * 1000).toISOString(),
+		age_s: ageS,
 		...over,
 	};
 }
@@ -237,10 +246,38 @@ describe('saveAgeS', () => {
 		expect(saveAgeS(f, NOW, NOW - 90_000)).toBe(150);
 	});
 
-	it('falls back to modified_at when the server sent no age, and never goes negative', () => {
-		// `age_s` is omitted when it rounds to zero, which is the one case where
-		// the two methods agree anyway.
-		expect(saveAgeS(fresh({ save: save(-120) }), NOW)).toBe(0);
-		expect(saveAgeS(fresh({ save: save(120) }), NOW, NOW - 5000)).toBe(120);
+	it('counts a measured age up from arrival, including a true zero', () => {
+		expect(saveAgeS(fresh({ save: save(0) }), NOW, NOW - 5000)).toBe(5);
+		expect(saveAgeS(fresh({ save: save(120) }), NOW, NOW - 5000)).toBe(125);
+	});
+
+	it('has no answer when the server had none, rather than inventing one from modified_at', () => {
+		// The whole reproduction, with NO clock skew anywhere: one save stamped
+		// 45 minutes ahead of the server that wrote the payload. The server
+		// cannot subtract that, so it sends no `age_s` at all (wire:
+		// `SaveMeta.AgeS`) — and this used to fall through to `modified_at`,
+		// subtract a server timestamp from THIS tab's clock, clamp the negative
+		// it produced to 0, and render `quicksave · just now`, state current,
+		// for as long as the tab stayed open. Aging and stale never fired, which
+		// is the one thing the ladder exists to do.
+		const f = fresh({
+			save: save(0, { modified_at: new Date(NOW + 45 * 60 * 1000).toISOString(), age_s: undefined }),
+		});
+		const arrivedAtMS = NOW - 40 * 60 * 1000;
+
+		expect(saveAgeS(f, NOW)).toBeUndefined();
+		expect(saveAgeS(f, NOW, arrivedAtMS)).toBeUndefined();
+
+		// design §3: never blank, never 0. The stamp says the age is unknown,
+		// and the title says why — the half a player can actually act on.
+		const rendered = renderFreshness({
+			freshness: f,
+			connection: 'live',
+			nowMS: NOW,
+			freshnessAtMS: arrivedAtMS,
+		});
+		expect(flatten(rendered.segments)).toBe(`quicksave · ${COPY.ageUnknown}`);
+		expect(flatten(rendered.segments)).not.toContain('just now');
+		expect(rendered.title).toContain(COPY.ageUnknownTooltip);
 	});
 });

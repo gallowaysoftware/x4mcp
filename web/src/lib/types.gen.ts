@@ -391,10 +391,24 @@ export interface SaveMeta {
 	modified_at: string;
 	/**
 	 * AgeS is how old the file was when the server sent this, in seconds. The
-	 * client counts up from ModifiedAt for the live stamp — a number the server
-	 * wrote a minute ago is not an age — but it needs this once, because the two
-	 * clocks are not the same clock: a LAN tab (or a tab on a machine whose time
-	 * drifted) would otherwise render "in 4 minutes".
+	 * client counts up from that number rather than subtracting ModifiedAt from
+	 * its own clock — the two clocks are not the same clock, and a LAN tab (or a
+	 * tab on a machine whose time drifted) would otherwise render "in 4 minutes".
+	 * A POINTER, for the same reason SnapshotMeta.GameTimeS is one: 0 is the
+	 * most dangerous number this field can hold. A save can be stamped in the
+	 * FUTURE — restored from an archive, written by a dual-boot machine whose
+	 * RTC is on local time, or written across an NTP step — and then its age is
+	 * not zero, it is UNMEASURABLE: the server has no clock that can subtract
+	 * it. It used to be an int64 that clamped such a save to 0 and then dropped
+	 * the 0 as empty, so the wire said "no age given" and the client fell back
+	 * to subtracting ModifiedAt from its own clock, clamped that to 0 too, and
+	 * rendered a 45-minute-old save as `quicksave · just now`, state current,
+	 * forever — with no skew between the two machines involved. Aging and stale
+	 * never fired, which is the one thing the freshness ladder exists to do.
+	 * So: absent means the server could not measure it, which happens exactly
+	 * when the file is stamped ahead of the server's own clock. It never means
+	 * zero — a genuinely brand-new save sends age_s: 0. The client renders the
+	 * absent case as design §3's ∅ treatment, never as an age.
 	 */
 	age_s?: number /* int64 */;
 	/**
@@ -425,13 +439,14 @@ export interface SnapshotMeta {
 	 * GameTimeS is in-game elapsed seconds. A regression means the player loaded
 	 * an earlier save (design §6 rollback).
 	 * A POINTER, because that regression is decided by SUBTRACTION and 0 is the
-	 * most dangerous number this field can hold. Rename the `time=` attribute in
-	 * <info><game> and every save reads as second zero of a new game: the first
-	 * one publishes normally, the second is "earlier" than the one before it, so
-	 * the watcher declares a rollback nobody performed, resets the diff baseline
-	 * and suppresses the loss alerts that baseline exists to raise — on a
-	 * perfectly good save, with the stamp reading `loaded an earlier save`. nil
-	 * is absent on the wire and means unread: nothing is compared against it.
+	 * most dangerous number this field can hold. Move the `time=` attribute in
+	 * <info><game> — a game update mid-session is all it takes — and the first
+	 * save this build cannot read the clock of reads as second zero, which is
+	 * "earlier" than the 164 hours before it. The watcher then declares a
+	 * rollback nobody performed, resets the diff baseline and suppresses the
+	 * loss alerts that baseline exists to raise, on a perfectly good save, with
+	 * the stamp reading `loaded an earlier save`. nil is absent on the wire and
+	 * means unread: nothing is compared against it in either direction.
 	 */
 	game_time_s?: number /* float64 */;
 	save_date: string;

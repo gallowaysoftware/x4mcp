@@ -280,7 +280,9 @@ func TestDetectorDoesNotReDispatchWhatItHasSeen(t *testing.T) {
 	d := newDetector(DefaultSettleTicks)
 	dispatches := 0
 	listing := []candidate{quick}
-	for i := range 12 {
+	// Fifty ticks is a hundred seconds of a quiet save directory, which is the
+	// ordinary state of one. Two dispatches, and then nothing at all.
+	for i := range 50 {
 		if i == 4 {
 			listing = []candidate{quick, restored} // the restore lands
 		}
@@ -289,7 +291,7 @@ func TestDetectorDoesNotReDispatchWhatItHasSeen(t *testing.T) {
 		}
 	}
 	if dispatches != 2 {
-		t.Errorf("dispatched %d times over 12 quiet ticks, want exactly 2 (the save that was there, and the one restored)", dispatches)
+		t.Errorf("dispatched %d times over 50 quiet ticks, want exactly 2 (the save that was there, and the one restored)", dispatches)
 	}
 }
 
