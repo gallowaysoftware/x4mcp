@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 26,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "no station with code/id \"NO-SUCH-STATION\""
+      }
+    ],
+    "isError": true
+  }
+}

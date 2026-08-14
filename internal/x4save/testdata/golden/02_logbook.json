@@ -1,0 +1,33 @@
+{
+  "snapshot": {
+    "source_path": "02_logbook.xml",
+    "source_size": 0,
+    "source_mtime": 0,
+    "parsed_at": 0,
+    "parse_ms": 0,
+    "save_name": "Fixture Save",
+    "save_date": 1700000000,
+    "game_version": "900",
+    "game_build": "611726",
+    "game_time_s": 591711.419,
+    "start_type": "x4ep1_gamestart_pirate2",
+    "game_guid": "00000000-0000-4000-8000-000000000000",
+    "seed": "1234567890",
+    "player_name": "Test Pilot",
+    "money": 5492825,
+    "location_raw": "{20004,5010011}",
+    "dlcs": null,
+    "relations": null,
+    "ships": null,
+    "stations": null,
+    "owned_sectors": null,
+    "blueprints_seen": false,
+    "other_counts": {},
+    "raw_reputations": {
+      "{20203,201}": 30,
+      "{20203,301}": -13,
+      "{20203,601}": 3,
+      "{20203,901}": 0
+    }
+  }
+}

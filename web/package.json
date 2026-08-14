@@ -1,0 +1,22 @@
+{
+  "name": "x4cue-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "x4cue board: Svelte 5 + Vite SPA, built into web/dist and embedded in the Go binary",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.0",
+    "@tsconfig/svelte": "5.0.8",
+    "@types/node": "24.13.3",
+    "svelte": "5.56.8",
+    "svelte-check": "4.7.5",
+    "typescript": "5.9.3",
+    "vite": "8.2.1"
+  }
+}

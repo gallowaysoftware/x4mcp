@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 19,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "game database unavailable; set X4MCP_GAME_DIR"
+      }
+    ],
+    "isError": true
+  }
+}

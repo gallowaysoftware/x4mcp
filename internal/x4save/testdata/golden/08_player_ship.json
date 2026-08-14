@@ -1,0 +1,107 @@
+{
+  "snapshot": {
+    "source_path": "08_player_ship.xml",
+    "source_size": 0,
+    "source_mtime": 0,
+    "parsed_at": 0,
+    "parse_ms": 0,
+    "save_name": "Fixture Save",
+    "save_date": 1700000000,
+    "game_version": "900",
+    "game_build": "611726",
+    "game_time_s": 591711.419,
+    "start_type": "x4ep1_gamestart_pirate2",
+    "game_guid": "00000000-0000-4000-8000-000000000000",
+    "seed": "1234567890",
+    "player_name": "Test Pilot",
+    "money": 5492825,
+    "location_raw": "{20004,5010011}",
+    "dlcs": null,
+    "relations": null,
+    "ships": [
+      {
+        "id": "[0x300]",
+        "code": "PLY-100",
+        "name": "Mineral Hauler",
+        "class": "ship_l",
+        "macro": "ship_arg_l_miner_solid_01_b_macro",
+        "faction": "Argon",
+        "size": "L",
+        "role": "Miner (solid)",
+        "sector": "cluster_01_sector001_macro",
+        "order": "MiningRoutine",
+        "orders": [
+          {
+            "order": "MiningRoutine",
+            "ware": "ore",
+            "amount": 4400,
+            "default": true,
+            "state": "started"
+          },
+          {
+            "order": "SingleSell",
+            "ware": "ore",
+            "amount": 4400,
+            "price": 272
+          }
+        ],
+        "last_order_error": "MoveTo: Destination unreachable",
+        "captain": "Ilya Rannveig",
+        "captain_skills": {
+          "piloting": 7,
+          "management": 12,
+          "engineering": 9,
+          "morale": 6,
+          "boarding": 3
+        },
+        "crew_count": 3,
+        "account": 1250000,
+        "cargo": [
+          {
+            "ware": "ore",
+            "amount": 4380
+          },
+          {
+            "ware": "silicon",
+            "amount": 1200
+          }
+        ]
+      },
+      {
+        "id": "[0x307]",
+        "code": "PLY-101",
+        "name": "Escort One",
+        "class": "ship_s",
+        "macro": "ship_arg_s_fighter_01_a_macro",
+        "faction": "Argon",
+        "size": "S",
+        "role": "Fighter",
+        "sector": "cluster_01_sector001_macro",
+        "order": "ProtectShip",
+        "orders": [
+          {
+            "order": "ProtectShip",
+            "default": true
+          }
+        ],
+        "crew_count": 1,
+        "docked_at": "[0x300]"
+      }
+    ],
+    "stations": null,
+    "owned_sectors": null,
+    "blueprints_seen": false,
+    "sectors": [
+      {
+        "macro": "cluster_01_sector001_macro",
+        "code": "AAA-001",
+        "owner": "argon"
+      }
+    ],
+    "other_counts": {
+      "lasertower": 1,
+      "resourceprobe": 1,
+      "satellite": 2
+    }
+  }
+}

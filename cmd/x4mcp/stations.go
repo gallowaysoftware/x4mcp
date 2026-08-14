@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 
+	"github.com/pequalsnp/x4mcp/internal/api"
 	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
 
@@ -37,8 +39,11 @@ func runStations(args []string) {
 		fmt.Fprintln(os.Stderr, "using latest save:", path)
 	}
 
-	a := &app{}
-	snap, err := a.snapshot(path)
+	// Lazy: the save parse and the game-data load then overlap instead of
+	// queueing, and a CLI run that only prints storage numbers never waits for
+	// databases it does not use.
+	svc := api.NewLazy("", nil)
+	snap, err := svc.Snapshot(context.Background(), path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "parse error:", err)
 		os.Exit(1)
@@ -55,7 +60,7 @@ func runStations(args []string) {
 	fmt.Printf("save:        %s\n", snap.SaveName)
 	fmt.Printf("game time:   %.1f h    money: %d cr    stations: %d\n\n", snap.GameTimeS/3600, snap.Money, len(stations))
 	for _, st := range stations {
-		d := diagnoseStationData(&st, 0, 0, 0)
+		d := api.DiagnoseStationData(&st, 0, 0, 0)
 		uc := ""
 		if st.UnderConstruction {
 			uc = "  [BUILDING]"
@@ -80,14 +85,14 @@ func runStations(args []string) {
 // stationReport is the JSON shape captured for before/after diffs.
 type stationReport struct {
 	x4save.Station
-	Shortages []stationFinding `json:"shortages"`
-	Surpluses []stationFinding `json:"surpluses"`
+	Shortages []api.StationFinding `json:"shortages"`
+	Surpluses []api.StationFinding `json:"surpluses"`
 }
 
 func emitStationsJSON(snap *x4save.Snapshot, stations []x4save.Station) {
 	reps := make([]stationReport, 0, len(stations))
 	for _, st := range stations {
-		d := diagnoseStationData(&st, 0, 0, 0)
+		d := api.DiagnoseStationData(&st, 0, 0, 0)
 		reps = append(reps, stationReport{Station: st, Shortages: d.Shortages, Surpluses: d.Surpluses})
 	}
 	out := map[string]any{

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- NPC stations. Only the ones the player has discovered (knownto contains
+     "player") are worth anything: an undiscovered station's prices are not
+     information the player has. The discovered one also has a player ship
+     docked inside it, which is the only reason the parser walks an NPC
+     station's subtree at all. A discovered station with no live offers is
+     dropped rather than listed as a station that trades nothing. -->
+<savegame>
+<info>
+<save date="1700000000" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="argon" id="[0x3]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_01_sector001_macro" connection="sector" id="[0x4]">
+<connections>
+<connection connection="stations">
+<component class="station" macro="station_arg_tradestation_01_macro" connection="space" code="ARG-500" owner="argon" knownto="player argon antigone" name="Argon Trading Station" id="[0x500]">
+<trade>
+<offers>
+<production>
+<trade id="[0x501]" seller="[0x500]" ware="energycells" price="1600" amount="18000"/>
+<trade id="[0x502]" seller="[0x500]" ware="hullparts" price="196400" amount="1200"/>
+<trade id="[0x503]" buyer="[0x500]" ware="ore" price="24800" amount="7400"/>
+</production>
+<buildtrade>
+<trade id="[0x504]" buyer="[0x500]" ware="claytronics" price="1174000" amount="240"/>
+</buildtrade>
+</offers>
+</trade>
+<connections>
+<connection connection="docked">
+<component class="ship_s" macro="ship_arg_s_scout_01_a_macro" connection="dock" code="PLY-300" owner="player" name="Scout One" id="[0x510]">
+<orders>
+<order order="Wait" default="1" state="started"/>
+</orders>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+<connection connection="stations">
+<!-- Undiscovered: knownto lists other factions but not the player. -->
+<component class="station" macro="station_tel_tradestation_01_macro" connection="space" code="TEL-501" owner="teladi" knownto="teladi argon" name="Teladi Trading Station" id="[0x520]">
+<trade>
+<offers>
+<production>
+<trade id="[0x521]" seller="[0x520]" ware="spices" price="4400" amount="9000"/>
+</production>
+</offers>
+</trade>
+</component>
+</connection>
+<connection connection="stations">
+<!-- Discovered, but trading nothing right now. -->
+<component class="station" macro="station_par_defence_01_macro" connection="space" code="PAR-502" owner="paranid" knownto="player" name="Paranid Defence Station" id="[0x530]">
+<trade>
+<offers/>
+</trade>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</universe>
+</savegame>

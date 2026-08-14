@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A save caught mid-write: the gzip stream is intact, the XML inside it just
+     stops. Everything before the tear looks perfectly good, which is the
+     danger — a parser that returns what it managed to read would report a
+     player who owns two blueprints and no ships. It must error instead. -->
+<savegame>
+<info>
+<save date="1700000000" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<blueprints>
+<blueprint ware="module_gen_prod_energycells_01"/>
+<blueprint ware="module_arg_prod_hullparts_01"/>
+</blueprints>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="arg

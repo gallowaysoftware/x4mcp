@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hostile components. The threat surfaces only ever show what the player has
+     actually seen, so knownto is the load-bearing attribute here: two of these
+     carry knownto="player", the rest do not and must stay invisible.
+     Today's parser skips every ship in this file (only the discovered Xenon
+     STATION survives, as a trade station); capturing the Kha'ak/Xenon attrs is
+     the S6 target. -->
+<savegame>
+<info>
+<save date="1700000000" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="argon" id="[0x3]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_01_sector001_macro" connection="sector" id="[0x4]">
+<connections>
+<connection connection="ships">
+<component class="ship_s" macro="ship_kha_s_fighter_02_a_macro" connection="space" code="KHK-101" owner="khaak" knownto="player" id="[0x200]"/>
+<component class="ship_s" macro="ship_kha_s_fighter_02_a_macro" connection="space" code="KHK-102" owner="khaak" knownto="player" id="[0x201]"/>
+<!-- Undiscovered swarm: no knownto, must never surface. -->
+<component class="ship_s" macro="ship_kha_s_fighter_02_a_macro" connection="space" code="KHK-103" owner="khaak" id="[0x202]"/>
+<component class="ship_m" macro="ship_kha_m_fighter_01_a_macro" connection="space" code="KHK-104" owner="khaak" id="[0x203]"/>
+<component class="ship_m" macro="ship_xen_m_fighter_01_a_macro" connection="space" code="XEN-201" owner="xenon" knownto="player" id="[0x210]"/>
+<component class="ship_l" macro="ship_xen_l_destroyer_01_a_macro" connection="space" code="XEN-202" owner="xenon" id="[0x211]"/>
+<component class="ship_xl" macro="ship_xen_xl_battleship_01_a_macro" connection="space" code="XEN-203" owner="xenon" id="[0x212]"/>
+</connection>
+<connection connection="stations">
+<!-- A discovered Xenon defence station: this one IS captured today, as a
+     trade station, because the parser keys on knownto plus live offers. -->
+<component class="station" macro="station_xen_shipyard_01_macro" connection="space" code="XEN-900" owner="xenon" knownto="player" name="Xenon Shipyard" id="[0x220]">
+<trade>
+<offers>
+<production>
+<trade id="[0x1]" seller="[0x220]" ware="energycells" price="1600" amount="12000"/>
+<trade id="[0x2]" buyer="[0x220]" ware="ore" price="21400" amount="4800"/>
+</production>
+</offers>
+</trade>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</universe>
+</savegame>

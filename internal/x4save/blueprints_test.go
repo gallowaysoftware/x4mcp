@@ -31,7 +31,7 @@ func writeSave(t *testing.T, xml string) string {
 
 const saveWithBlueprints = `<?xml version="1.0" encoding="UTF-8"?>
 <savegame>
-<info><player name="Emry Sloan" money="3054068"/></info>
+<info><player name="Test Pilot" money="3054068"/></info>
 <blueprints>
 <blueprint ware="module_gen_prod_energycells_01"/>
 <blueprint ware="module_arg_prod_hullparts_01"/>
@@ -42,7 +42,7 @@ const saveWithBlueprints = `<?xml version="1.0" encoding="UTF-8"?>
 // this fix, from a player who owns none.
 const saveWithoutBlueprints = `<?xml version="1.0" encoding="UTF-8"?>
 <savegame>
-<info><player name="Emry Sloan" money="3054068"/></info>
+<info><player name="Test Pilot" money="3054068"/></info>
 </savegame>`
 
 func TestBlueprintsSeenDistinguishesEmptyFromMissing(t *testing.T) {
@@ -76,7 +76,7 @@ func TestBlueprintsSeenDistinguishesEmptyFromMissing(t *testing.T) {
 func bulkySave() string {
 	var b bytes.Buffer
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n<savegame>\n")
-	b.WriteString(`<info><player name="Emry Sloan" money="3054068"/></info>` + "\n")
+	b.WriteString(`<info><player name="Test Pilot" money="3054068"/></info>` + "\n")
 	b.WriteString("<known>\n")
 	for i := 0; i < 400000; i++ {
 		b.WriteString(`<entry id="filler" read="0"/>` + "\n")

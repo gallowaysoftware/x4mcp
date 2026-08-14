@@ -1,0 +1,85 @@
+{
+  "jsonrpc": "2.0",
+  "id": 21,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"plots\":[{\"milestones\":[{\"name\":\"Research_Unlocked\",\"plot\":\"Erlking\",\"script\":\"Story_Research_Erlking\",\"state\":\"complete\",\"time\":19014.35},{\"name\":\"Research_Unlocked_Wait\",\"plot\":\"Erlking\",\"script\":\"Story_Research_Erlking\",\"state\":\"complete\",\"time\":19015.352},{\"name\":\"Erlking_Fully_Upgraded\",\"plot\":\"Erlking\",\"script\":\"Story_Research_Erlking\",\"state\":\"waiting\"},{\"name\":\"Start\",\"plot\":\"Erlking\",\"script\":\"Story_Research_Erlking\",\"state\":\"complete\"},{\"name\":\"Player_Boarding_Erlking\",\"plot\":\"Erlking\",\"script\":\"Story_Research_Erlking\",\"state\":\"waiting\"},{\"name\":\"Player_Claimed_Erlking\",\"plot\":\"Erlking\",\"script\":\"Story_Research_Erlking\",\"state\":\"waiting\"},{\"name\":\"Player_Claimed_Erlking_ReputationDrop\",\"plot\":\"Erlking\",\"script\":\"Story_Research_Erlking\",\"state\":\"pending\"},{\"name\":\"Boarding_Started\",\"plot\":\"Erlking\",\"script\":\"Story_Research_Erlking\",\"state\":\"waiting\"},{\"name\":\"Boarding_Successful\",\"plot\":\"Erlking\",\"script\":\"Story_Research_Erlking\",\"state\":\"waiting\"},{\"name\":\"Check_Research_Unlocked\",\"plot\":\"Erlking\",\"script\":\"Story_Research_Erlking\",\"state\":\"cancelled\"}],\"plot\":\"Erlking\",\"script\":\"Story_Research_Erlking\",\"state\":\"in progress\"}]}"
+      }
+    ],
+    "structuredContent": {
+      "plots": [
+        {
+          "milestones": [
+            {
+              "name": "Research_Unlocked",
+              "plot": "Erlking",
+              "script": "Story_Research_Erlking",
+              "state": "complete",
+              "time": 19014.35
+            },
+            {
+              "name": "Research_Unlocked_Wait",
+              "plot": "Erlking",
+              "script": "Story_Research_Erlking",
+              "state": "complete",
+              "time": 19015.352
+            },
+            {
+              "name": "Erlking_Fully_Upgraded",
+              "plot": "Erlking",
+              "script": "Story_Research_Erlking",
+              "state": "waiting"
+            },
+            {
+              "name": "Start",
+              "plot": "Erlking",
+              "script": "Story_Research_Erlking",
+              "state": "complete"
+            },
+            {
+              "name": "Player_Boarding_Erlking",
+              "plot": "Erlking",
+              "script": "Story_Research_Erlking",
+              "state": "waiting"
+            },
+            {
+              "name": "Player_Claimed_Erlking",
+              "plot": "Erlking",
+              "script": "Story_Research_Erlking",
+              "state": "waiting"
+            },
+            {
+              "name": "Player_Claimed_Erlking_ReputationDrop",
+              "plot": "Erlking",
+              "script": "Story_Research_Erlking",
+              "state": "pending"
+            },
+            {
+              "name": "Boarding_Started",
+              "plot": "Erlking",
+              "script": "Story_Research_Erlking",
+              "state": "waiting"
+            },
+            {
+              "name": "Boarding_Successful",
+              "plot": "Erlking",
+              "script": "Story_Research_Erlking",
+              "state": "waiting"
+            },
+            {
+              "name": "Check_Research_Unlocked",
+              "plot": "Erlking",
+              "script": "Story_Research_Erlking",
+              "state": "cancelled"
+            }
+          ],
+          "plot": "Erlking",
+          "script": "Story_Research_Erlking",
+          "state": "in progress"
+        }
+      ]
+    }
+  }
+}

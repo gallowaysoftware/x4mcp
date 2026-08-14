@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A player station subtree. The interesting parts are all in the module
+     tree: what a production module actually queues (not the overviewgraphs UI
+     union, which includes bought inputs), storage cargo aggregated across
+     several storage modules, dock sizes split into built vs still-building,
+     and state="construction" propagating to nested docking bays. -->
+<savegame>
+<info>
+<save date="1700000000" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="player" id="[0x3]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_01_sector001_macro" connection="sector" id="[0x4]">
+<connections>
+<connection connection="stations">
+<component class="station" macro="station_gen_default_macro" connection="space" code="PLS-400" owner="player" name="Ore Refinery Alpha" overviewgraphs="refinedmetals ore energycells" id="[0x400]">
+<account amount="18400000"/>
+<workforces>
+<workforce race="argon" amount="1440"/>
+<workforce race="teladi" amount="260"/>
+</workforces>
+<trade>
+<offers>
+<production>
+<trade id="[0x401]" seller="[0x400]" ware="refinedmetals" price="17600" amount="9400"/>
+<trade id="[0x402]" buyer="[0x400]" ware="ore" price="21400" amount="12000"/>
+<trade id="[0x403]" buyer="[0x400]" ware="energycells" price="1200" amount="30000"/>
+</production>
+</offers>
+</trade>
+<connections>
+<connection connection="subordinates" id="[0x404]">
+<connected connection="[0x9001]"/>
+</connection>
+<connection connection="subordinates" id="[0x405]">
+<connected connection="[0x9002]"/>
+</connection>
+<connection connection="subordinates" id="[0x406]">
+<connected connection="[0x9003]"/>
+</connection>
+<connection connection="modules">
+<component class="production" macro="module_gen_prod_refinedmetals_01_macro" connection="station" id="[0x410]">
+<production state="running">
+<queue ware="refinedmetals" amount="1"/>
+</production>
+</component>
+</connection>
+<connection connection="modules">
+<component class="production" macro="module_gen_prod_refinedmetals_01_macro" connection="station" id="[0x411]">
+<production state="running">
+<queue ware="refinedmetals" amount="1"/>
+</production>
+</component>
+</connection>
+<connection connection="modules">
+<!-- Still being built: its output must not be listed as produced. -->
+<component class="production" macro="module_gen_prod_graphene_01_macro" connection="station" state="construction" id="[0x412]">
+<production state="waiting">
+<queue ware="graphene" amount="1"/>
+</production>
+<connections>
+<connection connection="bays">
+<!-- Building status propagates down to this bay. -->
+<component class="dockingbay" macro="dockingbay_gen_l_pier_01_macro" connection="module" id="[0x413]"/>
+</connection>
+</connections>
+</component>
+</connection>
+<connection connection="modules">
+<component class="storage" macro="module_gen_stor_solid_xl_01_macro" connection="station" id="[0x420]">
+<cargo>
+<ware ware="ore" amount="41000"/>
+<ware ware="energycells" amount="9400"/>
+</cargo>
+</component>
+</connection>
+<connection connection="modules">
+<component class="storage" macro="module_gen_stor_solid_xl_01_macro" connection="station" id="[0x421]">
+<cargo>
+<ware ware="ore" amount="7000"/>
+<ware ware="refinedmetals" amount="9400"/>
+<ware ware="spaceweed" amount="0"/>
+</cargo>
+</component>
+</connection>
+<connection connection="modules">
+<component class="dockingbay" macro="dockingbay_gen_m_01_macro" connection="station" id="[0x430]"/>
+</connection>
+<connection connection="modules">
+<component class="dockingbay" macro="dockingbay_gen_s_01_macro" connection="station" id="[0x431]"/>
+</connection>
+<connection connection="modules">
+<component class="habitation" macro="module_arg_hab_l_01_macro" connection="station" id="[0x440]"/>
+</connection>
+<connection connection="docked">
+<!-- A player ship docked at the station: its cargo is its own, never the
+     station's storage. -->
+<component class="ship_m" macro="ship_arg_m_trans_container_01_a_macro" connection="dock" code="PLY-200" owner="player" name="Freight One" id="[0x450]">
+<cargo>
+<ware ware="refinedmetals" amount="1500"/>
+</cargo>
+<orders>
+<order order="TradeRoutine" default="1" state="started"/>
+</orders>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</universe>
+</savegame>

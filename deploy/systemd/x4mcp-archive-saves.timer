@@ -1,0 +1,18 @@
+[Unit]
+Description=Archive new X4 savegames every 5 minutes
+Documentation=https://github.com/pequalsnp/x4mcp
+
+[Timer]
+# Wall-clock schedule rather than OnUnitActiveSec, because Persistent= only
+# catches up missed runs for calendar timers: after a reboot or a resume the
+# archiver fires immediately instead of waiting out a fresh interval.
+OnCalendar=*:0/5
+Persistent=true
+# The saves are not going anywhere in the next half minute; letting systemd
+# coalesce this with other timers keeps it off the critical path.
+AccuracySec=30s
+RandomizedDelaySec=15s
+Unit=x4mcp-archive-saves.service
+
+[Install]
+WantedBy=timers.target

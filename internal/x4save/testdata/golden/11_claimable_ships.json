@@ -1,0 +1,84 @@
+{
+  "snapshot": {
+    "source_path": "11_claimable_ships.xml",
+    "source_size": 0,
+    "source_mtime": 0,
+    "parsed_at": 0,
+    "parse_ms": 0,
+    "save_name": "Fixture Save",
+    "save_date": 1700000000,
+    "game_version": "900",
+    "game_build": "611726",
+    "game_time_s": 591711.419,
+    "start_type": "x4ep1_gamestart_pirate2",
+    "game_guid": "00000000-0000-4000-8000-000000000000",
+    "seed": "1234567890",
+    "player_name": "Test Pilot",
+    "money": 5492825,
+    "location_raw": "{20004,5010011}",
+    "dlcs": null,
+    "relations": null,
+    "ships": null,
+    "stations": null,
+    "claimable_ships": [
+      {
+        "macro": "ship_par_s_scout_01_a_macro",
+        "class": "ship_s",
+        "code": "OWN-601",
+        "faction": "Paranid",
+        "size": "S",
+        "role": "Scout",
+        "sector": "cluster_01_sector001_macro",
+        "engine": "thruster_par_s_travel_01_mk1_macro",
+        "hops": -1
+      },
+      {
+        "macro": "ship_spl_m_fighter_02_a_macro",
+        "class": "ship_m",
+        "code": "OWN-602",
+        "faction": "Split",
+        "size": "M",
+        "role": "Fighter",
+        "sector": "cluster_01_sector001_macro",
+        "engine": "thruster_spl_m_travel_01_mk3_macro",
+        "hops": -1
+      },
+      {
+        "macro": "ship_arg_l_destroyer_02_a_macro",
+        "class": "ship_l",
+        "code": "OWN-603",
+        "faction": "Argon",
+        "size": "L",
+        "role": "Destroyer",
+        "sector": "cluster_01_sector001_macro",
+        "hops": -1
+      },
+      {
+        "macro": "ship_gen_xs_racer_01_a_macro",
+        "class": "ship_xs",
+        "code": "OWN-605",
+        "faction": "Generic",
+        "size": "XS",
+        "role": "Racer",
+        "sector": "cluster_02_sector001_macro",
+        "engine": "thruster_gen_xs_travel_01_mk2_macro",
+        "hops": -1
+      }
+    ],
+    "owned_sectors": null,
+    "blueprints_seen": false,
+    "sectors": [
+      {
+        "macro": "cluster_01_sector001_macro",
+        "code": "AAA-001",
+        "owner": "argon"
+      },
+      {
+        "macro": "cluster_02_sector001_macro",
+        "code": "BBB-002",
+        "owner": "teladi"
+      }
+    ],
+    "other_counts": {}
+  }
+}

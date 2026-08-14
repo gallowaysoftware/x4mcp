@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "id": 23,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"note\":\"Energy-cell output scales ~linearly with sunlight. Balance high sunlight against local demand and a safe owner; selling can also reach neighbouring sectors.\",\"sites\":null}"
+      }
+    ],
+    "structuredContent": {
+      "note": "Energy-cell output scales ~linearly with sunlight. Balance high sunlight against local demand and a safe owner; selling can also reach neighbouring sectors.",
+      "sites": null
+    }
+  }
+}

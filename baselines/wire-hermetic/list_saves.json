@@ -1,0 +1,15 @@
+{
+  "jsonrpc": "2.0",
+  "id": 9,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"saves\":null}"
+      }
+    ],
+    "structuredContent": {
+      "saves": null
+    }
+  }
+}

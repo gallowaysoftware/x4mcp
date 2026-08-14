@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/pequalsnp/x4mcp/internal/api"
 	"github.com/pequalsnp/x4mcp/internal/x4data"
 	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
@@ -239,11 +240,13 @@ func runParse(args []string) {
 		fmt.Fprintln(os.Stderr, "parse error:", err)
 		os.Exit(1)
 	}
-	// Resolve sector macros to display names (from the game install) so ship and
-	// claimable-ship locations read as sector names, not raw macros.
-	if names, nerr := x4data.LoadSectorNames(""); nerr == nil {
-		snap.ApplySectorNames(names)
-	}
+	// One resolution pass, the SAME one the server does: sector and faction
+	// names, gases, sunlight, hull display names, and the save's own gate graph.
+	// This used to hand-roll two of those and route claim distances over the
+	// install's galaxy.xml, so a debug tool reported different sector adjacency
+	// than the server it exists to debug (the bug 3f4e93a fixed server-side).
+	svc := api.NewLazy("", nil)
+	svc.Enrich(snap)
 
 	fmt.Printf("save:        %s\n", snap.SaveName)
 	fmt.Printf("player:      %s\n", snap.PlayerName)
@@ -258,9 +261,6 @@ func runParse(args []string) {
 	fmt.Printf("relations:   %d factions\n", len(snap.Relations))
 	fmt.Printf("other:       %v\n", snap.OtherCounts)
 
-	if facNames := x4data.LoadFactionNames(""); len(facNames) > 0 {
-		snap.ApplyReputationNames(facNames)
-	}
 	if len(snap.Reputations) > 0 {
 		fmt.Println("\nreputation (−30..+30 rank, from event log):")
 		for _, r := range snap.Reputations {
@@ -323,7 +323,15 @@ func runParse(args []string) {
 	}
 	if len(snap.ClaimableShips) > 0 {
 		// Gate distance from the player's current sector, for a claim-tour view.
-		gates, _ := x4data.LoadGateGraph("")
+		// Enrich already put the effective graph (the save's, when it has one)
+		// on each sector, so read it back off the snapshot rather than re-
+		// deriving a different one from galaxy.xml.
+		gates := map[string][]string{}
+		for _, sec := range snap.Sectors {
+			for _, n := range sec.Neighbors {
+				gates[strings.ToLower(sec.Macro)] = append(gates[strings.ToLower(sec.Macro)], strings.ToLower(n))
+			}
+		}
 		from := ""
 		for _, s := range snap.Ships {
 			if s.Sector != "" {
