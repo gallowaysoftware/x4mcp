@@ -37,6 +37,11 @@ type Event<T, D> = Omit<Envelope, 'type' | 'data'> &
  * on the Go side — the correlation is documented in internal/wire/event.go and
  * asserted here, the one seam in the pipeline no compiler checks for us. Adding
  * an event means editing both ends.
+ *
+ * `heartbeat` is the one EventType deliberately absent from this union. It is
+ * not an envelope at all: no seq, no payload, nothing to fold — the stream
+ * stamps contact from it and drops it (events.ts), so it never reaches the
+ * reducer and has no correlation to state.
  */
 export type BoardEvent =
 	| Event<typeof EventTypeSaveDetected | typeof EventTypeSaveParsing | typeof EventTypeSaveRetry, SaveMeta>

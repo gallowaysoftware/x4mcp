@@ -257,8 +257,9 @@ installed game's `.cat/.dat` archives (`internal/x4data`) and cached. Set
 cmd/x4mcp/         main.go (CLI + subcommands), server.go (MCP tools)
 internal/x4save/   locate.go, parse.go (streaming), model.go, macro.go, cache.go
 internal/plan/     plan.go (persistent goals + journal)
-scripts/           archive-saves.sh (+ test), install-archiver.sh
-deploy/systemd/    user service + timer for the archiver
+scripts/           archive-saves.sh (+ test), install-archiver.sh,
+                   install-board.sh, hitchcheck (parse-while-gaming measurement)
+deploy/systemd/    user service for the board, service + timer for the archiver
 ```
 
 ## Configuration
@@ -267,3 +268,5 @@ deploy/systemd/    user service + timer for the archiver
 |---------------------|--------------------------------------|
 | `X4MCP_CACHE_DIR`   | Override snapshot cache directory     |
 | `X4MCP_PLAN_FILE`   | Override plan.json location           |
+| `X4MCP_SAVE_DIR`    | Override where savegames are looked for (PATH-style list; replaces discovery) |
+| `X4MCP_PARSE_NICE`  | Nice value for the save-parsing thread (default 19, `off` to leave the scheduler alone) |

@@ -1,0 +1,66 @@
+[Unit]
+Description=x4cue — the live X4 board and MCP server on 127.0.0.1:8484
+Documentation=https://github.com/pequalsnp/x4mcp
+# The board is only interesting while there is a graphical session to alt-tab
+# out of, and it is a user unit, so this is the honest binding.
+PartOf=graphical-session.target
+
+[Service]
+Type=exec
+ExecStart=%h/.local/bin/x4mcp serve --web 127.0.0.1:8484
+
+# THE POINT OF THIS FILE (PRD §11, tech-design §1 and §10.3): x4cue runs on the
+# machine that is running the game, and a 5–16 s parse of a 100 MB savegame is
+# the one thing it does that can be felt through a joystick. The game always
+# wins.
+#
+# CPUWeight is a share of a CONTENDED cpu.max, so 20 against the default 100
+# means x4cue gets a fifth of what the game asks for and none of it when the
+# game is idle. Nice biases the scheduler inside that. Neither costs anything on
+# an idle machine — this is a priority, not a cap.
+#
+# The parse ALSO lowers its own thread (see internal/watch, X4MCP_PARSE_NICE),
+# because a unit governs only a process systemd started, and on a gaming machine
+# x4cue is as often started from a shell or the Steam launch wrapper. The two
+# are belt and braces on purpose: the health drawer reports what was actually
+# granted, so "am I niced?" never has to be answered from ps.
+CPUWeight=20
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+
+# The reason there is a save watcher at all is that X4 rewrites saves in place;
+# nothing here may ever be the process that damages one. x4cue is a READER of
+# the game's files — it writes only its plan store and its snapshot cache — so
+# say that in the sandbox rather than in a comment.
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=-%h/.cache/x4mcp
+ReadWritePaths=-%h/.local/state/x4mcp
+ReadWritePaths=-%h/.config/x4mcp
+PrivateTmp=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# A board that dies at 03:00 should be back before the player notices.
+Restart=on-failure
+RestartSec=5s
+
+# The savegame directories, for machines where the default discovery is wrong
+# (a second Steam library, a non-standard prefix). Left commented rather than
+# guessed: an override that names the wrong directory is worse than none.
+# Environment="X4MCP_SAVE_DIR=%h/.config/EgoSoft/X4"
+#
+# Politeness override: an integer is the nice value the parse thread runs at
+# (default 19), "off" leaves the scheduler alone. On a machine that is not also
+# running the game, "off" is the reasonable setting.
+# Environment="X4MCP_PARSE_NICE=off"
+
+[Install]
+WantedBy=default.target

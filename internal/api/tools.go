@@ -1624,14 +1624,37 @@ type RefreshOut struct {
 	ParseMS      int64  `json:"parse_ms"`
 }
 
+// liveRefresher is a SnapshotProvider that OWNS the current save — the watcher.
+//
+// It is a structural interface rather than an import because the dependency
+// runs the other way: internal/watch calls api.Enrich, so api naming
+// watch.Watcher would be a cycle. The method exists on the watcher for exactly
+// this branch.
+type liveRefresher interface {
+	RefreshSnapshot(ctx context.Context) (*x4save.Snapshot, error)
+}
+
 // RefreshSave deliberately bypasses the SnapshotProvider: its whole job is to
 // force a re-parse past the cache, which is the one thing a provider is allowed
-// to short-circuit. (When the watcher lands, an empty save_path becomes a kick
-// at it, while an explicit path keeps forcing a load — an MCP client analysing
-// an archived save must not be silently redirected to the live one.)
+// to short-circuit.
+//
+// The two branches are different questions. An empty save_path means "make sure
+// you are current", which under the watcher is a kick at it — it re-stats, and
+// parses only if the file actually moved, so a model calling this in a loop
+// costs a stat rather than 16 s of CPU while the game is running. An explicit
+// path means "re-read THIS file", and keeps forcing a load: a client analysing
+// an archived save must never be silently redirected to the live one.
 func (s *Service) RefreshSave(ctx context.Context, in SaveSel) (RefreshOut, error) {
 	path := in.SavePath
 	if path == "" {
+		if live, ok := s.snaps.(liveRefresher); ok {
+			snap, err := live.RefreshSnapshot(ctx)
+			if err != nil {
+				return RefreshOut{}, err
+			}
+			return RefreshOut{SavePath: snap.SourcePath, ShipCount: len(snap.Ships),
+				StationCount: len(snap.Stations), ParseMS: snap.ParseMS}, nil
+		}
 		latest, ok := x4save.LatestSave()
 		if !ok {
 			return RefreshOut{}, fmt.Errorf("no savegames found")

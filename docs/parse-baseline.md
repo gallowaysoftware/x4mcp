@@ -1,7 +1,9 @@
-# Parser baseline — schema v24
+# Parser baseline — schema v26
 
-**Status:** measured 2026-08-10 (S2) · re-measure on every parser change and every game patch
-**Why it exists:** S6 bumps the parse schema 24 → 25 and adds four whole sections (logbook, stats, missions, inventory). Its gate is *"ParseMS ≤ +10% and peak RSS ≤ +5 MB of the S2 baseline"*. These are the numbers that sentence refers to. Without them the gate is a feeling.
+**Status:** timings measured 2026-08-10 against schema v24 (S2) · hitch check added 2026-08-12 · re-measure on every parser change and every game patch
+**Why it exists:** S6 bumps the parse schema and adds four whole sections (logbook, stats, missions, inventory). Its gate is *"ParseMS ≤ +10% and peak RSS ≤ +5 MB of the S2 baseline"*. These are the numbers that sentence refers to. Without them the gate is a feeling.
+
+**About the version in that heading:** it is `x4save.SchemaVersion`, and it is the schema THIS DOCUMENT DESCRIBES, not the one the numbers were taken on. It said v24 while the constant had moved to 26 — two post-S2 bumps that changed no parser cost (25 was the cache's gob header, 26 added `Snapshot.MoneySeen`), so §3's timings still stand. Any bump that does move them re-blesses §3 in the same commit; a heading that drifts from the constant is how a stale number gets treated as a gate.
 
 ---
 
@@ -152,7 +154,54 @@ Three tests guard the guard, and none of them need a real save or a secret:
 
 The same placeholders are the house style everywhere else in the repo: hand-written savegame fixtures use `<player name="Test Pilot">`, and profile-directory fixtures use the profile id `12345678`. A scrubbed fixture next to a hand-written test that pastes in the real name would have made the scrub pointless — one standard, or none.
 
-## 6. Patch-day ritual
+## 6. Parse-while-gaming (hitch check #1)
+
+The PRD's second-worst risk is "x4cue degrades the game it serves", and its mitigation has always been written down as systemd `CPUWeight=20` + `Nice=10`. Until 2026-08-12 nothing implemented it: `deploy/systemd/` had a unit for the archiver and none for the server, and the parse ran at whatever priority the shell that started x4cue had. This is what that cost, and what it costs now.
+
+### Method
+
+Reproducible from a clone: no game and no real save needed — the game is a busy loop and the save is the committed distilled fixture. Both halves are `scripts/hitchcheck`.
+
+```sh
+go build -o /tmp/hitchcheck ./scripts/hitchcheck
+
+# the "game": a thread that never stops, logging how much work it got done
+taskset -c 12 /tmp/hitchcheck -game > /tmp/proxy.log &
+sleep 4                                   # a clean baseline window first
+
+# the parse, through the real watcher pipeline, on the same core
+X4MCP_PARSE_NICE=off taskset -c 12 /tmp/hitchcheck \
+  -save internal/x4save/testdata/real/distilled-quicksave.xml.gz -proxy /tmp/proxy.log
+taskset -c 12 /tmp/hitchcheck \
+  -save internal/x4save/testdata/real/distilled-quicksave.xml.gz -proxy /tmp/proxy.log
+```
+
+The number that matters is the busy loop's throughput WHILE a parse is in flight, against its throughput with the core to itself. `X4MCP_PARSE_NICE=off` is a shipped knob, so the "before" arm is the previous behaviour itself rather than a reconstruction of it.
+
+Two traps, both hit while taking these numbers, both worth stating because they make nicing look useless:
+
+- **The game must be a separate PROCESS.** Two threads inside one Go process are arbitrated by the Go runtime, and `taskset` to one core makes `GOMAXPROCS=1`, at which point it round-robins them 50/50 and the kernel's nice value never gets a say. Measured that way the fix appears to do nothing. (X4 is a separate process in real life, so this is also just the right model.)
+- **Pin the game, and pin the parse to the same core, deliberately.** Nice is a rule for deciding who runs when two things want ONE cpu. With 32 hardware threads and nothing pinned, the scheduler simply puts the parse somewhere else and there is nothing to measure.
+
+### Numbers (2026-08-12, machine as in §2, distilled fixture, medians of 5–7 parses)
+
+| what the machine is doing | parse | game throughput lost while parsing |
+| --- | ---: | ---: |
+| game and parse on the **same core**, as shipped (nothing niced) | 442 ms | **51.3%** |
+| game and parse on the **same core**, niced (19 + `IOPRIO_CLASS_IDLE`) | 11 964 ms | **4.0%** |
+| game saturating all 32 threads, nothing pinned, as shipped | 572 ms | 2.5% |
+| game saturating all 32 threads, nothing pinned, niced | 889 ms | 2.8% |
+| game on one core, x4cue free to run anywhere — **the everyday case** — niced | 198 ms | 3.2% |
+
+Read the rows together; any one of them alone is misleading, in one direction or the other.
+
+- **The first pair is the point.** When the parse lands on the core the game is on, an unniced parse takes half of it — for 442 ms, every time the game saves, which is exactly when the player is doing something that made them save. Niced, it takes 4%, and pays for that by taking 27× longer, because ~2% of one core is all a nice-19 thread is asking for.
+- **The last row is the case that actually happens.** On a 16-core machine the scheduler puts a niced parse where the game is not, and it runs at full speed: 198 ms against the 192 ms/op baseline in §3. Politeness costs nothing until there is contention — that is the whole property of a priority as against a cap, and the reason to prefer one.
+- **The middle pair is the honest limit.** One thread against 32 saturating ones is 1/33 of the machine whatever its nice value, so nicing neither helps nor hurts much there; the parse slows from 572 ms to 889 ms. A game that is genuinely using every thread will make the board slower, and it should.
+
+Two mechanisms, deliberately: `deploy/systemd/x4mcp.service` (`CPUWeight=20`, `Nice=10`) for the process, and the parse thread lowering itself to nice 19 + `IOPRIO_CLASS_IDLE` for the case that unit never sees — x4cue started from a shell, or from the Steam launch wrapper, which is how it is usually started on a gaming machine. `X4MCP_PARSE_NICE` overrides the second (an integer, or `off`); the health drawer reports what the kernel actually granted, so "am I niced?" never has to be answered from `ps`.
+
+## 7. Patch-day ritual
 
 After any X4 update, before trusting any output:
 

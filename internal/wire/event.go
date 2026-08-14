@@ -18,6 +18,20 @@ const (
 	// EventTypeResync tells a client its cursor fell off the ring buffer: refetch
 	// /api/state and the mounted views rather than trying to catch up.
 	EventTypeResync EventType = "resync"
+	// EventTypeHeartbeat is the keep-alive, and it is a NAMED EVENT rather than
+	// the SSE comment (`: heartbeat`) it used to be for one reason: comments are
+	// invisible to EventSource by specification — no JS event fires for one — so
+	// a client could not count them and had to measure liveness by the socket
+	// still being OPEN instead. A socket is open for as long as nobody closes
+	// it, which a frozen server (SIGSTOP, a cgroup freezer, a debugger, a
+	// suspended host) never does: TCP stays ESTABLISHED, zero bytes arrive, and
+	// the board reports a snapshot from an hour ago as live. Bytes received is
+	// the only honest measure of a stream, and this is the byte.
+	//
+	// It carries no Seq and no `id:` (see Hub.stream): it is not a point in the
+	// event log, it never reaches the reducer, and stamping one would move the
+	// browser's Last-Event-ID onto a sequence the ring cannot replay.
+	EventTypeHeartbeat EventType = "heartbeat"
 )
 
 // Envelope wraps every SSE payload. Seq is the process-monotonic sequence that

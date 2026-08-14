@@ -22,7 +22,22 @@ export const EventTypePlaythroughChanged = "playthrough.changed";
  * /api/state and the mounted views rather than trying to catch up.
  */
 export const EventTypeResync = "resync";
-export type EventType = typeof EventTypeSaveDetected | typeof EventTypeSaveParsing | typeof EventTypeSaveRetry | typeof EventTypeSaveError | typeof EventTypeSnapshotReady | typeof EventTypeHealthLeg | typeof EventTypePlaythroughChanged | typeof EventTypeResync;
+/**
+ * EventTypeHeartbeat is the keep-alive, and it is a NAMED EVENT rather than
+ * the SSE comment (`: heartbeat`) it used to be for one reason: comments are
+ * invisible to EventSource by specification — no JS event fires for one — so
+ * a client could not count them and had to measure liveness by the socket
+ * still being OPEN instead. A socket is open for as long as nobody closes
+ * it, which a frozen server (SIGSTOP, a cgroup freezer, a debugger, a
+ * suspended host) never does: TCP stays ESTABLISHED, zero bytes arrive, and
+ * the board reports a snapshot from an hour ago as live. Bytes received is
+ * the only honest measure of a stream, and this is the byte.
+ * It carries no Seq and no `id:` (see Hub.stream): it is not a point in the
+ * event log, it never reaches the reducer, and stamping one would move the
+ * browser's Last-Event-ID onto a sequence the ring cannot replay.
+ */
+export const EventTypeHeartbeat = "heartbeat";
+export type EventType = typeof EventTypeSaveDetected | typeof EventTypeSaveParsing | typeof EventTypeSaveRetry | typeof EventTypeSaveError | typeof EventTypeSnapshotReady | typeof EventTypeHealthLeg | typeof EventTypePlaythroughChanged | typeof EventTypeResync | typeof EventTypeHeartbeat;
 /**
  * Envelope wraps every SSE payload. Seq is the process-monotonic sequence that
  * is also the SSE `id:` field, so a reconnecting client sends it back as
@@ -44,6 +59,168 @@ export interface Envelope {
 }
 
 //////////
+// source: state.go
+
+/**
+ * StateView is GET /api/state: everything a tab needs to draw itself from
+ * nothing, and the thing it refetches after a resync.
+ * It is a BOOTSTRAP, not a poll target. The board's steady state is the SSE
+ * stream; this exists so that a tab opened mid-session, or reconnected after
+ * the ring buffer moved past it, does not have to wait for the next save to
+ * know anything.
+ */
+export interface StateView {
+	build: BuildInfo;
+	/**
+	 * Vitals is the same body /api/views/vitals returns, inlined so first paint
+	 * is one request.
+	 */
+	vitals: VitalsView;
+	/**
+	 * Snapshot describes the currently published parse; nil before the first
+	 * one succeeds (the startup state, which is not an error).
+	 */
+	snapshot?: SnapshotMeta;
+	watch: WatchHealth;
+	/**
+	 * LastEventSeq is the newest event the hub has issued. A client that
+	 * bootstraps here and then subscribes with this as Last-Event-ID misses
+	 * nothing in the gap between the two requests.
+	 */
+	last_event_seq: number /* int64 */;
+	/**
+	 * Silence is the design §6 two-stage timing, sent rather than hard-coded in
+	 * the client so both halves of the contract move together.
+	 */
+	silence: SilencePolicy;
+}
+/**
+ * BuildInfo identifies the binary a tab is talking to.
+ * Hash is the versioning story (tech-design §2): assets and binary ship
+ * together, so the only skew that can exist is a tab left open across a
+ * restart. The client compares this against what it booted with and reloads on
+ * a mismatch, which is cheaper than versioning every path.
+ */
+export interface BuildInfo {
+	version: string;
+	hash: string;
+	/**
+	 * SchemaVersion is the parser's snapshot schema; a save this build cannot
+	 * read reports the schema_mismatch freshness state against it.
+	 */
+	schema_version: number /* int */;
+	started_at: string;
+	/**
+	 * RSSBytes is the process's resident set, for the health drawer. 0 when the
+	 * platform did not tell us — unknown, not "no memory".
+	 */
+	rss_bytes?: number /* int64 */;
+}
+/**
+ * SilencePolicy is how long a client waits before disbelieving its stream
+ * (design §6). The server heartbeats every HeartbeatS; two missed heartbeats
+ * stale the freshness stamp, three mean the connection is gone.
+ */
+export interface SilencePolicy {
+	heartbeat_s: number /* int */;
+	stale_s: number /* int */;
+	lost_s: number /* int */;
+}
+/**
+ * WatchHealth is the watcher's own report: what it is watching, how often, and
+ * what that has cost. It is the health drawer's watch section.
+ */
+export interface WatchHealth {
+	dirs: string[];
+	/**
+	 * PollIntervalMS is the stat-poll period (D1: 2 s, one value, always).
+	 */
+	poll_interval_ms: number /* int64 */;
+	detections: DetectionStats;
+	/**
+	 * Parses counts completed parses; Retries counts ErrSaveChanged retries
+	 * across all of them; ParseErrors counts parses that ended in an error.
+	 */
+	parses: number /* int64 */;
+	retries: number /* int64 */;
+	parse_errors: number /* int64 */;
+	median_parse_ms?: number /* int64 */;
+	/**
+	 * LastCheckAt is when the poll last ran. A poll that has stopped ticking is
+	 * a board that has quietly stopped being live; this is how it shows.
+	 */
+	last_check_at?: string;
+	last_detect_at?: string;
+	cache: CacheHealth;
+	/**
+	 * Parse is how politely the parse runs (design risk §10.3).
+	 */
+	parse_priority: ParsePriority;
+}
+/**
+ * ParsePriority is what the parse worker asked the scheduler for and what it
+ * was granted: the answer to "is x4cue getting out of the game's way?" without
+ * anyone having to find the right thread in ps.
+ * It matters because the systemd unit that promises CPUWeight=20 + Nice=10 only
+ * applies when the binary was started BY systemd, and on a gaming machine it
+ * usually was not — it was started from a shell, or from the Steam launch
+ * wrapper. Measured against a busy game proxy sharing one core, an unniced parse
+ * costs that core 51% of its throughput for as long as it runs; the same parse
+ * at nice 19 costs 4% (docs/parse-baseline.md §6).
+ */
+export interface ParsePriority {
+	/**
+	 * Nice is the CPU nice value of the thread the last parse ran on, read back
+	 * from the kernel rather than assumed.
+	 */
+	nice: number /* int */;
+	/**
+	 * IOClass is that thread's I/O scheduling class: "idle" is the one this
+	 * build asks for, "none" means nothing was ever asked.
+	 */
+	io_class?: string;
+	/**
+	 * Applied is true only when a parse really has run at these values. False
+	 * before the first parse, and when the platform or the sandbox refused.
+	 */
+	applied: boolean;
+	/**
+	 * Detail says why not, verbatim, or that no save has been parsed yet.
+	 */
+	detail?: string;
+}
+/**
+ * DetectionStats counts detected saves and says what found each one. Manual is
+ * kept apart from the poll for one reason: a player leaning on the refresh
+ * button should not make the poll look like it is doing more work than it is.
+ */
+export interface DetectionStats {
+	total: number /* int64 */;
+	/**
+	 * ByPoll is detections whose first sighting came from the ticker, which is
+	 * every save the game writes on its own.
+	 */
+	by_poll: number /* int64 */;
+	/**
+	 * ByManual is detections whose first sighting came from a Kick — the
+	 * refresh button or the refresh_save tool.
+	 */
+	by_manual: number /* int64 */;
+}
+/**
+ * CacheHealth is the gob snapshot cache after the last GC pass.
+ */
+export interface CacheHealth {
+	entries: number /* int */;
+	bytes: number /* int64 */;
+	/**
+	 * Removed is entries deleted since start-up: stale schema versions at
+	 * boot, then everything past the per-save keep count.
+	 */
+	removed: number /* int64 */;
+}
+
+//////////
 // source: views.go
 
 /**
@@ -55,13 +232,18 @@ export interface VitalsView {
 	freshness: Freshness;
 	legs: LegHealth[];
 	/**
-	 * Credits is the player's balance; nil before the first successful parse.
+	 * Credits is the player's balance. nil before the first successful parse —
+	 * and ALSO when a save parsed but carried no balance the parser recognised,
+	 * which is what a patch moving the attribute looks like (PRD risk #1). The
+	 * pointer is the whole defence: 0 is a real answer about a real empire, so
+	 * a parsed-but-unread balance must not be able to borrow it.
 	 */
 	credits?: number /* int64 */;
 	/**
 	 * CreditsDelta is the change against the previous snapshot of the same
 	 * playthrough; nil when there is no previous snapshot to compare against
-	 * (first parse, or a playthrough switch reset the baseline).
+	 * (first parse, or a playthrough switch reset the baseline), and nil when
+	 * either end of the subtraction was never read.
 	 */
 	credits_delta?: number /* int64 */;
 	/**
@@ -87,12 +269,30 @@ export interface CreditsSample {
  * Counts are the vitals tallies. They carry no severity: whether a count has
  * something new since the player last touched the board is client state (the
  * amber lifecycle, design §2), and the server has no way to know it.
+ * Every field is a POINTER, for the reason Credits is one. Fleet, Stations and
+ * Idle used to be `len()` of a slice, and a length cannot tell "owns none" from
+ * "the parser never found them": rename the ownership attribute a save marks
+ * player property with and every collection comes back empty with the
+ * playthrough identity intact — so the schema-mismatch guard stays quiet, the
+ * stamp stays green, the save leg stays up, and the board draws FLEET 0 STN 0
+ * IDLE 0 at 22 px about an empire of 94 ships. The section band notices, but
+ * only inside the health drawer. Presence is recorded where it is known (the
+ * parser, x4save.Snapshot.PlayerAssetsSeen) and absent here means unknown,
+ * which the client renders as the dotted ∅ box.
  */
 export interface Counts {
-	fleet: number /* int */;
-	stations: number /* int */;
-	idle: number /* int */;
-	threats: number /* int */;
+	fleet?: number /* int */;
+	stations?: number /* int */;
+	idle?: number /* int */;
+	/**
+	 * Threats is a POINTER because this build cannot derive it at all: the
+	 * knownto/attacker data arrives with the F3 schema bump (S6/F13a). A plain
+	 * int would leave the board printing THREAT 0 at 22 px — "no one is hunting
+	 * you", the 117-blueprints doctrine, from a field nobody computed. nil is
+	 * absent on the wire and renders as the dotted ∅ box, which is the truth:
+	 * unknown, not zero.
+	 */
+	threats?: number /* int */;
 }
 /**
  * WarChip is one faction pair currently at war, with how many war-related
@@ -166,6 +366,16 @@ export interface LegHealth {
 	detail?: string;
 }
 /**
+ * SaveKind is which of X4's three ways of writing a save produced this file.
+ * The player thinks in these terms ("my last quicksave"), and the cadence the
+ * freshness thresholds derive from is an AUTOSAVE cadence — a manual save every
+ * half hour says nothing about whether autosave is on.
+ */
+export const SaveKindQuicksave = "quicksave";
+export const SaveKindAutosave = "autosave";
+export const SaveKindManual = "manual";
+export type SaveKind = typeof SaveKindQuicksave | typeof SaveKindAutosave | typeof SaveKindManual;
+/**
  * SaveMeta describes a savegame file as the watcher sees it — before any parse
  * has succeeded, so it holds nothing that requires reading the XML.
  */
@@ -176,8 +386,35 @@ export interface SaveMeta {
 	 * which is what X4 players actually call a save.
 	 */
 	name: string;
+	kind?: SaveKind;
 	size_bytes: number /* int64 */;
 	modified_at: string;
+	/**
+	 * AgeS is how old the file was when the server sent this, in seconds. The
+	 * client counts up from that number rather than subtracting ModifiedAt from
+	 * its own clock — the two clocks are not the same clock, and a LAN tab (or a
+	 * tab on a machine whose time drifted) would otherwise render "in 4 minutes".
+	 * A POINTER, for the same reason SnapshotMeta.GameTimeS is one: 0 is the
+	 * most dangerous number this field can hold. A save can be stamped in the
+	 * FUTURE — restored from an archive, written by a dual-boot machine whose
+	 * RTC is on local time, or written across an NTP step — and then its age is
+	 * not zero, it is UNMEASURABLE: the server has no clock that can subtract
+	 * it. It used to be an int64 that clamped such a save to 0 and then dropped
+	 * the 0 as empty, so the wire said "no age given" and the client fell back
+	 * to subtracting ModifiedAt from its own clock, clamped that to 0 too, and
+	 * rendered a 45-minute-old save as `quicksave · just now`, state current,
+	 * forever — with no skew between the two machines involved. Aging and stale
+	 * never fired, which is the one thing the freshness ladder exists to do.
+	 * So: absent means the server could not measure it, which happens exactly
+	 * when the file is stamped ahead of the server's own clock. It never means
+	 * zero — a genuinely brand-new save sends age_s: 0. The client renders the
+	 * absent case as design §3's ∅ treatment, never as an age.
+	 */
+	age_s?: number /* int64 */;
+	/**
+	 * ParseMS is how long the parse of this save took; 0 before it has run.
+	 */
+	parse_ms?: number /* int64 */;
 	/**
 	 * Attempt is the retry counter on save.retry events (1-based); 0 elsewhere.
 	 */
@@ -201,8 +438,17 @@ export interface SnapshotMeta {
 	/**
 	 * GameTimeS is in-game elapsed seconds. A regression means the player loaded
 	 * an earlier save (design §6 rollback).
+	 * A POINTER, because that regression is decided by SUBTRACTION and 0 is the
+	 * most dangerous number this field can hold. Move the `time=` attribute in
+	 * <info><game> — a game update mid-session is all it takes — and the first
+	 * save this build cannot read the clock of reads as second zero, which is
+	 * "earlier" than the 164 hours before it. The watcher then declares a
+	 * rollback nobody performed, resets the diff baseline and suppresses the
+	 * loss alerts that baseline exists to raise, on a perfectly good save, with
+	 * the stamp reading `loaded an earlier save`. nil is absent on the wire and
+	 * means unread: nothing is compared against it in either direction.
 	 */
-	game_time_s: number /* float64 */;
+	game_time_s?: number /* float64 */;
 	save_date: string;
 	game_version: string;
 	player_name: string;
@@ -211,6 +457,13 @@ export interface SnapshotMeta {
 	 * the bands a healthy save of this playthrough produces.
 	 */
 	sections?: SectionHealth[];
+	/**
+	 * Rollback is set when GameTimeS went BACKWARDS within one playthrough: the
+	 * player loaded an earlier save. The diff baseline is reset and loss alerts
+	 * are suppressed, because everything that "disappeared" since the previous
+	 * snapshot never happened.
+	 */
+	rollback?: boolean;
 }
 /**
  * SectionHealth is one parsed section's count measured against its expected

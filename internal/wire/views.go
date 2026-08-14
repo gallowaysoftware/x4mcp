@@ -8,11 +8,16 @@ import "time"
 type VitalsView struct {
 	Freshness Freshness   `json:"freshness"`
 	Legs      []LegHealth `json:"legs"`
-	// Credits is the player's balance; nil before the first successful parse.
+	// Credits is the player's balance. nil before the first successful parse —
+	// and ALSO when a save parsed but carried no balance the parser recognised,
+	// which is what a patch moving the attribute looks like (PRD risk #1). The
+	// pointer is the whole defence: 0 is a real answer about a real empire, so
+	// a parsed-but-unread balance must not be able to borrow it.
 	Credits *int64 `json:"credits,omitempty"`
 	// CreditsDelta is the change against the previous snapshot of the same
 	// playthrough; nil when there is no previous snapshot to compare against
-	// (first parse, or a playthrough switch reset the baseline).
+	// (first parse, or a playthrough switch reset the baseline), and nil when
+	// either end of the subtraction was never read.
 	CreditsDelta *int64 `json:"credits_delta,omitempty"`
 	// CreditsSeries is the sparkline series, oldest first. Empty until the
 	// history store exists; the client draws its dotted-unknown empty state.
@@ -32,11 +37,28 @@ type CreditsSample struct {
 // Counts are the vitals tallies. They carry no severity: whether a count has
 // something new since the player last touched the board is client state (the
 // amber lifecycle, design §2), and the server has no way to know it.
+//
+// Every field is a POINTER, for the reason Credits is one. Fleet, Stations and
+// Idle used to be `len()` of a slice, and a length cannot tell "owns none" from
+// "the parser never found them": rename the ownership attribute a save marks
+// player property with and every collection comes back empty with the
+// playthrough identity intact — so the schema-mismatch guard stays quiet, the
+// stamp stays green, the save leg stays up, and the board draws FLEET 0 STN 0
+// IDLE 0 at 22 px about an empire of 94 ships. The section band notices, but
+// only inside the health drawer. Presence is recorded where it is known (the
+// parser, x4save.Snapshot.PlayerAssetsSeen) and absent here means unknown,
+// which the client renders as the dotted ∅ box.
 type Counts struct {
-	Fleet    int `json:"fleet"`
-	Stations int `json:"stations"`
-	Idle     int `json:"idle"`
-	Threats  int `json:"threats"`
+	Fleet    *int `json:"fleet,omitempty"`
+	Stations *int `json:"stations,omitempty"`
+	Idle     *int `json:"idle,omitempty"`
+	// Threats is a POINTER because this build cannot derive it at all: the
+	// knownto/attacker data arrives with the F3 schema bump (S6/F13a). A plain
+	// int would leave the board printing THREAT 0 at 22 px — "no one is hunting
+	// you", the 117-blueprints doctrine, from a field nobody computed. nil is
+	// absent on the wire and renders as the dotted ∅ box, which is the truth:
+	// unknown, not zero.
+	Threats *int `json:"threats,omitempty"`
 }
 
 // WarChip is one faction pair currently at war, with how many war-related

@@ -23,7 +23,7 @@ type Snapshot struct {
 	SaveDate    int64    `json:"save_date"` // unix seconds (in-universe wall clock of save)
 	GameVersion string   `json:"game_version"`
 	GameBuild   string   `json:"game_build"`
-	GameTimeS   float64  `json:"game_time_s"` // in-game elapsed seconds
+	GameTimeS   float64  `json:"game_time_s"` // in-game elapsed seconds (see GameTimeSeen)
 	StartType   string   `json:"start_type"`
 	GameGUID    string   `json:"game_guid"` // stable per-playthrough identifier
 	Seed        string   `json:"seed"`
@@ -32,12 +32,50 @@ type Snapshot struct {
 	LocationRaw string   `json:"location_raw"`
 	DLCs        []string `json:"dlcs"`
 
+	// MoneySeen records whether <player money=…> was actually read. Money is an
+	// int64 with a perfectly good zero, so "the player is broke" and "this build
+	// never found the balance" are the same bits — and the board prints the
+	// larger of its two glance-sized numbers from them. Rename the attribute (a
+	// patch moving it is PRD risk #1) and the strip reports CREDITS 0 with a
+	// confident Δ against a number nobody parsed, freshness green, every
+	// section in band, because the schema-mismatch guard only fires when the
+	// playthrough identity is gone too. Presence is the difference between a
+	// fact and a fabrication, so it is recorded rather than inferred.
+	MoneySeen bool `json:"money_seen"`
+
+	// GameTimeSeen records whether <game time=…> was actually read. Same doctrine
+	// as MoneySeen, and load-bearing in a different way: GameTimeS is compared
+	// against the PREVIOUS snapshot's to decide that the player loaded an earlier
+	// save (wire.SnapshotMeta.GameTimeS). A zeroed clock makes the second save of
+	// a session look older than the first, so the watcher fabricates a rollback,
+	// resets the diff baseline and suppresses every loss alert — the failure is
+	// silence, on a save that is perfectly fine.
+	GameTimeSeen bool `json:"game_time_seen"`
+
 	// Diplomacy: player's relation to each faction.
 	Relations []Relation `json:"relations"`
 
 	// Player-owned assets.
 	Ships    []Ship    `json:"ships"`
 	Stations []Station `json:"stations"`
+
+	// PlayerAssetsSeen records whether this parse found the player's ownership
+	// vocabulary at all: at least one component in the file declared the player
+	// as its owner. It is what makes an empty Ships or Stations list mean
+	// something, and it is the same doctrine as MoneySeen and BlueprintsSeen on
+	// the counts the board prints beside the balance.
+	//
+	// len(Ships) cannot distinguish "owns none" from "never found them", and the
+	// two are one attribute rename apart: the save's playthrough identity is
+	// untouched, so the schema-mismatch guard stays quiet and the board draws
+	// FLEET 0 STN 0 IDLE 0 under a green stamp. False is not a claim about an
+	// empire — it is this build admitting it does not know.
+	//
+	// Zero owned components is not a state a real playthrough reaches: every
+	// start puts the player in a ship, and the player CHARACTER is itself a
+	// <component class="player" owner="player">, docked in that ship's cockpit.
+	// So false means the vocabulary moved, not that the empire is empty.
+	PlayerAssetsSeen bool `json:"player_assets_seen"`
 
 	// Ownerless / claimable ships anywhere in the discovered galaxy — abandoned
 	// derelicts and unclaimed Timelines reward ships, free to claim by spacesuit.
@@ -552,9 +590,16 @@ type Station struct {
 	ModuleCounts map[string]int `json:"module_counts,omitempty"` // operational production modules, keyed by output ware
 	Storage      []WareAmount   `json:"storage,omitempty"`       // current physical inventory
 	TradeOffers  []Offer        `json:"trade_offers,omitempty"`  // live buy/sell offers (sells=true => station sells it)
-	Workforce    int            `json:"workforce"`
-	Subordinates int            `json:"subordinates"`    // assigned ships/miners count
-	Money        int64          `json:"money,omitempty"` // station account balance (<account amount=..>)
+	// Workforce is the station's staffing, summed over races, and a POINTER for
+	// the same reason Money's presence is recorded: 0 is a real answer (a station
+	// with no habitats employs nobody) and so is "this save has <workforces> and
+	// this build could not read the amounts". Rename the amount attribute and
+	// five staffed stations silently report zero workers, which is a number the
+	// production planners divide by. nil is null on the wire and unknown
+	// everywhere: absent <workforces> still means a real 0.
+	Workforce    *int  `json:"workforce"`
+	Subordinates int   `json:"subordinates"`    // assigned ships/miners count
+	Money        int64 `json:"money,omitempty"` // station account balance (<account amount=..>)
 	// Construction / docking, derived from the module subtree.
 	UnderConstruction bool     `json:"under_construction,omitempty"` // at least one module still building
 	BuildingModules   []string `json:"building_modules,omitempty"`   // macros of modules under construction

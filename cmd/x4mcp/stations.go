@@ -65,7 +65,7 @@ func runStations(args []string) {
 		if st.UnderConstruction {
 			uc = "  [BUILDING]"
 		}
-		fmt.Printf("=== %-8s %-28s wf=%d subs=%d money=%d%s\n", st.Code, st.SectorName, st.Workforce, st.Subordinates, st.Money, uc)
+		fmt.Printf("=== %-8s %-28s wf=%s subs=%d money=%d%s\n", st.Code, st.SectorName, countOrUnknown(st.Workforce), st.Subordinates, st.Money, uc)
 		if len(st.Produces) > 0 {
 			fmt.Printf("    produces: %s\n", strings.Join(st.Produces, ", "))
 		}

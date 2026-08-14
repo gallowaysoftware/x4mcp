@@ -58,7 +58,7 @@ jobs:
           PATH="$RUNNER_TEMP/no-node:$PATH" go build ./...
 
   web:
-    name: svelte-check + build + dist freshness
+    name: svelte-check + vitest + build + dist freshness
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -75,6 +75,11 @@ jobs:
       # consumer of the hand-kept event union — the half of the wire contract
       # tygo cannot generate and the drift gate below cannot see.
       - run: npm run check
+      # The board's honesty claims are testable rather than eyeballed only if
+      # something runs the tests: the amber lifecycle, the freshness ladder, the
+      # SSE fold and the store's boot/retry/reconnect sequences are all vitest,
+      # and none of them gated anything until this line existed.
+      - run: npm test
       - run: npm run build
       - name: committed dist matches a fresh build
         working-directory: .

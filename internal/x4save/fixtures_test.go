@@ -347,8 +347,8 @@ func TestFixturePlayerStation(t *testing.T) {
 	if strings.Join(st.DockSizesPending, ",") != "l" {
 		t.Errorf("pending dock sizes = %v, want [l] (a bay inside a module under construction is not built)", st.DockSizesPending)
 	}
-	if st.Workforce != 1700 {
-		t.Errorf("workforce = %d, want 1700 (summed over races)", st.Workforce)
+	if st.Workforce == nil || *st.Workforce != 1700 {
+		t.Errorf("workforce = %v, want 1700 (summed over races)", st.Workforce)
 	}
 	if st.Subordinates != 3 {
 		t.Errorf("subordinates = %d, want 3", st.Subordinates)

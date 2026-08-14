@@ -54,6 +54,18 @@ type LegHealth struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// SaveKind is which of X4's three ways of writing a save produced this file.
+// The player thinks in these terms ("my last quicksave"), and the cadence the
+// freshness thresholds derive from is an AUTOSAVE cadence — a manual save every
+// half hour says nothing about whether autosave is on.
+type SaveKind string
+
+const (
+	SaveKindQuicksave SaveKind = "quicksave"
+	SaveKindAutosave  SaveKind = "autosave"
+	SaveKindManual    SaveKind = "manual"
+)
+
 // SaveMeta describes a savegame file as the watcher sees it — before any parse
 // has succeeded, so it holds nothing that requires reading the XML.
 type SaveMeta struct {
@@ -61,8 +73,33 @@ type SaveMeta struct {
 	// Name is the file's base name without extension ("quicksave", "save_003"),
 	// which is what X4 players actually call a save.
 	Name       string    `json:"name"`
+	Kind       SaveKind  `json:"kind,omitempty"`
 	SizeBytes  int64     `json:"size_bytes"`
 	ModifiedAt time.Time `json:"modified_at"`
+	// AgeS is how old the file was when the server sent this, in seconds. The
+	// client counts up from that number rather than subtracting ModifiedAt from
+	// its own clock — the two clocks are not the same clock, and a LAN tab (or a
+	// tab on a machine whose time drifted) would otherwise render "in 4 minutes".
+	//
+	// A POINTER, for the same reason SnapshotMeta.GameTimeS is one: 0 is the
+	// most dangerous number this field can hold. A save can be stamped in the
+	// FUTURE — restored from an archive, written by a dual-boot machine whose
+	// RTC is on local time, or written across an NTP step — and then its age is
+	// not zero, it is UNMEASURABLE: the server has no clock that can subtract
+	// it. It used to be an int64 that clamped such a save to 0 and then dropped
+	// the 0 as empty, so the wire said "no age given" and the client fell back
+	// to subtracting ModifiedAt from its own clock, clamped that to 0 too, and
+	// rendered a 45-minute-old save as `quicksave · just now`, state current,
+	// forever — with no skew between the two machines involved. Aging and stale
+	// never fired, which is the one thing the freshness ladder exists to do.
+	//
+	// So: absent means the server could not measure it, which happens exactly
+	// when the file is stamped ahead of the server's own clock. It never means
+	// zero — a genuinely brand-new save sends age_s: 0. The client renders the
+	// absent case as design §3's ∅ treatment, never as an age.
+	AgeS *int64 `json:"age_s,omitempty"`
+	// ParseMS is how long the parse of this save took; 0 before it has run.
+	ParseMS int64 `json:"parse_ms,omitempty"`
 	// Attempt is the retry counter on save.retry events (1-based); 0 elsewhere.
 	Attempt int `json:"attempt,omitempty"`
 }
@@ -80,13 +117,28 @@ type SnapshotMeta struct {
 	ParseMS       int64     `json:"parse_ms"`
 	// GameTimeS is in-game elapsed seconds. A regression means the player loaded
 	// an earlier save (design §6 rollback).
-	GameTimeS   float64   `json:"game_time_s"`
+	//
+	// A POINTER, because that regression is decided by SUBTRACTION and 0 is the
+	// most dangerous number this field can hold. Move the `time=` attribute in
+	// <info><game> — a game update mid-session is all it takes — and the first
+	// save this build cannot read the clock of reads as second zero, which is
+	// "earlier" than the 164 hours before it. The watcher then declares a
+	// rollback nobody performed, resets the diff baseline and suppresses the
+	// loss alerts that baseline exists to raise, on a perfectly good save, with
+	// the stamp reading `loaded an earlier save`. nil is absent on the wire and
+	// means unread: nothing is compared against it in either direction.
+	GameTimeS   *float64  `json:"game_time_s,omitempty"`
 	SaveDate    time.Time `json:"save_date"`
 	GameVersion string    `json:"game_version"`
 	PlayerName  string    `json:"player_name"`
 	// Sections is the parse-health report: what came out of the save against
 	// the bands a healthy save of this playthrough produces.
 	Sections []SectionHealth `json:"sections,omitempty"`
+	// Rollback is set when GameTimeS went BACKWARDS within one playthrough: the
+	// player loaded an earlier save. The diff baseline is reset and loss alerts
+	// are suppressed, because everything that "disappeared" since the previous
+	// snapshot never happened.
+	Rollback bool `json:"rollback,omitempty"`
 }
 
 // SectionHealth is one parsed section's count measured against its expected

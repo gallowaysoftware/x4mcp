@@ -25,6 +25,8 @@
       "Envoy Pack",
       "Hyperion Pack"
     ],
+    "money_seen": true,
+    "game_time_seen": true,
     "relations": [
       {
         "faction": "khaak",
@@ -5275,6 +5277,7 @@
         ]
       }
     ],
+    "player_assets_seen": true,
     "claimable_ships": [
       {
         "macro": "ship_bor_s_miner_solid_01_story_macro",

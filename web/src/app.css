@@ -61,9 +61,11 @@ body {
 }
 #app { height: 100%; }
 
-/* --- scaffold frame -------------------------------------------------------
- * The fixed spatial slots of docs/design.md §4, empty. Panels land in S4b; the
- * point of this frame is that the slots exist and never move once they do. */
+/* --- the frame ------------------------------------------------------------
+ * The fixed spatial slots of docs/design.md §4. No region ever moves, resizes
+ * or reflows in response to data — an instrument glanced at 500 times is read
+ * by change-against-memory, and a panel that grows a row when a ship goes idle
+ * has to be re-read from scratch every time. */
 .board {
   display: grid;
   height: 100%;
@@ -77,8 +79,16 @@ body {
     'beacon content advisor';
   background: var(--bg-0);
 }
+
+/* The severity beacon (design §4): 12 px on the game-adjacent edge, readable at
+ * 20–40° eccentricity where text is impossible. Gray IS the all-clear — amber
+ * appears only for ambers new since the player's last interaction, so a glance
+ * that lands on gray has answered the question. State changes are instant;
+ * there is deliberately no rule here that could make it fade or blink. */
 .beacon { grid-area: beacon; background: var(--text-ghost); }
-.vitals { grid-area: vitals; }
+.board[data-sev='amber'] .beacon { background: var(--sev-amber-text); }
+.board[data-sev='red'] .beacon { background: var(--sev-red-core); }
+
 .content {
   grid-area: content;
   display: grid;
@@ -96,11 +106,23 @@ body {
   min-height: 0;
   overflow: hidden;
 }
-.slot > .t-micro { color: var(--text-mid); }
-.slot-note { color: var(--text-dim); margin-top: 6px; }
-.slot-lane { grid-area: lane; }
+.slot-head { color: var(--text-mid); }
+.slot-note { color: var(--text-dim); margin: 6px 0 0; }
+.slot-note .glyph { color: var(--text-dim); }
+.slot-note.dim { color: var(--text-ghost); }
+.slot-note.amber { color: var(--sev-amber-text); }
+.slot-lane { grid-area: lane; overflow-y: auto; }
 .slot-tiles-a { grid-area: tiles-a; }
 .slot-tiles-b { grid-area: tiles-b; }
 .slot-threats { grid-area: threats; }
-.vitals-line { display: flex; align-items: baseline; gap: 16px; }
-.stamp { color: var(--text-dim); }
+
+/* design §10: default browser scrollbar chrome on a near-black instrument reads
+ * as broken. Thin, in line-1, and that is the whole styling budget. */
+* { scrollbar-width: thin; scrollbar-color: var(--line-1) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--line-1); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* design §10: focus ring 1 px accent, instant. Stated once here so a component
+ * that forgets still gets one. */
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }

@@ -5,9 +5,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/pequalsnp/x4mcp/internal/api"
 	"github.com/pequalsnp/x4mcp/internal/x4data"
@@ -67,19 +71,42 @@ func main() {
 		fmt.Fprintf(os.Stderr, "x4mcp: %v\n%s", err, transportUsage)
 		os.Exit(2)
 	}
+	// --web is x4cue's own flag and is taken out of the leftovers, so cli.go
+	// stays byte-identical to the copy in the other servers (see web.go).
+	webAddr, rest, err := parseWeb(rest)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "x4mcp: %v\n%s", err, webUsage)
+		os.Exit(2)
+	}
 	// The subcommand is dropped AFTER parsing, not before: with flags
 	// allowed in either position, "serve" may not be the first argument.
 	if len(rest) > 0 && rest[0] == "serve" {
 		rest = rest[1:]
 	}
 	if len(rest) > 0 {
-		fmt.Fprintf(os.Stderr, "x4mcp: unexpected argument %q\n%s", rest[0], transportUsage)
+		fmt.Fprintf(os.Stderr, "x4mcp: unexpected argument %q\n%s%s", rest[0], transportUsage, webUsage)
 		os.Exit(2)
 	}
-	if err := runServer(context.Background(), tr.http, tr.relay); err != nil {
+	// SIGINT/SIGTERM cancel the root context rather than killing the process
+	// outright: with --web there is a watcher to stop, a possibly mid-flight
+	// 16 s parse to cancel, and an HTTP server to drain. Without it, nothing
+	// observable changes.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if err := runServer(ctx, tr, webAddr); !cleanExit(err) {
 		fmt.Fprintln(os.Stderr, "server error:", err)
 		os.Exit(1)
 	}
+}
+
+// cleanExit says whether an ended server ended the way it was asked to.
+//
+// A SIGTERM cancels the root context, and a transport that was waiting on it
+// reports that as the reason it stopped. Printing "server error: context
+// canceled" and exiting 1 for that turns every ordinary `systemctl stop` into a
+// failed unit — the signal is the request, not a fault.
+func cleanExit(err error) bool {
+	return err == nil || errors.Is(err, context.Canceled)
 }
 
 // runShips loads the ship-stat DB and prints matching hulls (debug). Filter with
@@ -147,6 +174,16 @@ func runModules(args []string) {
 			break
 		}
 	}
+}
+
+// countOrUnknown prints a count the parser may not have been able to read as a
+// number or as "?" — never as 0, which is a different thing to say (see
+// x4save.Station.Workforce).
+func countOrUnknown(n *int) string {
+	if n == nil {
+		return "?"
+	}
+	return strconv.Itoa(*n)
 }
 
 // runWorkforce loads and prints per-race workforce food/medical consumption.
@@ -292,8 +329,8 @@ func runParse(args []string) {
 			if i >= 5 {
 				break
 			}
-			fmt.Printf("  %-8s wf=%-6d subs=%-4d produces=%v storage_wares=%d\n",
-				s.Code, s.Workforce, s.Subordinates, s.Produces, len(s.Storage))
+			fmt.Printf("  %-8s wf=%-6s subs=%-4d produces=%v storage_wares=%d\n",
+				s.Code, countOrUnknown(s.Workforce), s.Subordinates, s.Produces, len(s.Storage))
 		}
 	}
 	if plots := snap.PlotStatuses(); len(plots) > 0 {

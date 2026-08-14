@@ -13,6 +13,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pequalsnp/x4mcp/internal/api"
+	"github.com/pequalsnp/x4mcp/internal/watch"
+	"github.com/pequalsnp/x4mcp/internal/web"
+	"github.com/pequalsnp/x4mcp/internal/x4save"
 )
 
 const version = "0.1.0"
@@ -33,21 +36,50 @@ func tool[I, O any](f func(context.Context, I) (O, error)) func(
 	}
 }
 
-// runServer starts the MCP server. addr == "" serves stdio (the default,
-// what `claude mcp add x4 -- x4mcp serve` wants); a host:port serves MCP
+// runServer starts the MCP server. No transport flag serves stdio (the default,
+// what `claude mcp add x4 -- x4mcp serve` wants); --http host:port serves MCP
 // Streamable HTTP at /mcp so clients elsewhere on a LAN (a chat frontend
 // on another box) can use a gaming PC's saves. There is no auth — bind
 // beyond localhost only on a network you trust, and remember the tools
 // expose your savegame contents plus the plan-write tools.
-func runServer(ctx context.Context, addr, connect string) error {
-	// NewLazy, not New: nothing in initialize/tools-list touches the install,
-	// so the ten game databases load behind the handshake instead of in front
-	// of it (2.7 s cold, 0.4 s warm, on every client launch).
-	svc := api.NewLazy("", nil)
+//
+// webAddr additionally serves the x4cue board on a loopback address. That is
+// the only mode in which the save watcher runs, and it changes where the MCP
+// tools get their snapshot from: the watcher's, already parsed and enriched,
+// instead of a load-on-demand read per call.
+//
+// --web with no transport of its own serves the board and NOTHING else, until
+// the process is signalled. It used to fall through to stdio, which meant the
+// invocation this flag's own help text advertises —
+// `x4mcp serve --web 127.0.0.1:8484` — printed "board on http://…" and then
+// exited 0 the instant stdin hit EOF. Under nohup or systemd (StandardInput=
+// null) that is a dead board reporting success. An explicit --stdio still
+// composes: that is a client that really does own this process's stdin.
+func runServer(ctx context.Context, tr transport, webAddr string) error {
+	// The board and the watcher are children of the transport's lifetime, not
+	// the other way round: an MCP client that closes stdin ends this process,
+	// and the board has to be told so rather than holding it open forever.
+	ctx, cancel := context.WithCancel(ctx)
+	svc, s, wait, err := buildService(ctx, webAddr)
+	if err != nil {
+		cancel()
+		return err
+	}
+	defer func() {
+		// Order matters and is the whole point: stop them, THEN wait for them.
+		// The watcher may be mid-parse and the board owes its clients a 5 s
+		// drain, and returning before either is finished is how a shutdown ends
+		// up cutting through both.
+		cancel()
+		wait()
+	}()
 	reloadOnSIGHUP(ctx, svc)
-	s := newServer(svc)
 
-	if addr == "" && connect == "" {
+	if tr.http == "" && tr.relay == "" {
+		if webAddr != "" && !tr.stdio {
+			<-ctx.Done()
+			return nil
+		}
 		return s.Run(ctx, &mcp.StdioTransport{})
 	}
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, nil)
@@ -56,11 +88,11 @@ func runServer(ctx context.Context, addr, connect string) error {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	if connect != "" {
-		return serveConnect(ctx, mux, connect)
+	if tr.relay != "" {
+		return serveConnect(ctx, mux, tr.relay)
 	}
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              tr.http,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		// Streamable HTTP sessions hold long-lived SSE streams.
@@ -73,11 +105,71 @@ func runServer(ctx context.Context, addr, connect string) error {
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	}()
-	fmt.Fprintf(os.Stderr, "x4mcp: serving MCP over HTTP on %s/mcp\n", addr)
+	fmt.Fprintf(os.Stderr, "x4mcp: serving MCP over HTTP on %s/mcp\n", tr.http)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}
 	return nil
+}
+
+// buildService assembles the Service the tools answer from, and — when the
+// board was asked for — the watcher and web mux behind it.
+//
+// The two are built together because they are one decision: with --web there is
+// a process that already holds a parsed save, so every MCP tool in it should
+// answer from that snapshot rather than re-reading 100 MB of gzip to reach the
+// same answer a different way (§1.2). Without --web nothing has changed:
+// load-on-demand, exactly as before.
+//
+// The third return is a wait: it blocks until the watcher and the board have
+// stopped. Without --web it is a no-op, because nothing was started.
+func buildService(ctx context.Context, webAddr string) (*api.Service, *mcp.Server, func(), error) {
+	// NewLazy, not New: nothing in initialize/tools-list touches the install,
+	// so the ten game databases load behind the handshake instead of in front
+	// of it (2.7 s cold, 0.4 s warm, on every client launch).
+	if webAddr == "" {
+		svc := api.NewLazy("", nil)
+		return svc, newServer(svc), func() {}, nil
+	}
+
+	var svc *api.Service
+	hub := web.NewHub()
+	watcher := watch.New(watch.Options{
+		Emit: hub.Publish,
+		// Resolving a fresh parse against the install turns raw macros into
+		// sector and hull names. It runs on the parse goroutine before the
+		// pointer is published, so every reader sees an enriched snapshot and
+		// nobody mutates it afterwards — the one condition api.Enrich sets.
+		Enrich: func(snap *x4save.Snapshot) { svc.Enrich(snap) },
+	})
+	svc = api.NewLazy("", watcher)
+	s := newServer(svc)
+
+	board, err := web.New(web.Options{
+		Addr:   webAddr,
+		Source: watcher,
+		Hub:    hub,
+		// The web mux is the SUPERSET (D10): it carries /mcp as well, so one
+		// loopback port serves the board and the tools. The relay and --http
+		// keep their own restricted mux and never see /api.
+		MCP:       mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, nil),
+		Version:   version,
+		BuildHash: buildHash(),
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	watcher.Start(ctx)
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		if err := board.ListenAndServe(ctx); err != nil {
+			// The board failing must not take the MCP faces down with it: a
+			// player mid-session would rather keep the tools than lose both.
+			fmt.Fprintf(os.Stderr, "x4mcp: board stopped: %v\n", err)
+		}
+	}()
+	return svc, s, func() { <-served; watcher.Wait() }, nil
 }
 
 // reloadOnSIGHUP rebuilds the game-data bundle when the process is HUP'd.

@@ -2,6 +2,7 @@ package x4save
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -96,11 +97,56 @@ var boringPlayerClasses = map[string]bool{
 // parsed, so the resulting Snapshot cannot be trusted. Callers should retry.
 var ErrSaveChanged = errors.New("save changed during parse")
 
+// ctxReader fails the read that follows a cancelled context.
+//
+// It sits UNDER the gzip stream rather than over the token loop because that is
+// where a parse actually spends its time: a 100 MB save is ~16 s of inflate and
+// tokenize with no natural interruption point, and a shutdown that has to wait
+// for it holds the whole process open past its 5 s budget. Checking per read
+// (~32 KB of compressed input) bounds cancellation to microseconds of work while
+// costing one atomic-ish load per chunk — unmeasurable against inflate.
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c ctxReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.r.Read(p)
+}
+
 // ParseFile streams a (gzip-compressed) X4 savegame and returns a Snapshot of
 // the player-relevant state. Memory stays bounded: the universe tree is walked
 // as a token stream, and only player-owned ship/station subtrees are
 // materialized — one at a time.
 func ParseFile(path string) (*Snapshot, error) {
+	return ParseFileCtx(context.Background(), path)
+}
+
+// ParseFileCtx is ParseFile that stops when ctx does. Cancelling returns the
+// context's own error (not a wrapped XML error), so a caller can tell "we asked
+// it to stop" apart from "this save is broken" — the difference between a quiet
+// shutdown and an amber system row on the board.
+//
+// That promise is kept HERE rather than at each return, and it was not being
+// kept before: cancellation reaches the decoder as a read error from anywhere
+// it happens to be — Skip, DecodeElement, the token loop — and most of those
+// sites wrap it as "decode blueprints: …" or "xml token: …". A caller reading
+// that message is told a save is broken because the process was asked to stop.
+func ParseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
+	snap, err := parseFileCtx(ctx, path)
+	if err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return nil, cerr
+		}
+		return nil, err
+	}
+	return snap, nil
+}
+
+func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -111,7 +157,7 @@ func ParseFile(path string) (*Snapshot, error) {
 	}
 	defer f.Close()
 
-	gz, err := gzip.NewReader(f)
+	gz, err := gzip.NewReader(ctxReader{ctx: ctx, r: f})
 	if err != nil {
 		return nil, fmt.Errorf("gzip: %w", err)
 	}
@@ -275,6 +321,15 @@ func ParseFile(path string) (*Snapshot, error) {
 				}
 			case "component":
 				cls, owner, macro := attr(t, "class"), attr(t, "owner"), attr(t, "macro")
+				if owner == "player" {
+					// The ownership vocabulary is here and this build reads it.
+					// Recorded BEFORE the switch so that it counts the classes
+					// the switch throws away too — the player character, the
+					// satellites, a lasertower — because the question this
+					// answers is "did we find the player's property at all",
+					// not "how much of it did we keep" (PlayerAssetsSeen).
+					snap.PlayerAssetsSeen = true
+				}
 				switch {
 				case structuralClasses[cls]:
 					if cls == "sector" {
@@ -518,17 +573,26 @@ type rawInfo struct {
 		Date int64  `xml:"date,attr"`
 	} `xml:"save"`
 	Game struct {
-		Version string  `xml:"version,attr"`
-		Build   string  `xml:"build,attr"`
-		Time    float64 `xml:"time,attr"`
-		Start   string  `xml:"start,attr"`
-		GUID    string  `xml:"guid,attr"`
-		Seed    string  `xml:"seed,attr"`
+		Version string `xml:"version,attr"`
+		Build   string `xml:"build,attr"`
+		// Time is a POINTER for the same reason Money is: it is read by
+		// SUBTRACTION against the previous save (Snapshot.GameTimeSeen), and an
+		// absent clock decoding to 0.0 is what invents a rollback.
+		Time  *float64 `xml:"time,attr"`
+		Start string   `xml:"start,attr"`
+		GUID  string   `xml:"guid,attr"`
+		Seed  string   `xml:"seed,attr"`
 	} `xml:"game"`
 	Player struct {
 		Name     string `xml:"name,attr"`
 		Location string `xml:"location,attr"`
-		Money    int64  `xml:"money,attr"`
+		// Money is a POINTER so the decoder answers "was there a balance?" and
+		// not just "what was it?": encoding/xml only allocates it for an
+		// attribute that is actually present, so nil is absent and 0 is a
+		// player who spent everything. A garbage value is still a decode error
+		// — loud, and the freshness lane says parse_error — which is the right
+		// answer for a save this build cannot read.
+		Money *int64 `xml:"money,attr"`
 	} `xml:"player"`
 	Patches []struct {
 		Name string `xml:"name,attr"`
@@ -544,13 +608,19 @@ func decodeInfo(dec *xml.Decoder, start *xml.StartElement, snap *Snapshot) error
 	snap.SaveDate = ri.Save.Date
 	snap.GameVersion = ri.Game.Version
 	snap.GameBuild = ri.Game.Build
-	snap.GameTimeS = ri.Game.Time
+	if ri.Game.Time != nil {
+		snap.GameTimeS = *ri.Game.Time
+		snap.GameTimeSeen = true
+	}
 	snap.StartType = ri.Game.Start
 	snap.GameGUID = ri.Game.GUID
 	snap.Seed = ri.Game.Seed
 	snap.PlayerName = ri.Player.Name
 	snap.LocationRaw = ri.Player.Location
-	snap.Money = ri.Player.Money
+	if ri.Player.Money != nil {
+		snap.Money = *ri.Player.Money
+		snap.MoneySeen = true
+	}
 	for _, p := range ri.Patches {
 		if p.Name != "" {
 			snap.DLCs = append(snap.DLCs, p.Name)
@@ -630,8 +700,12 @@ type rawComp struct {
 		} `xml:"queue"`
 	} `xml:"production"`
 
+	// Amount is a POINTER for the reason rawInfo.Player.Money is: the decoder
+	// only allocates it for an attribute that is really there, so a workforce
+	// element this build cannot read the size of is distinguishable from a
+	// station that employs nobody (see buildStation).
 	Workforces []struct {
-		Amount int `xml:"amount,attr"`
+		Amount *int `xml:"amount,attr"`
 	} `xml:"workforces>workforce"`
 
 	// Player blueprints live on the player character component, which is docked
@@ -686,6 +760,13 @@ type rawSkills struct {
 // sit below intermediate dockingbay/module components) are captured too.
 // parentID tracks the nearest enclosing ship/station for DockedAt.
 func collectAssets(rc *rawComp, sector, parentID string, snap *Snapshot) {
+	if rc.Owner == "player" {
+		// Player property found inside a decoded subtree — a ship docked in an
+		// NPC station, the player character in its own cockpit — which the token
+		// loop never sees as a StartElement. Same question, other half of the
+		// walk (Snapshot.PlayerAssetsSeen).
+		snap.PlayerAssetsSeen = true
+	}
 	// The player character component (carrying the blueprint list) is nested in
 	// the player ship's cockpit; capture blueprints wherever they appear.
 	if len(rc.Blueprints) > 0 {
@@ -873,8 +954,21 @@ func buildStation(rc *rawComp, sector string) Station {
 	if len(st.Produces) == 0 && rc.Overviewgraphs != "" {
 		st.Produces = strings.Fields(rc.Overviewgraphs)
 	}
+	// Workforce, with its presence recorded rather than inferred (Station.
+	// Workforce). No <workforces> at all is a real zero — a station with no
+	// habitat modules employs nobody — but a <workforce> element whose amount
+	// this build could not read is not a zero, it is a hole, and a hole that
+	// reads as 0 is five staffed stations reported as derelict.
+	workforce, workforceSeen := 0, true
 	for _, wf := range rc.Workforces {
-		st.Workforce += wf.Amount
+		if wf.Amount == nil {
+			workforceSeen = false
+			continue
+		}
+		workforce += *wf.Amount
+	}
+	if workforceSeen {
+		st.Workforce = &workforce
 	}
 	for _, c := range rc.Connections {
 		if c.Connection == "subordinates" {
