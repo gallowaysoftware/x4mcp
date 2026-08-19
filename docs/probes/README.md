@@ -88,6 +88,42 @@ and invisible looks exactly like inapplicable.** Prefer a transition — the sam
 entity observed across two saves with the attribute appearing or disappearing —
 over any inference from presence rates.
 
+And the denominator check belongs on the discriminator's **input**, not only its
+output. "The writer never emits X" is a claim about your sample before it is a
+claim about the writer. The `<ware>` rule above was first established on one
+save; re-run over the whole corpus it holds — 0 occurrences of `amount="1"` and
+0 of `amount="0"` across all 200 saves, against 488,027 of `amount="2"`, over
+roughly 3 million `<ware>` elements — but it was not a fact about the writer
+until that was measured, however true it happened to be.
+
+### Ask the right node, and check the macro before trusting a class name
+
+`station` carries no `<hull>` at all — 0 of 1,437 galaxy-wide, 0 of 48
+player-owned — which reads as "stations have no hull model" and is absurd for a
+game in which stations get destroyed. The right reading is that a station is a
+*container*: its structure is its modules, and the modules carry health
+individually.
+
+| class | all | with `<hull>` | player | player with `<hull>` |
+| --- | ---: | ---: | ---: | ---: |
+| `connectionmodule` | 10,448 | 291 | 1,946 | 39 |
+| `defencemodule` | 6,465 | 361 | 945 | **118** |
+| `buildmodule` | 1,686 | 6 | 94 | 0 |
+| `station` | 1,437 | **0** | 48 | 0 |
+
+So `station` is genuinely category 3 and its modules are category 2, and "your
+station is under attack" *can* carry a damage figure. 118 of the player's 945
+defence modules were damaged as of the save these numbers come from.
+
+The wrong turn on the way there is worth recording. `destructible` is the only
+class with a healthy mixed population (40.1% carry a hull), which makes it the
+obvious place to look for station structure — and it is
+`interactive_repairpanel` (3,436), `sm_gen`, `int_exploration`: props and
+scenery. **The population with the richest mix was the least meaningful one.**
+A class name that sounds structural was decoration; the ones that sound like
+plumbing hold the structure. Check the macros of the instances before trusting
+what a class is called.
+
 This is the 117-blueprints rule — an unread blueprint list must not render as
 "you own none" — generalised. It is the same failure in every direction: a
 default, or an absence of the concept entirely, silently becoming a fact.

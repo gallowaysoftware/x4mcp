@@ -70,10 +70,10 @@ Every un-archived play session is lost rule-mining corpus for S7.
 ## Phase 3 — capture and probes (W3, ~5.5 ev)
 
 ### S5 · Probes A + B + C (+D note) (2.5 ev) — findings to `docs/probes/`
-- [ ] **A — build storage** (gates rich build-stall + F15): element paths for required-vs-present wares; two-save starved-build experiment (queue a build, withhold one ware, save twice ≥15 min apart)
+- [x] **A — build storage** (gates rich build-stall + F15): CONFIRMED — required (`build/resources`), delivered (build-storage `cargo`) and budget (`account`) all readable. The staged starved-build experiment was **not needed**: 844 stalled player builds across the 200-save archive answered it from real play. See `docs/probes/a-build-storage.md`
 - [ ] **B — hull/damage attrs** (gates under-attack): attr union over player subtrees; controlled damage experiment; answer "is absent attr = 100%?" (the 117-blueprints bug, inverted)
-- [ ] **C — 9.x resource-region state** (gates F5 depletion clause): does the save expose region yield/depletion + probe coverage?
-- [ ] (D — guild-offer persistence — v1.1 scope, do only if trivial while in there)
+- [x] **C — 9.x resource-region state** (gates F5 depletion clause): depletion **yes** (demonstrated over 214 in-game hours, miner→area join verified 219/219), probe coverage a clear **no** (player owns zero resource probes in all 200 saves, and resource data is not gated on probes anyway). See `docs/probes/c-resource-regions.md`
+- [x] (D — guild-offer persistence — v1.1 scope): presence-gated. F14 must say "seen", never "available"; the empty state is the PRIMARY state at 96.5% of saves. See `docs/probes/d-guild-offers.md`
 - [ ] Decision rules from each probe applied to the S6 field list, recorded in the findings docs
 
 ### S6 · F3 parser bump, 27→28 — ONE increment (3 ev)
