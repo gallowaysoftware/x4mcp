@@ -8,7 +8,7 @@ the honest answer is "no", which is a successful probe and not a failed one.
 | probe | question | answer |
 | --- | --- | --- |
 | [A — build storage](a-build-storage.md) | can we say *why* a build is stalled? | **yes** — required, delivered and budget are all readable |
-| B — hull & damage | is entity health persisted, and what does absence mean? | *running* |
+| [B — hull & damage](b-hull-damage.md) | is entity health persisted, and what does absence mean? | **yes** — absent means 100%, and the timestamps are a better trigger than hull delta |
 | [C — resource regions](c-resource-regions.md) | does 9.x expose field depletion and probe coverage? | **depletion yes, probe coverage no** |
 | [D — guild offers](d-guild-offers.md) | are mission offers durable or generated near the player? | **presence-gated** — F14 must say *seen* |
 
