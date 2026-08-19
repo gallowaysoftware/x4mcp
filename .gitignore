@@ -18,3 +18,6 @@ baselines/*
 # built board is part of the source tree (docs/tech-design.md D6).
 web/node_modules/
 web/.vite/
+
+# built by `go build ./scripts/probe-save` from the repo root
+/probe-save
