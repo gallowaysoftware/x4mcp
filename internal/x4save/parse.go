@@ -621,6 +621,12 @@ func decodeInfo(dec *xml.Decoder, start *xml.StartElement, snap *Snapshot) error
 		snap.Money = *ri.Player.Money
 		snap.MoneySeen = true
 	}
+	// Non-nil before the loop, so a base-game playthrough decodes as "read, and
+	// there are none" rather than as "never read". <patches> is in the header,
+	// which every successful parse reads, so empty here is a fact and not a gap
+	// — and JSON has to carry that difference ([] vs null) or a consumer cannot
+	// tell "no DLCs" from "no idea".
+	snap.DLCs = []string{}
 	for _, p := range ri.Patches {
 		if p.Name != "" {
 			snap.DLCs = append(snap.DLCs, p.Name)

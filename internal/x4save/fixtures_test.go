@@ -3,6 +3,7 @@ package x4save
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -512,4 +513,51 @@ func TestTruncatedGzipIsRefused(t *testing.T) {
 	if _, err := ParseFile(p); err == nil {
 		t.Fatal("a truncated gzip stream parsed cleanly; want an error")
 	}
+}
+
+// A base-game playthrough has no DLCs, and that is an ANSWER, not a gap. The
+// header carrying <patches> is read by every successful parse, so an empty list
+// here means "none installed" — which must not arrive at a caller looking like
+// "the parser never got that far".
+//
+// This is the 117-blueprints rule applied to a list instead of a count: the
+// difference between empty and unknown has to survive to the wire, and a nil
+// slice marshals to null, which reads as unknown.
+func TestBaseGameSaveReportsNoDLCsRatherThanUnknown(t *testing.T) {
+	const noPatches = `<?xml version="1.0" encoding="UTF-8"?>
+<savegame>
+<info>
+<save name="Base Game" date="1787167154"/>
+<game id="X4" version="900" build="611726" time="1000.0" guid="00000000-0000-4000-8000-000000000000" start="x4ep1_gamestart_pirate2" seed="1234567890"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<universe/>
+</savegame>`
+
+	snap, err := ParseFile(writeSave(t, noPatches))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if snap.DLCs == nil {
+		t.Fatal("DLCs is nil on a successfully parsed save; it marshals to null and reads as \"unknown\"")
+	}
+	if len(snap.DLCs) != 0 {
+		t.Errorf("DLCs = %v, want none for a base-game save", snap.DLCs)
+	}
+
+	// The wire is where it actually matters.
+	b, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(b, []byte(`"dlcs":[]`)) {
+		t.Errorf("marshalled snapshot must carry \"dlcs\":[]; got %s", firstKB(b))
+	}
+}
+
+func firstKB(b []byte) []byte {
+	if len(b) > 1024 {
+		return b[:1024]
+	}
+	return b
 }

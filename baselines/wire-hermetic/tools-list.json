@@ -1584,6 +1584,7 @@
             "credits",
             "game_hours",
             "version",
+            "dlcs",
             "ship_count",
             "station_count",
             "known_sectors",

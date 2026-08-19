@@ -16,7 +16,7 @@
     "player_name": "Test Pilot",
     "money": 5492825,
     "location_raw": "{20004,5010011}",
-    "dlcs": null,
+    "dlcs": [],
     "money_seen": true,
     "game_time_seen": true,
     "relations": null,
