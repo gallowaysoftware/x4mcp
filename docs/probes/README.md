@@ -137,16 +137,55 @@ game in which stations get destroyed. The right reading is that a station is a
 *container*: its structure is its modules, and the modules carry health
 individually.
 
-| class | all | with `<hull>` | player | player with `<hull>` |
-| --- | ---: | ---: | ---: | ---: |
-| `connectionmodule` | 10,448 | 291 | 1,946 | 39 |
-| `defencemodule` | 6,465 | 361 | 945 | **118** |
-| `buildmodule` | 1,686 | 6 | 94 | 0 |
-| `station` | 1,437 | **0** | 48 | 0 |
+Measured with the XML parser in `scripts/probe-save`, counting only a **direct**
+`<hull>` child of the component (see the instrument note below), scoped to
+player-owned subtrees:
+
+| class (player-owned) | subtrees | direct `<hull>` | |
+| --- | ---: | ---: | ---: |
+| `defencemodule` | 1,091 | 128 | 11.7% |
+| `connectionmodule` | 2,740 | 55 | 2.0% |
+| `buildmodule` | 116 | 0 | 0% |
+| `station` | 77 | **0** | **0%** |
+| `ship_s` | 817 | 256 | 31.3% |
+| `ship_m` | 284 | 28 | 9.9% |
+| `ship_l` | 568 | 4 | 0.7% |
+| `ship_xl` | 53 | 0 | 0% |
 
 So `station` is genuinely category 3 and its modules are category 2, and "your
-station is under attack" *can* carry a damage figure. 118 of the player's 945
-defence modules were damaged as of the save these numbers come from.
+station is under attack" *can* carry a damage figure: 128 of the player's 1,091
+defence modules were damaged as of this save. The ship rows give the size
+gradient that makes the category-2 reading obvious rather than assumed.
+
+#### Instrument note — how the first version of this table was wrong
+
+The numbers above replace an earlier set (`945`/`118` defence modules, `48`
+stations) that were produced with `awk` over the raw XML. Two independent errors,
+both of which produced plausible, authoritative-looking figures:
+
+1. **State tracking without a pop.** The script attributed each `<hull>` to the
+   most recently seen `<component>` and inherited `owner` into a variable that
+   was never cleared on element close. Ownership leaked forward across siblings
+   and parent attribution was wrong at nesting boundaries.
+2. **Attribute order assumed.** `<component class="station"[^>]*owner="player"`
+   requires `class` to appear before `owner` on the line. XML guarantees no such
+   thing, and the 48 vs 77 discrepancy is entirely that.
+
+A third trap sits in the fix: dumping a subtree with a real parser and grepping
+it for `<hull>` counts hulls *anywhere inside*, so a station "has a hull" because
+one of its modules does. That reads as 31 of 77 stations and is a different
+statistic wearing the same name. Only a **direct**-child test (two-space indent
+in the dump) answers the question actually asked.
+
+**A regex over XML is a measurement instrument with unknown error.** Line-based
+greps are safe here for facts that live on one line — "does this `<component>`
+line carry an `owner` attribute", "does the writer ever emit `amount="1"`" — and
+unsafe the moment a claim spans elements. Anything relating a child to its
+parent, or an element to its ancestors, goes through the parser.
+
+*(This one is owed to the fs25mcp session twice over: it hit the same class of
+error measuring placeables with a regex that broke on self-closing elements, and
+reporting that is what prompted this re-measurement.)*
 
 The wrong turn on the way there is worth recording. `destructible` is the only
 class with a healthy mixed population (40.1% carry a hull), which makes it the
@@ -169,9 +208,9 @@ number with the inference hidden inside it, and averaging is precisely what
 makes a guess look like a clean fact.
 
 Station health is the case this project will hit first. Module `<hull>` is
-category 2 — present only when damaged — so of 945 player defence modules, 118
-carry a value and 827 do not. The honest aggregate is not "your stations are at
-94%". It is *"118 of 945 modules damaged; 827 carry no hull element and are
+category 2 — present only when damaged — so of 1,091 player defence modules, 128
+carry a value and 963 do not. The honest aggregate is not "your stations are at
+94%". It is *"128 of 1,091 modules damaged; 963 carry no hull element and are
 treated as undamaged"* — because that treatment **is** the number. If the
 category-2 reading is ever wrong, a bare percentage gives a reader no way to
 notice, while a stated denominator does.
