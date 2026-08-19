@@ -40,7 +40,7 @@ single time:
 | `<nextresources>` | *(element)* | **last module** | "remaining requirements unknown" on every finishing build |
 | `<account>` | `amount` | **0** | — (a different writer; it emits `1` explicitly) |
 
-The discriminator is always the same and is worth running before writing any
+The discriminator is counter-intuitive and is worth running before writing any
 decode rule down: **do not ask whether the writer ever emits the value you think
 is the default — ask whether it emits the OTHER small values.** `<ware>` never
 writes `amount="0"`, which looks like proof that zero is the omitted default,
@@ -48,6 +48,51 @@ until you notice it never writes `amount="1"` either while `<item amount="1"/>`
 appears 2,537 times in the same file. The value a writer *can* emit but never
 does is the one it is omitting.
 
+### Absence has three states, not two
+
+The rule above is necessary and not sufficient, and the missing case is the one
+that produces confidently wrong parsers:
+
+1. **present** — a value the writer emitted.
+2. **absent because default** — the rule above.
+3. **absent because inapplicable** — the thing that would carry the value has no
+   such property at all.
+
+At the attribute level (2) and (3) are *indistinguishable*: "never emits the
+default" and "was never in scope" leave identical evidence. **The owning element
+answers what the attribute cannot**, so the check is two-stage — first ask
+whether the node that would carry the value exists, and only then ask the
+small-values question.
+
+`<hull>` in one save shows all three at once, which is why it is the example
+worth remembering:
+
+| class | components | with `<hull>` | reading |
+| --- | ---: | ---: | --- |
+| `dockingbay` | 68,098 | 0 | inapplicable — no hull model |
+| `weapon` / `computer` / `cockpit` / `npc` | 61,364 | 0 | inapplicable |
+| `ship_s` (player) | 755 | 254 | defaulted — present only when damaged |
+| `ship_l` (player) | 505 | 2 | defaulted — capitals rarely take hull damage |
+| `ship_xl` (player) | 37 | 0 | **defaulted, but it looks inapplicable** |
+
+### And check the denominator before concluding "inapplicable"
+
+The `ship_xl` row is the trap inside the trap. Zero of 37 carry a hull element,
+which read structurally says "XL ships have no hull model" — absurd. It is a
+category-2 field in a population so small that nothing has ever been non-default.
+Only the gradient across sizes (33.7% → 12% → 0.4% → 0%) makes the right reading
+obvious, and a gradient is not available for every field.
+
+**A defaulted field in a population that has never been non-default is invisible,
+and invisible looks exactly like inapplicable.** Prefer a transition — the same
+entity observed across two saves with the attribute appearing or disappearing —
+over any inference from presence rates.
+
 This is the 117-blueprints rule — an unread blueprint list must not render as
-"you own none" — generalised. It is the same failure in both directions: a
-default silently becoming a fact.
+"you own none" — generalised. It is the same failure in every direction: a
+default, or an absence of the concept entirely, silently becoming a fact.
+
+*(The three-state framing came from the fs25mcp session, which hit it on
+Farming Simulator vehicles: a map train car has no `<wearable>` node, so its
+missing `damage` attribute means "has no wear model", not "undamaged". The
+denominator caveat came back the other way, from these XL ships.)*
