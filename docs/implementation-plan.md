@@ -76,10 +76,11 @@ Every un-archived play session is lost rule-mining corpus for S7.
 - [ ] (D — guild-offer persistence — v1.1 scope, do only if trivial while in there)
 - [ ] Decision rules from each probe applied to the S6 field list, recorded in the findings docs
 
-### S6 · F3 parser bump, 24→25 — ONE increment (3 ev)
+### S6 · F3 parser bump, 27→28 — ONE increment (3 ev)
 - [ ] Capture: logbook (raw `{page,id}` + resolved text, `\033#…#` stripped) · stats · mission offers + war `group` attrs · licences + boosters · player inventory · Kha'ak/Xenon attrs-only (`knownto` kept — threat surfaces filter to `knownto=player`) · probe-informed fields (A/B/C outcomes)
 - [ ] Synthetic fixture per new section; goldens blessed
-- [ ] Gate — real-save verification checklist pasted into the PR: logbook ≥ 6,503 matching fresh scanner run · 103 stats · missions/licences/inventory non-empty + spot-checked in game · khaak/xenon vs scanner baselines (601/5,345) · ParseMS ≤ +10% of S2 baseline (3-run median) · RSS ≤ +5 MB · **hitch check #2**
+- [ ] Gate — real-save verification checklist pasted into the PR: logbook ≥ 6,503 matching fresh scanner run · stats/khaak/xenon counts matching a fresh scanner run **on the same save** (the frozen 103/601/5,345 were one save from 2026-08-10; the corpus already reads 105 stats, because these grow with play — compare against a re-run, never against the number written here) · missions/licences/inventory non-empty + spot-checked in game · ParseMS ≤ +10% of S2 baseline (3-run median) · RSS ≤ +5 MB · **hitch check #2**
+- [ ] Gate — **per-section marginal cost**: parse once with each new section individually disabled, and record what that section costs on its own. The aggregate +10%/+5 MB gate says a regression happened; it does not say which of five sections owns it, and a red that starts a bisect is a red that gets waived. (Owed to the fs25mcp session, which hit the same gate-shape problem from the other side.)
 
 ---
 
