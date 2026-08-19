@@ -96,6 +96,39 @@ save; re-run over the whole corpus it holds — 0 occurrences of `amount="1"` an
 roughly 3 million `<ware>` elements — but it was not a fact about the writer
 until that was measured, however true it happened to be.
 
+### Absence applies to OWNERSHIP too, and X4 splits it by class
+
+Ownership is the same three-state problem wearing different clothes, and the
+answer differs by component class:
+
+| class | components | carry their own `owner=` |
+| --- | ---: | ---: |
+| `ship_s` / `ship_m` / `ship_l` | 10,985 | **10,985 (all)** |
+| `connectionmodule` / `defencemodule` | 16,913 | **0 (none)** |
+
+A station module has no owner attribute because ownership is **inapplicable** to
+it — it belongs to the station that contains it, and the save says so exactly
+once, on the container. This is category 3 again, in the dimension that decides
+whether an asset is yours.
+
+**This is a concrete S6 requirement.** Every ownership decision in `parse.go`
+today reads `owner == "player"` from the component's own attributes, which is
+correct for ships and yields **zero** for station modules. Station-module health
+(the `<hull>` finding above) therefore cannot be captured without resolving
+ownership through the enclosing station. The parser already walks a
+`descendStack` for exactly this shape of question — `currentSector()` climbs it
+to find the enclosing sector — but `openComp` carries only `class` and `macro`,
+so an `owner` field has to join them and a `currentOwner()` has to sit beside
+`currentSector()`.
+
+Worth noting which way the existing code errs: it requires an explicit
+`owner == "player"`, so an absent owner is never silently resolved to the
+player's. That is the safe direction — it under-counts rather than claiming
+assets the player does not have. A sibling project found the opposite in its own
+reader, where a missing owner fell through to "yours" and reported two
+production facilities the player did not own. **When absence must be guessed,
+guess against the player's interest.**
+
 ### Ask the right node, and check the macro before trusting a class name
 
 `station` carries no `<hull>` at all — 0 of 1,437 galaxy-wide, 0 of 48
