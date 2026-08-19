@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -560,4 +562,111 @@ func firstKB(b []byte) []byte {
 		return b[:1024]
 	}
 	return b
+}
+
+// The distilled fixture is the only real savegame CI ever sees, and S6's whole
+// job is decoding fields whose meaning lives in their ABSENCE. A fixture that
+// happens to contain no absent-amount ware, or no damaged ship, would let every
+// one of those rules ship untested while the suite stayed green — and the
+// distiller samples, so a re-distill can drop a state without anyone noticing.
+//
+// So this asserts the fixture is still capable of exercising what S5 found. It
+// is deliberately a floor, not an exact count: the fixture may be re-cut, and
+// the requirement is "still has some", not "still has exactly these".
+//
+// The failure this prevents is a real one from a sibling project: every analysis
+// there had been run against whichever save was newest, which turned out to be a
+// farm that owned nothing, so every surface the product proposed rendered empty
+// and nothing said so.
+func TestFixtureCanStillExerciseTheS5DecodeRules(t *testing.T) {
+	raw := readFixtureXML(t)
+
+	// Each rule, with the count of the state that proves it decodable, and what
+	// silently ships wrong if the fixture stops carrying it.
+	// RE2 has no negative lookahead, and "an element WITHOUT this attribute" is
+	// the whole subject here, so absence is counted line-wise instead.
+	missingAttr := func(elem, attr string) int {
+		n := 0
+		for _, line := range bytes.Split(raw, []byte("\n")) {
+			if bytes.HasPrefix(line, []byte("<"+elem+" ")) && !bytes.Contains(line, []byte(attr+"=")) {
+				n++
+			}
+		}
+		return n
+	}
+	countRe := func(pat string) func() int {
+		re := regexp.MustCompile(pat)
+		return func() int { return len(re.FindAll(raw, -1)) }
+	}
+
+	cases := []struct {
+		rule   string
+		count  func() int
+		min    int
+		breaks string
+	}{
+		{
+			rule:   "absent <ware> @amount decodes to 1",
+			count:  func() int { return missingAttr("ware", "amount") },
+			min:    50,
+			breaks: "a blocking ware silently dropped from a build deficit",
+		},
+		{
+			rule:   "absent <area> @yield decodes to capacity",
+			count:  func() int { return missingAttr("area", "yield") },
+			min:    5,
+			breaks: "14% of the universe reported as an exhausted resource field",
+		},
+		{
+			rule:   "a stalled build is recognisable",
+			count:  countRe(`<build [^>]*state="waitingforresources"`),
+			min:    1,
+			breaks: "the build-stalled alert, F15, has nothing to fire on",
+		},
+		{
+			rule:   "<insufficient> is present to be distrusted",
+			count:  countRe(`<insufficient`),
+			min:    1,
+			breaks: "nothing pins that its @amount is a timestamp, not a quantity",
+		},
+		{
+			rule:   "a damaged player ship carries <hull>",
+			count:  countRe(`<hull value=`),
+			min:    5,
+			breaks: "under-attack detection, and the absent-means-full rule with it",
+		},
+		{
+			rule:   "station modules exist to carry health",
+			count:  countRe(`class="(?:connectionmodule|defencemodule)"`),
+			min:    10,
+			breaks: "station damage, which lives on modules and not on the station",
+		},
+	}
+
+	for _, c := range cases {
+		if n := c.count(); n < c.min {
+			t.Errorf("fixture carries %d instances for %q, want >= %d\n  without it: %s",
+				n, c.rule, c.min, c.breaks)
+		}
+	}
+}
+
+// readFixtureXML returns the distilled savegame's decompressed bytes.
+func readFixtureXML(t *testing.T) []byte {
+	t.Helper()
+	f, err := os.Open(filepath.Join("testdata", "real", "distilled-quicksave.xml.gz"))
+	if err != nil {
+		t.Skipf("distilled fixture unavailable: %v", err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatalf("gzip: %v", err)
+	}
+	defer zr.Close()
+	raw, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	return raw
 }
