@@ -70,6 +70,50 @@ func sectionCounts(s *Snapshot) map[string]int {
 		"raw_reputations":    len(s.RawReputations),
 		"dlcs":               len(s.DLCs),
 		"gate_graph_sectors": len(s.GateGraph),
+
+		// schema 28. These are the sections most exposed to a patch moving an
+		// element, because nothing else in the tree reads them: a rename here
+		// takes the count to zero and every synthetic fixture stays green.
+		"logbook":           len(s.Logbook),
+		"stats":             len(s.Stats),
+		"mission_offers":    len(s.MissionOffers),
+		"missions":          len(s.Missions),
+		"war_pairings":      len(s.WarPairings()),
+		"licences":          len(s.Licences),
+		"boosters":          len(s.Boosters),
+		"inventory":         len(s.Inventory),
+		"threat_components": len(s.ThreatComponents),
+		"build_storages":    len(s.BuildStorages),
+	}
+	for _, b := range s.BuildStorages {
+		if b.JobSeen {
+			c["build_jobs"]++
+		}
+		if b.Stalled() {
+			c["build_stalled"]++
+		}
+		c["build_deficit_wares"] += len(b.Deficit)
+	}
+	for _, st := range s.Stations {
+		if st.ModuleHealth != nil {
+			c["station_modules_health"] += st.ModuleHealth.Modules
+			c["station_modules_damaged"] += st.ModuleHealth.Damaged
+		}
+	}
+	for _, sh := range s.Ships {
+		if sh.Hull != nil {
+			c["ship_hulls"]++
+		}
+		if sh.Attack != nil {
+			c["ship_attacked"]++
+		}
+	}
+	for _, sec := range s.Sectors {
+		c["sector_resource_areas"] += len(sec.ResourceAreas)
+		if sec.Knownto != "" {
+			c["sectors_knownto_player"]++
+		}
+		c["player_resource_probes"] += sec.PlayerProbes
 	}
 	for _, st := range s.Stations {
 		c["station_offers"] += len(st.TradeOffers)

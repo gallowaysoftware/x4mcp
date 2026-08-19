@@ -59,3 +59,49 @@ func benchParse(b *testing.B, path string) {
 	b.StopTimer()
 	b.ReportMetric(rssMB(peakRSSKB()), "peak_rss_mb")
 }
+
+// BenchmarkCacheRoundTrip measures what the cache costs to write and read back,
+// on the distilled fixture's snapshot (or a real one via X4MCP_REAL_SAVE).
+//
+// It exists because the cache stopped being a plain gob of the Snapshot in
+// schema 28: gob cannot round-trip a pointer to zero, which is what several of
+// the snapshot's presence flags ARE (snapshotEnvelope explains why). JSON can,
+// and this is the price of that — measured, not assumed. The number to keep an
+// eye on is read: a cache hit is the whole reason the cache exists, and the
+// thing it is competing against is an ~12 s parse.
+func BenchmarkCacheRoundTrip(b *testing.B) {
+	path := os.Getenv("X4MCP_REAL_SAVE")
+	if path == "" {
+		path = filepath.Join(realDir, distilledFixture)
+	}
+	if _, err := os.Stat(path); err != nil {
+		b.Skipf("no save at %s", path)
+	}
+	snap, err := ParseFile(path)
+	if err != nil {
+		b.Fatal(err)
+	}
+	dir := b.TempDir()
+	file := filepath.Join(dir, "entry.gob")
+
+	b.Run("write", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			if err := writeCache(file, path, snap); err != nil {
+				b.Fatal(err)
+			}
+		}
+		if fi, err := os.Stat(file); err == nil {
+			b.ReportMetric(float64(fi.Size())/(1<<20), "entry_mb")
+		}
+	})
+	if err := writeCache(file, path, snap); err != nil {
+		b.Fatal(err)
+	}
+	b.Run("read", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			if _, err := readCache(file); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}

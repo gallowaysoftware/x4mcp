@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/gob"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -222,11 +223,49 @@ func readCache(file string) (*Snapshot, error) {
 	if err := dec.Decode(&hdr); err != nil {
 		return nil, err
 	}
-	var snap Snapshot
-	if err := dec.Decode(&snap); err != nil {
+	var env snapshotEnvelope
+	if err := dec.Decode(&env); err != nil {
 		return nil, err
 	}
-	return &snap, nil
+	if env.S == nil {
+		return nil, errors.New("cache entry holds no snapshot")
+	}
+	return env.S, nil
+}
+
+// snapshotEnvelope carries the snapshot through the gob stream as JSON, and it
+// exists for one reason: gob CANNOT round-trip this snapshot's presence
+// pointers.
+//
+// gob omits any field equal to its zero value, and for a *T field it encodes
+// the POINTED-TO value — so a pointer to 0 goes out looking exactly like a nil
+// pointer and comes back nil. That erases the only difference the pointer was
+// there to make. It is not hypothetical: BuildStorage.Account is 0 on 16% of
+// player build sites (an <account> with no amount attribute decodes to zero
+// credits, which is the whole "stalled because BROKE, not because unsupplied"
+// signal), and Station.Workforce has had the same hole since v27 — a station
+// with no habitat modules employs nobody, and that real zero came back from
+// every cache hit as "this build could not read it".
+//
+// The alternative was a Seen bool beside every optional number, which is the
+// convention elsewhere in this file (MoneySeen, GameTimeSeen). It was rejected
+// because it fixes the fields someone remembers and leaves the next one broken,
+// silently, in the direction this project keeps getting burned by. JSON round-
+// trips a pointer to zero correctly by construction, for every field, forever.
+//
+// The gob envelope is kept so the header stays readable on its own (see
+// cacheHeader) and GCCache keeps working unchanged.
+type snapshotEnvelope struct{ S *Snapshot }
+
+func (e snapshotEnvelope) GobEncode() ([]byte, error) { return json.Marshal(e.S) }
+
+func (e *snapshotEnvelope) GobDecode(b []byte) error {
+	var s Snapshot
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	e.S = &s
+	return nil
 }
 
 // cacheSavePath is the save an entry was written for, or "" if this build
@@ -253,16 +292,23 @@ func writeCache(file, savePath string, snap *Snapshot) error {
 	if err != nil {
 		return err
 	}
+	// A failed write leaves nothing behind. Caching is best-effort (see the
+	// caller), so a half-written .tmp would be a file nobody ever cleans up and
+	// nothing ever reads — and GCCache's budget counts bytes in this directory.
+	fail := func(err error) error {
+		f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
 	enc := gob.NewEncoder(f)
 	if err := enc.Encode(cacheHeader{SavePath: savePath}); err != nil {
-		f.Close()
-		return err
+		return fail(err)
 	}
-	if err := enc.Encode(snap); err != nil {
-		f.Close()
-		return err
+	if err := enc.Encode(snapshotEnvelope{S: snap}); err != nil {
+		return fail(err)
 	}
 	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, file)
