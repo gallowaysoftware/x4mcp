@@ -274,8 +274,43 @@ copied=0
 copied_bytes=0
 skipped_settling=0
 skipped_bad=0
+skipped_outside=0
 
 reap_stale_temps
+
+# The archive is a rolling window ordered by the SOURCE's mtime, and the prune
+# below removes oldest first. So a save older than everything the window
+# currently holds would be copied and then pruned on the same run — no net
+# change, at the cost of writing the whole file.
+#
+# That is not hypothetical. Nine pre-9.0 saves sitting in the live save
+# directory (2018-2026) cost 471 MiB of copying every five minutes, forever:
+# archived, pruned as "over keep", seen as new again next run because the
+# skip test below is a file-existence check and the file had just been
+# deleted. Roughly 135 GiB of writes a day, onto the NVMe the game is on.
+#
+# The .bad marker already guards this exact shape for saves that fail their
+# gzip check ("so we do not re-copy 500 MB of garbage every 5 minutes"). This
+# is the same rule for saves the window can never keep, and it needs no marker
+# file: if the window is at capacity and the candidate sorts older than the
+# oldest entry in it, the copy is provably a no-op.
+window_full=0
+window_oldest=""
+{
+	mapfile -t window_files < <(archive_files)
+	if ((${#window_files[@]})); then
+		window_oldest=$(basename -- "${window_files[0]}")
+		((${#window_files[@]} >= KEEP)) && window_full=1
+		if ((!window_full)); then
+			window_bytes=0
+			for f in "${window_files[@]}"; do
+				sz=$(stat -c %s -- "$f" 2>/dev/null) || sz=0
+				window_bytes=$((window_bytes + sz))
+			done
+			((window_bytes >= MAX_BYTES)) && window_full=1
+		fi
+	fi
+}
 
 for dir in "${save_dirs[@]}"; do
 	profile=$(profile_label "$dir")
@@ -307,6 +342,13 @@ for dir in "${save_dirs[@]}"; do
 
 		# Same mtime+size = same save.
 		[[ -e $dest ]] && continue
+
+		# Older than the whole window, and the window is full: copying this
+		# would only feed the prune loop. See the note above the definition.
+		if ((window_full)) && [[ -n $window_oldest && $dest_name < $window_oldest ]]; then
+			skipped_outside=$((skipped_outside + 1))
+			continue
+		fi
 
 		# A .bad marker records a source that failed its gzip check, so we do
 		# not re-copy 500 MB of garbage every 5 minutes. It expires, because a
@@ -410,4 +452,4 @@ while ((i < n)); do
 	i=$((i + 1))
 done
 
-log "done: $copied new ($(human "$copied_bytes")), $pruned pruned, $skipped_settling still settling, $skipped_bad quarantined ($bad_now .bad markers, $bad_reaped reaped); archive holds $((n - pruned)) files / $(human "$total")"
+log "done: $copied new ($(human "$copied_bytes")), $pruned pruned, $skipped_settling still settling, $skipped_outside older than the window, $skipped_bad quarantined ($bad_now .bad markers, $bad_reaped reaped); archive holds $((n - pruned)) files / $(human "$total")"
