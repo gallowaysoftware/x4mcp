@@ -71,16 +71,16 @@ worth remembering:
 | --- | ---: | ---: | --- |
 | `dockingbay` | 68,098 | 0 | inapplicable — no hull model |
 | `weapon` / `computer` / `cockpit` / `npc` | 61,364 | 0 | inapplicable |
-| `ship_s` (player) | 755 | 254 | defaulted — present only when damaged |
-| `ship_l` (player) | 505 | 2 | defaulted — capitals rarely take hull damage |
-| `ship_xl` (player) | 37 | 0 | **defaulted, but it looks inapplicable** |
+| `ship_s` (player) | 817 | 256 | defaulted — present only when damaged |
+| `ship_l` (player) | 568 | 4 | defaulted — capitals rarely take hull damage |
+| `ship_xl` (player) | 53 | 0 | **defaulted, but it looks inapplicable** |
 
 ### And check the denominator before concluding "inapplicable"
 
-The `ship_xl` row is the trap inside the trap. Zero of 37 carry a hull element,
+The `ship_xl` row is the trap inside the trap. Zero of 53 carry a hull element,
 which read structurally says "XL ships have no hull model" — absurd. It is a
 category-2 field in a population so small that nothing has ever been non-default.
-Only the gradient across sizes (33.7% → 12% → 0.4% → 0%) makes the right reading
+Only the gradient across sizes (31.3% → 9.9% → 0.7% → 0%) makes the right reading
 obvious, and a gradient is not available for every field.
 
 **A defaulted field in a population that has never been non-default is invisible,
@@ -131,8 +131,7 @@ guess against the player's interest.**
 
 ### Ask the right node, and check the macro before trusting a class name
 
-`station` carries no `<hull>` at all — 0 of 1,437 galaxy-wide, 0 of 48
-player-owned — which reads as "stations have no hull model" and is absurd for a
+`station` carries no direct `<hull>` at all — 0 of 77 player-owned — which reads as "stations have no hull model" and is absurd for a
 game in which stations get destroyed. The right reading is that a station is a
 *container*: its structure is its modules, and the modules carry health
 individually.
