@@ -67,7 +67,20 @@
             "ware": "silicon",
             "amount": 1200
           }
-        ]
+        ],
+        "hull": {
+          "value": 72000
+        },
+        "attack": {
+          "time": 591000.5,
+          "intentional_time": 590900.25,
+          "ship_time": 591000.5,
+          "method": "lowattentionattack",
+          "attacker": "[0x9900]",
+          "attacker_ship": "[0x9900]"
+        },
+        "max_hull_mod": 1.19745,
+        "spawn_time": 120000.25
       },
       {
         "id": "[0x307]",
@@ -98,13 +111,19 @@
       {
         "macro": "cluster_01_sector001_macro",
         "code": "AAA-001",
-        "owner": "argon"
+        "owner": "argon",
+        "player_probes": 1
       }
     ],
     "other_counts": {
       "lasertower": 1,
       "resourceprobe": 1,
       "satellite": 2
-    }
+    },
+    "logbook_seen": false,
+    "stats_seen": false,
+    "missions_seen": false,
+    "licences_seen": false,
+    "inventory_seen": false
   }
 }

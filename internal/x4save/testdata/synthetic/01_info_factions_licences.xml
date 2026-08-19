@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Save metadata, faction relations, and the per-faction licence lists.
-     Licences are the S6 target (F3 schema bump); today's parser reads <info>
-     and the player row of each faction's <relations>. -->
+     A faction's <licences> lists what THAT faction holds, with factions=
+     naming the issuers — so the player's own block is the one that matters.
+     The mirror spelling (a non-player faction listing "player" among the
+     holders) is here too because the parser tolerates it; it does not occur
+     in any of the 200 archived saves. -->
 <savegame>
 <info>
 <save date="1700000000" name="Fixture Save"/>
@@ -55,11 +58,22 @@
 <relation faction="argon" relation="-1"/>
 </relations>
 </faction>
-<!-- The player's own faction entry is skipped by the parser. -->
+<!-- The player's own faction entry. Its <relations> are skipped (a faction is
+     a Relation only if it has a player row, and this is the player's own), but
+     its <licences> are NOT: this is where a real save keeps the licences the
+     player HOLDS, and factions= there names the ISSUERS.
+       <licence type="police" factions="argon"/>          -> bought from Argon
+       <licence type="hyperion_access" factions="holyorder"/> -> granted by HOP
+     A 200-save corpus carries ~20 of these on the player block and exactly
+     zero licences anywhere spelled the other way round. -->
 <faction id="player">
 <relations>
 <relation faction="argon" relation="0.42"/>
 </relations>
+<licences>
+<licence type="police" factions="argon"/>
+<licence type="station_gen_intermediate" factions="argon teladi"/>
+</licences>
 </faction>
 </factions>
 </universe>

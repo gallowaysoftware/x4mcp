@@ -6,8 +6,11 @@
      jump that cannot be flown.
      Sector D holds a gate pointing at a connection id that appears nowhere in
      the save: also not a provable route.
-     The sectors also carry <resourceareas>, including the 9.x per-area yield
-     attribute that Probe C is about. -->
+     The sectors also carry <resourceareas>, the 9.x resource-region model,
+     with all three of the cases that decide whether depletion can be read at
+     all: an area with a yield, an area WITHOUT one (which means full, not
+     empty), a gas area with no <fields> child at all, and a `verylow` density
+     whose capacity is not in the save. -->
 <savegame>
 <info>
 <save date="1700000000" name="Fixture Save"/>
@@ -24,6 +27,10 @@
 <component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="argon" id="[0x10]">
 <resourceareas>
 <area id="[0x11]" yieldid="sphere_large_ore_high_slow" yield="443227" starttime="360455.41">
+<reservations>
+<reservation id="[0x1a]"/>
+<reservation id="[0x1b]"/>
+</reservations>
 <fields>
 <field region="[0x12]" macro="env_ast_ore_l_01_macro" weight="1075059"/>
 <field region="[0x12]" macro="env_ast_ore_l_02_macro" weight="1075059"/>
@@ -61,7 +68,29 @@
 <component class="cluster" macro="cluster_02_macro" connection="galaxy" id="[0x20]">
 <connections>
 <connection connection="sectors">
-<component class="sector" macro="cluster_02_sector001_macro" connection="cluster" code="BBB-002" owner="player" id="[0x21]">
+<component class="sector" macro="cluster_02_sector001_macro" connection="cluster" code="BBB-002" owner="player" knownto="player" id="[0x21]">
+<resourceareas>
+<!-- NO yield attribute. That means the area is AT CAPACITY, not empty: the
+     writer drops the attribute only when an area respawns somewhere else
+     (4,017 present->absent transitions in the corpus, every one with a
+     starttime reset; zero without). Reading it as zero reports 14% of the
+     universe — precisely the freshly refilled patches — as exhausted. -->
+<area id="[0x24]" yieldid="sphere_large_ore_high_slow" starttime="502298.732">
+<fields>
+<field region="[0x25]" macro="env_ast_ore_l_03_macro" weight="1075059"/>
+</fields>
+</area>
+<!-- A GAS area. It has no <fields> child at all — true of all 776 gas areas
+     in a real save and of none of the solid ones — so the <field> walk cannot
+     see it and never could. The player's gas miners work resources the old
+     snapshot did not know existed. -->
+<area id="[0x26]" yieldid="sphere_medium_hydrogen_medium_average" yield="150000" starttime="410000.5"/>
+<!-- A `verylow` density area: its cap is not a constant and does not live in
+     the save (150 .. 4,868 across seven yieldids). It contributes to
+     unknown_cap_areas and to NOTHING else, because a denominator we cannot
+     read must not be guessed at. -->
+<area id="[0x27]" yieldid="sphere_small_nividium_verylow_veryslow" yield="478" starttime="300000"/>
+</resourceareas>
 <connections>
 <connection connection="zones">
 <component class="zone" macro="zone001_cluster_02_sector001_macro" connection="sector" id="[0x22]">

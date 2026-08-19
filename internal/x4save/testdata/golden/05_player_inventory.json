@@ -57,6 +57,53 @@
       "research_mod_engine_pre",
       "research_mod_engine_mk1",
       "research_mod_shield_mk2"
-    ]
+    ],
+    "logbook_seen": false,
+    "stats_seen": false,
+    "missions_seen": false,
+    "licences_seen": false,
+    "inventory": [
+      {
+        "ware": "weapon_gen_spacesuit_repairlaser_01_mk1",
+        "amount": 1
+      },
+      {
+        "ware": "software_scannerobjectmk3",
+        "amount": 2
+      },
+      {
+        "ware": "inv_bandages",
+        "amount": 46
+      },
+      {
+        "ware": "inv_crystalbit",
+        "amount": 70
+      },
+      {
+        "ware": "modpart_nividiumcrystallite",
+        "amount": 218
+      },
+      {
+        "ware": "modpart_tuningsoftware",
+        "amount": 226
+      },
+      {
+        "ware": "inv_advancedtargetingmodule",
+        "amount": 119
+      },
+      {
+        "ware": "inv_hallucinogenics",
+        "amount": 172
+      },
+      {
+        "ware": "inv_spaceweed",
+        "amount": 8
+      },
+      {
+        "ware": "paintmod_0218",
+        "amount": 8
+      }
+    ],
+    "inventory_seen": true
   }
 }

@@ -87,6 +87,23 @@ var structuralClasses = map[string]bool{
 	"player": true,
 }
 
+// spaceClasses are the universe-structure containers among structuralClasses:
+// they are PLACES, not property. The distinction exists for currentOwner().
+//
+// A sector component carries owner="player" when the player has claimed the
+// sector, and every derelict, gate and NPC freighter sitting in it would
+// inherit that owner if the climb walked through. Territory is not title, so
+// the climb stops at the first place it reaches. (The player CHARACTER is a
+// component, not a place, which is why "player" is not in this set.)
+var spaceClasses = map[string]bool{
+	"galaxy":  true,
+	"cluster": true,
+	"sector":  true,
+	"zone":    true,
+	"region":  true,
+	"highway": true,
+}
+
 // classes we deliberately do not surface as "assets" even when player-owned.
 var boringPlayerClasses = map[string]bool{
 	"computer": true,
@@ -172,10 +189,31 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 		PlotReached: map[string]int{},
 	}
 
+	// Read the section mask ONCE (see sections.go): the walk must not pay an
+	// atomic load per element, and a benchmark flipping the mask must not race
+	// a parse already in flight.
+	sections := sectionMask(enabledSections.Load())
+
 	dec := xml.NewDecoder(gz)
 	// descendStack holds the classes of structural components we are currently
 	// inside, so we can resolve the current sector macro for any asset.
 	var descendStack []openComp
+	// inLog scopes the logbook capture. <entry> is NOT unique to <log> — one
+	// station's build task carries 618 of them in its <sequence> — so a
+	// document-wide capture would fill the logbook with build steps.
+	inLog := false
+	// pool is a per-parse string pool for the logbook. A real save's 17,004
+	// entries carry ~800 distinct texts, ~2,400 distinct titles and 5 distinct
+	// categories, so pooling turns most of the log's retained bytes into
+	// pointers to a handful of strings. It dies with the parse.
+	pool := map[string]string{}
+	// resource-area aggregation (probe C), per sector per resource, plus the
+	// resource of the <area> currently open so its <reservation> children can
+	// be attributed. Areas are a strict superset of <field> in coverage; the
+	// <field> walk above is kept unchanged so no existing surface moves.
+	areaAgg := map[string]map[string]*SectorResource{}
+	curAreaSector, curAreaRes := "", ""
+	probesBySector := map[string]int{}
 	// curScript/curPlot name the MD story script we are currently streaming inside
 	// (empty unless within a knownPlots <script>). Non-tracked MD scripts are
 	// Skip()'d, so their cue tokens never reach this loop.
@@ -249,8 +287,70 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 					return nil, err
 				}
 			case "faction":
-				if err := decodeFaction(dec, &t, snap); err != nil {
+				if err := decodeFaction(dec, &t, snap, sections); err != nil {
 					return nil, err
+				}
+			case "stats":
+				// The whole <stats> block in one decode: ~105 rows, one place in
+				// the file, and scoping it this way means no <stat>-shaped
+				// element elsewhere can ever leak in.
+				if sections.has(secStats) {
+					if err := decodeStats(dec, &t, snap); err != nil {
+						return nil, err
+					}
+				}
+			case "missions":
+				// The mission board: un-accepted <offer>s and active <mission>s.
+				// ~30 + ~36 in a real save, one place in the file.
+				if sections.has(secMissions) {
+					if err := decodeMissions(dec, &t, snap); err != nil {
+						return nil, err
+					}
+				}
+			case "log":
+				if sections.has(secLogbook) {
+					inLog = true
+					snap.LogbookSeen = true
+				}
+			case "inventory":
+				// The player CHARACTER's inventory, reached on the token walk
+				// when the player component is a top-level object. When the
+				// character is docked in a ship's cockpit — the usual case —
+				// the ship subtree is decoded whole and collectAssets picks it
+				// up instead.
+				//
+				// 1,084 components in one real save carry an <inventory> and
+				// exactly one of them is the player's, so the scope test is the
+				// whole feature: the enclosing component must BE the player
+				// character, and must say so with an explicit owner.
+				if sections.has(secInventory) && len(descendStack) > 0 &&
+					descendStack[len(descendStack)-1].class == "player" &&
+					currentOwner(descendStack) == "player" {
+					var inv rawInventory
+					if err := dec.DecodeElement(&inv, &t); err != nil {
+						return nil, fmt.Errorf("decode inventory: %w", err)
+					}
+					applyInventory(&inv, snap)
+				}
+			case "area":
+				// A 9.x resource region, hanging directly off the sector
+				// component. Four attributes and a fold — no subtree decode, and
+				// nothing retained per <field> (41,550 of those in a real save,
+				// ~4 MB if kept, and they add no information the area lacks).
+				curAreaSector, curAreaRes = "", ""
+				if sections.has(secResourceAreas) {
+					if secm := currentSector(descendStack); secm != "" {
+						curAreaSector, curAreaRes = secm, foldResourceArea(areaAgg, secm, t)
+					}
+				}
+			case "reservation":
+				// A ship holding a claim on the open area. Crowding, not stock.
+				if curAreaRes != "" {
+					if m := areaAgg[curAreaSector]; m != nil {
+						if r := m[curAreaRes]; r != nil {
+							r.Reservations++
+						}
+					}
 				}
 			case "blueprints":
 				// Player's owned blueprints (when this list is top-level).
@@ -307,9 +407,16 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 					}
 				}
 			case "entry":
+				txt := attr(t, "text")
+				if inLog {
+					snap.Logbook = append(snap.Logbook, logEntry(t, txt, pool))
+				}
 				// Event-log "Reputation gained/lost" entries carry the current
 				// reputation in their text; keep the latest per faction text-ref.
-				if txt := attr(t, "text"); strings.Contains(txt, "Current reputation:") {
+				// Deliberately NOT scoped to inLog: it has always run
+				// document-wide, and narrowing it here would be a behaviour
+				// change wearing a refactor's clothes.
+				if strings.Contains(txt, "Current reputation:") {
 					if fac := attr(t, "faction"); fac != "" {
 						if rep, ok := parseTrailingInt(txt, "Current reputation:"); ok {
 							tm, _ := strconv.ParseFloat(attr(t, "time"), 64)
@@ -343,9 +450,13 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 							Owner:       owner,
 							Contested:   attr(t, "contested") == "1",
 							PlayerOwned: playerOwned,
+							// Captured, deliberately not acted on — see
+							// Sector.Knownto. 16 sectors in one real save carry
+							// full resource data the player has never seen.
+							Knownto: attr(t, "knownto"),
 						})
 					}
-					descendStack = append(descendStack, openComp{class: cls, macro: macro})
+					descendStack = append(descendStack, openComp{class: cls, macro: macro, owner: owner})
 					// descend: do not consume the subtree
 				case owner == "player" && (strings.HasPrefix(cls, "ship_") || cls == "station"):
 					var rc rawComp
@@ -353,7 +464,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 						return nil, fmt.Errorf("decode %s: %w", cls, err)
 					}
 					sector := currentSector(descendStack)
-					collectAssets(&rc, sector, "", snap)
+					collectAssets(&rc, sector, "", snap, sections)
 				case cls == "station" && strings.Contains(attr(t, "knownto"), "player"):
 					// NPC station the player has discovered — capture its trade
 					// offers, and also harvest any player assets docked inside it
@@ -366,7 +477,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 					if ts := buildTradeStation(&rc, sec, owner); ts != nil {
 						snap.TradeStations = append(snap.TradeStations, *ts)
 					}
-					collectAssets(&rc, sec, "", snap)
+					collectAssets(&rc, sec, "", snap, sections)
 				case cls == "gate":
 					// A gate records the connection id of its pair in <connected>.
 					// A gate with none is inactive in this playthrough and must not
@@ -389,8 +500,53 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 							}
 						}
 					}
+				case sections.has(secBuildStorage) && cls == "buildstorage" && owner == "player":
+					// A station-construction site. It is a SIBLING of the station
+					// it builds, not a child of it, so it has to be captured here
+					// rather than anywhere inside a station subtree.
+					//
+					// The subtree is decoded rather than skipped, into a narrow
+					// struct: encoding/xml keeps only declared fields, so the
+					// cargo bays and docking bays that make up most of the
+					// element cost tokens (which Skip would cost too) and no
+					// retention.
+					snap.OtherCounts[cls]++ // unchanged: this class was already counted
+					var bs rawBuildStorage
+					if err := dec.DecodeElement(&bs, &t); err != nil {
+						return nil, fmt.Errorf("decode buildstorage: %w", err)
+					}
+					snap.BuildStorages = append(snap.BuildStorages,
+						buildBuildStorage(&bs, currentSector(descendStack)))
 				case owner == "player" && !boringPlayerClasses[cls]:
 					snap.OtherCounts[cls]++
+					if sections.has(secResourceAreas) && cls == "resourceprobe" {
+						// Probe C's cheap hedge: capture the count, surface
+						// nothing. Zero player probes exist in 200 saves, so a
+						// coverage clause built on it would never have been
+						// validated against real data.
+						if secm := currentSector(descendStack); secm != "" {
+							probesBySector[secm]++
+						}
+					}
+					if err := dec.Skip(); err != nil {
+						return nil, err
+					}
+				case sections.has(secThreat) && threatOwners[owner] && strings.Contains(attr(t, "knownto"), "player"):
+					// A Kha'ak or Xenon component the player has DISCOVERED.
+					// attrs-only, subtree skipped — the ClaimableShips pattern.
+					//
+					// This sits after the station case on purpose: a discovered
+					// hostile station with live offers is already captured as a
+					// TradeStation, and capturing it twice would double-count it
+					// on any surface that reads both.
+					snap.ThreatComponents = append(snap.ThreatComponents, ThreatComponent{
+						Class:   cls,
+						Macro:   macro,
+						Code:    attr(t, "code"),
+						Owner:   owner,
+						Knownto: attr(t, "knownto"),
+						Sector:  currentSector(descendStack),
+					})
 					if err := dec.Skip(); err != nil {
 						return nil, err
 					}
@@ -428,6 +584,10 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 				}
 			case "script":
 				curScript, curPlot = "", ""
+			case "log":
+				inLog = false
+			case "area":
+				curAreaSector, curAreaRes = "", ""
 			}
 		}
 	}
@@ -444,6 +604,29 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 		}
 		sort.Slice(rfs, func(a, b int) bool { return rfs[a].Weight > rfs[b].Weight })
 		snap.Sectors[i].Resources = rfs
+	}
+
+	// Attach the 9.x resource-area aggregate, richest-remaining first, and the
+	// player probe counts. Sorted rather than map-ordered because a snapshot
+	// that reorders itself between two identical parses is a wire diff nobody
+	// can explain.
+	for i := range snap.Sectors {
+		snap.Sectors[i].PlayerProbes = probesBySector[snap.Sectors[i].Macro]
+		m := areaAgg[snap.Sectors[i].Macro]
+		if len(m) == 0 {
+			continue
+		}
+		rows := make([]SectorResource, 0, len(m))
+		for _, r := range m {
+			rows = append(rows, *r)
+		}
+		sort.Slice(rows, func(a, b int) bool {
+			if rows[a].Current != rows[b].Current {
+				return rows[a].Current > rows[b].Current
+			}
+			return rows[a].Resource < rows[b].Resource
+		})
+		snap.Sectors[i].ResourceAreas = rows
 	}
 
 	// Join the gate links into a sector adjacency. Only pairs where BOTH ends
@@ -545,12 +728,44 @@ func resourceFromFieldMacro(macro string) string {
 type openComp struct {
 	class string
 	macro string
+	// owner is the component's own owner= attribute, EXACTLY as written —
+	// empty when the element does not declare one. See currentOwner.
+	owner string
 }
 
 func currentSector(stack []openComp) string {
 	for i := len(stack) - 1; i >= 0; i-- {
 		if stack[i].class == "sector" {
 			return stack[i].macro
+		}
+	}
+	return ""
+}
+
+// currentOwner resolves ownership for a component that does not declare an
+// owner of its own, by climbing the descend stack — probe B §8 rule 0
+// (docs/probes/b-hull-damage.md).
+//
+// A station module never carries owner= (0 of 16,913 in the corpus): ownership
+// is INAPPLICABLE to it, and lives once, on the container. So the rule is
+// "nearest ancestor that DECLARES an owner wins, and the climb stops there" —
+// stopping matters because a player ship docked at an NPC station is still the
+// player's, and a foreign ship docked at a player station is still not.
+//
+// Two guards, both in the direction of under-claiming (README: when absence
+// must be guessed, guess against the player's interest):
+//
+//   - the climb stops dead at a space container (spaceClasses), so a claimed
+//     sector's owner= never leaks onto the things floating in it;
+//   - "" is returned rather than any default, and callers require an explicit
+//     "player" — an absent owner is never resolved to the player.
+func currentOwner(stack []openComp) string {
+	for i := len(stack) - 1; i >= 0; i-- {
+		if spaceClasses[stack[i].class] {
+			return "" // a place, not a proprietor: stop
+		}
+		if stack[i].owner != "" {
+			return stack[i].owner
 		}
 	}
 	return ""
@@ -645,21 +860,152 @@ type rawFaction struct {
 	} `xml:"relations>relation"`
 }
 
-func decodeFaction(dec *xml.Decoder, start *xml.StartElement, snap *Snapshot) error {
-	var rf rawFaction
+// rawFactionLicensed is rawFaction plus the permission/booster lists. It is a
+// separate type rather than three more fields on rawFaction so that the section
+// mask can genuinely turn the section OFF — a marginal-cost measurement taken
+// against a decoder that ran anyway would be measuring nothing.
+//
+// The three booster lists are three different elements: a relation bonus inside
+// <relations>, a trade discount inside <discounts>, and a subscription inside
+// <boosters>. They carry different attributes, which is why Booster's are all
+// optional.
+type rawFactionLicensed struct {
+	rawFaction
+	Licences []struct {
+		Type string `xml:"type,attr"`
+		// factions is a SPACE-SEPARATED list of who holds this licence, so
+		// "the player has it" is a membership test and never element presence.
+		Factions string `xml:"factions,attr"`
+	} `xml:"licences>licence"`
+	RelationBoosters []rawBooster `xml:"relations>booster"`
+	DiscountBoosters []rawBooster `xml:"discounts>booster"`
+	Subscriptions    []rawBooster `xml:"boosters>booster"`
+}
+
+type rawBooster struct {
+	Faction  string   `xml:"faction,attr"`  // who it applies to
+	Factions string   `xml:"factions,attr"` // …or a list of them
+	Type     string   `xml:"type,attr"`
+	Amount   *float64 `xml:"amount,attr"`
+	Relation *float64 `xml:"relation,attr"`
+	Time     *float64 `xml:"time,attr"`
+	EndTime  *float64 `xml:"endtime,attr"`
+}
+
+func decodeFaction(dec *xml.Decoder, start *xml.StartElement, snap *Snapshot, sections sectionMask) error {
+	if !sections.has(secLicences) {
+		var rf rawFaction
+		if err := dec.DecodeElement(&rf, start); err != nil {
+			return fmt.Errorf("decode faction: %w", err)
+		}
+		applyFactionRelations(&rf, snap)
+		return nil
+	}
+
+	var rf rawFactionLicensed
 	if err := dec.DecodeElement(&rf, start); err != nil {
 		return fmt.Errorf("decode faction: %w", err)
 	}
-	if rf.ID == "" || rf.ID == "player" {
+	applyFactionRelations(&rf.rawFaction, snap)
+	if rf.ID == "" {
 		return nil
+	}
+	// Read, and there may be none: <factions> is in a block every successful
+	// parse reaches, so an empty list is a fact about the playthrough.
+	snap.LicencesSeen = true
+
+	if rf.ID == "player" {
+		// THE PLAYER'S OWN BLOCK IS WHERE THE PLAYER'S LICENCES LIVE, and
+		// factions= there names the ISSUERS, not the holders. Read the other
+		// way round and a 214-hour playthrough reports zero licences.
+		//
+		// The direction is unambiguous once you look at a real one:
+		//   <licence type="police"          factions="argon"/>
+		//   <licence type="hyperion_access" factions="holyorder"/>
+		// The Argon police licence is bought from Argon and Hyperion access is
+		// granted by the Holy Order; neither sentence works the other way. The
+		// same shape appears on NPC blocks (argon holds a capitalship licence
+		// from antigone), so the rule is uniform: a faction's <licences> lists
+		// what THAT faction holds.
+		for _, l := range rf.Licences {
+			if l.Type == "" {
+				continue
+			}
+			for _, issuer := range strings.Fields(l.Factions) {
+				snap.Licences = append(snap.Licences, Licence{Faction: issuer, Type: l.Type})
+			}
+		}
+		// Boosters are deliberately NOT read here. A relation booster is
+		// written on BOTH sides — argon's block carries
+		// <booster faction="player" relation="0.127969" time="591522.991"/>
+		// and the player's carries the identical row with faction="argon" —
+		// so reading both would double every one of them.
+		return nil
+	}
+
+	// The mirror spelling: a faction listing "player" among the holders of a
+	// licence it issues. It does not occur in 200 archived saves (0 of 134
+	// licence elements), and it is kept only because the S5 fixture contract
+	// states it and a mod or a patch could write it. It cannot collide with the
+	// block above, because that one is keyed on the player's own faction id.
+	for _, l := range rf.Licences {
+		if l.Type != "" && holdsLicence(l.Factions, "player") {
+			snap.Licences = append(snap.Licences, Licence{Faction: rf.ID, Type: l.Type})
+		}
+	}
+	// A slice, not a map: map iteration order is random, and a snapshot that
+	// reorders its own boosters between two identical parses is a golden diff
+	// and a wire diff that nobody can explain.
+	for _, g := range []struct {
+		group string
+		list  []rawBooster
+	}{
+		{"relations", rf.RelationBoosters},
+		{"discounts", rf.DiscountBoosters},
+		{"boosters", rf.Subscriptions},
+	} {
+		for _, b := range g.list {
+			target := b.Faction
+			if target == "" {
+				target = b.Factions
+			}
+			if !holdsLicence(target, "player") {
+				continue
+			}
+			snap.Boosters = append(snap.Boosters, Booster{
+				Faction: rf.ID, Group: g.group, Type: b.Type, Target: target,
+				Amount: b.Amount, Relation: b.Relation, Time: b.Time, EndTime: b.EndTime,
+			})
+		}
+	}
+	return nil
+}
+
+// applyFactionRelations records the player's row of a faction's relation table.
+// A faction is a Relation only if it has a player row; the player's own faction
+// entry is not a relation with itself.
+func applyFactionRelations(rf *rawFaction, snap *Snapshot) {
+	if rf.ID == "" || rf.ID == "player" {
+		return
 	}
 	for _, r := range rf.Relations {
 		if r.Faction == "player" {
 			snap.Relations = append(snap.Relations, Relation{Faction: rf.ID, Value: r.Relation})
-			break
+			return
 		}
 	}
-	return nil
+}
+
+// holdsLicence reports whether want appears in a space-separated factions list.
+// strings.Contains would be wrong: a faction named "player" is a member of
+// "player argon" and NOT of "multiplayer".
+func holdsLicence(list, want string) bool {
+	for _, f := range strings.Fields(list) {
+		if f == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- player component subtree ----
@@ -672,8 +1018,36 @@ type rawComp struct {
 	ID             string `xml:"id,attr"`
 	Name           string `xml:"name,attr"`
 	Overviewgraphs string `xml:"overviewgraphs,attr"`
-	// state="construction" marks a module component that is still being built.
+	// state="construction" marks a module component that is still being built;
+	// state="wreck" marks a destroyed hulk. Both gate the hull reading and must
+	// be checked BEFORE the absence rule (probe B §8, rules 1 and 2).
 	State string `xml:"state,attr"`
+
+	// ---- health & damage (probe B) ----
+	//
+	// HullEl is nil when the component has no <hull> CHILD, which for a live
+	// ship means it is at maximum. Only a direct child counts: grepping a
+	// dumped subtree for <hull> makes a station "have a hull" because one of
+	// its modules does, which is a different statistic wearing the same name.
+	HullEl                *rawHull `xml:"hull"`
+	Attacker              string   `xml:"attacker,attr"`
+	AttackerShip          string   `xml:"attackership,attr"`
+	AttackMethod          string   `xml:"attackmethod,attr"`
+	AttackTime            float64  `xml:"attacktime,attr"`
+	IntentionalAttackTime float64  `xml:"intentionalattacktime,attr"`
+	ShipAttackTime        float64  `xml:"shipattacktime,attr"`
+	SpawnTime             float64  `xml:"spawntime,attr"`
+
+	// Equipped hull modifications multiply the ship's maximum. Ignoring them
+	// yields percentages over 100%.
+	HullMods []struct {
+		MaxHull *float64 `xml:"maxhull,attr"`
+	} `xml:"modification>ship"`
+
+	// The player CHARACTER's inventory, when this component IS the player
+	// character (it is normally docked in the cockpit of the player's ship, so
+	// it arrives inside a decoded ship subtree rather than on the token walk).
+	Inventory *rawInventory `xml:"inventory"`
 
 	OrderBlock *rawOrders `xml:"orders"`
 
@@ -753,6 +1127,56 @@ type rawConnection struct {
 	Component  *rawComp `xml:"component"`
 }
 
+// rawHull is a component's <hull> element. BOTH attributes are pointers: a
+// <hull min="25000"/> with no value is a script-set FLOOR, not a reading, and
+// decoding its missing value as 0 reports an undamaged plot capital at 0% hull.
+// 151 player observations in the corpus are exactly that shape.
+type rawHull struct {
+	Value *float64 `xml:"value,attr"`
+	Min   *float64 `xml:"min,attr"`
+}
+
+func (h *rawHull) model() *Hull {
+	if h == nil {
+		return nil
+	}
+	return &Hull{Value: h.Value, Min: h.Min}
+}
+
+// attackOf builds the last-attacked record, or nil when nothing has ever
+// attacked this component. nil is the presence flag: a zero timestamp on a
+// ship that has never been shot at is not "attacked at game time 0".
+func (rc *rawComp) attackOf() *Attack {
+	if rc.AttackTime == 0 && rc.IntentionalAttackTime == 0 && rc.ShipAttackTime == 0 &&
+		rc.Attacker == "" && rc.AttackerShip == "" && rc.AttackMethod == "" {
+		return nil
+	}
+	return &Attack{
+		Time:            rc.AttackTime,
+		IntentionalTime: rc.IntentionalAttackTime,
+		ShipTime:        rc.ShipAttackTime,
+		Method:          rc.AttackMethod,
+		Attacker:        rc.Attacker,
+		AttackerShip:    rc.AttackerShip,
+	}
+}
+
+// maxHullMod is the product of every equipped hull multiplier, or nil when the
+// ship carries none.
+func (rc *rawComp) maxHullMod() *float64 {
+	mult, any := 1.0, false
+	for _, m := range rc.HullMods {
+		if m.MaxHull != nil {
+			mult *= *m.MaxHull
+			any = true
+		}
+	}
+	if !any {
+		return nil
+	}
+	return &mult
+}
+
 type rawSkills struct {
 	Piloting    int `xml:"piloting,attr"`
 	Management  int `xml:"management,attr"`
@@ -765,7 +1189,23 @@ type rawSkills struct {
 // It walks the entire subtree so ships docked inside carriers/stations (which
 // sit below intermediate dockingbay/module components) are captured too.
 // parentID tracks the nearest enclosing ship/station for DockedAt.
-func collectAssets(rc *rawComp, sector, parentID string, snap *Snapshot) {
+func collectAssets(rc *rawComp, sector, parentID string, snap *Snapshot, sections sectionMask) {
+	collectAssetsOwned(rc, sector, parentID, "", snap, sections)
+}
+
+// collectAssetsOwned is collectAssets with the resolved ownership context
+// threaded through it — probe B §8 rule 0, applied to the DECODED half of the
+// walk (the token loop's half is currentOwner()).
+//
+// ownerCtx is the owner of the nearest ancestor component that declared one.
+// A station module never declares an owner, so without this a module inside a
+// player station resolves to "" and every module-level fact about the player's
+// stations is lost. The climb still stops at the nearest declaration, which is
+// what keeps a foreign ship docked at a player station foreign.
+func collectAssetsOwned(rc *rawComp, sector, parentID, ownerCtx string, snap *Snapshot, sections sectionMask) {
+	if rc.Owner != "" {
+		ownerCtx = rc.Owner
+	}
 	if rc.Owner == "player" {
 		// Player property found inside a decoded subtree — a ship docked in an
 		// NPC station, the player character in its own cockpit — which the token
@@ -788,6 +1228,12 @@ func collectAssets(rc *rawComp, sector, parentID string, snap *Snapshot) {
 			snap.Research = append(snap.Research, r.Ware)
 		}
 	}
+	// The player character's own inventory, and only theirs: 1,084 components
+	// in one real save carry an <inventory> and every other one belongs to an
+	// NPC. class="player" IS the player character component.
+	if sections.has(secInventory) && rc.Inventory != nil && rc.Class == "player" && ownerCtx == "player" {
+		applyInventory(rc.Inventory, snap)
+	}
 	switch {
 	case strings.HasPrefix(rc.Class, "ship_") && rc.Owner == "player":
 		if kind := deployableKind(rc.Macro); kind != "" {
@@ -795,16 +1241,16 @@ func collectAssets(rc *rawComp, sector, parentID string, snap *Snapshot) {
 			// are static equipment, not fleet — count them separately.
 			snap.OtherCounts[kind]++
 		} else {
-			snap.Ships = append(snap.Ships, buildShip(rc, sector, parentID))
+			snap.Ships = append(snap.Ships, buildShip(rc, sector, parentID, sections))
 			parentID = rc.ID // anything nested below is docked on this ship
 		}
 	case rc.Class == "station" && rc.Owner == "player":
-		snap.Stations = append(snap.Stations, buildStation(rc, sector))
+		snap.Stations = append(snap.Stations, buildStation(rc, sector, sections))
 		parentID = rc.ID
 	}
 	for _, c := range rc.Connections {
 		if c.Component != nil {
-			collectAssets(c.Component, sector, parentID, snap)
+			collectAssetsOwned(c.Component, sector, parentID, ownerCtx, snap, sections)
 		}
 	}
 }
@@ -859,7 +1305,7 @@ func atoiSafe(s string) int64 {
 	return 0
 }
 
-func buildShip(rc *rawComp, sector, parentID string) Ship {
+func buildShip(rc *rawComp, sector, parentID string, sections sectionMask) Ship {
 	faction, size, role := decodeShipMacro(rc.Macro)
 	s := Ship{
 		ID:        rc.ID,
@@ -874,6 +1320,16 @@ func buildShip(rc *rawComp, sector, parentID string) Ship {
 		Order:     pickOrder(rc),
 		CrewCount: len(rc.People),
 		DockedAt:  parentID,
+	}
+	if sections.has(secHull) {
+		// State FIRST: "wreck" and "construction" change what the hull number
+		// means, and a wreck carries no <hull> at all — decode that absence as
+		// 100% and the board reports a destroyed destroyer at full health.
+		s.State = rc.State
+		s.Hull = rc.HullEl.model()
+		s.Attack = rc.attackOf()
+		s.MaxHullMod = rc.maxHullMod()
+		s.SpawnTime = rc.SpawnTime
 	}
 	s.Captain, s.CaptainSkills = findCaptain(rc)
 	if rc.Account != nil {
@@ -913,7 +1369,7 @@ func buildShip(rc *rawComp, sector, parentID string) Ship {
 	return s
 }
 
-func buildStation(rc *rawComp, sector string) Station {
+func buildStation(rc *rawComp, sector string, sections sectionMask) Station {
 	st := Station{
 		ID:     rc.ID,
 		Code:   rc.Code,
@@ -950,6 +1406,16 @@ func buildStation(rc *rawComp, sector string) Station {
 	// last-resort fallback when no production module is found.
 	ss := newStationScan()
 	collectStationModules(rc, &st, ss, false)
+	if sections.has(secHull) {
+		// A station's health is its MODULES'. The station component carries no
+		// <hull> at all — 0 of 77 player-owned in the corpus — so asking it is
+		// asking the wrong node.
+		mh := ModuleHealth{}
+		collectModuleHealth(rc, &mh, false)
+		if mh.Modules > 0 || mh.Damaged > 0 {
+			st.ModuleHealth = &mh
+		}
+	}
 	for _, sz := range dockSizeOrder {
 		if ss.builtDock[sz] {
 			st.DockSizes = append(st.DockSizes, sz)
@@ -1075,6 +1541,65 @@ func collectStationModules(rc *rawComp, st *Station, ss *stationScan, ancestorBu
 	}
 }
 
+// noHullClasses are the component classes never observed carrying a <hull> —
+// probe B §8 rule 6. They are excluded from a station's health DENOMINATOR, so
+// a station does not read as "3 of 400 modules damaged" when 350 of those are
+// docking bays with no hull model at all.
+//
+// The list is "not observed", not "cannot happen": `weapon` sat in it until one
+// hull element turned up in one save out of 200. So a surprise is counted into
+// BOTH halves of the fraction (see collectModuleHealth) rather than dropped or
+// panicked on.
+var noHullClasses = map[string]bool{
+	"dockingbay":      true,
+	"computer":        true,
+	"npc":             true,
+	"cockpit":         true,
+	"zone":            true,
+	"controlroom":     true,
+	"missilelauncher": true,
+	"station":         true,
+	"buildprocessor":  true,
+	"buildstorage":    true,
+}
+
+// collectModuleHealth walks a station's module subtree counting the population
+// that CAN carry a hull and the ones that actually do.
+//
+// The denominator is the point. Module <hull> is present only when damaged, so
+// of 1,091 player defence modules in one real save 128 carry a value and 963 do
+// not. "Your stations are at 94%" is a number with the inference hidden inside
+// it; "128 of 1,091 modules damaged, 963 treated as undamaged" states the
+// treatment that IS the number.
+//
+// Docked ships are skipped: a damaged freighter parked at a station is not the
+// station's structure, and ownership does not flow to it either way.
+func collectModuleHealth(rc *rawComp, mh *ModuleHealth, inStation bool) {
+	inStation = inStation || rc.Class == "station"
+	for _, c := range rc.Connections {
+		m := c.Component
+		if m == nil || strings.HasPrefix(m.Class, "ship_") {
+			continue
+		}
+		// probe B §8 rule 0's second half: 31% of module-class components live
+		// inside SHIPS, so a <station> ancestor is required before a storage or
+		// dockarea counts as station structure.
+		if inStation {
+			damaged := m.HullEl != nil && m.HullEl.Value != nil
+			if damaged || !noHullClasses[m.Class] {
+				mh.Modules++
+			}
+			if damaged {
+				mh.Damaged++
+				mh.Details = append(mh.Details, ModuleHull{
+					Macro: m.Macro, Class: m.Class, Hull: *m.HullEl.Value,
+				})
+			}
+		}
+		collectModuleHealth(m, mh, inStation)
+	}
+}
+
 // dockSize extracts the ship-size token (_xs_/_s_/_m_/_l_/_xl_) from a docking-bay
 // macro, e.g. dockingbay_gen_xl_pier_01_macro -> "xl". "" if none is present.
 func dockSize(macro string) string {
@@ -1178,4 +1703,407 @@ type rawGate struct {
 			Connection string `xml:"connection,attr"`
 		} `xml:"connected"`
 	} `xml:"connections>connection"`
+}
+
+// ---- <log> ----
+
+// markupRe matches X4's inline text markup, which the game writes into log
+// entries and the UI renders. Three forms, all observed in one real save's
+// 17,004 entries:
+//
+//	[\033]#RRGGBBAA#   explicit colour           (82)
+//	[\033]X            named colour / reset      (2,832 X, 1,511 C, 1,239 Y)
+//	[\033][glyph_name] an input-glyph placeholder (17)
+//
+// Note the literal spelling: the save holds the six characters `[\033]`, not an
+// ESC byte — there is not one 0x1B in the file.
+var markupRe = regexp.MustCompile(`\[\\033\](?:#[0-9A-Fa-f]{8}#|\[[^\]]*\]|.)`)
+
+// lineBreak is X4's line separator inside an attribute value.
+const lineBreak = `[\012]`
+
+// stripMarkup removes X4's colour codes and turns its line separators into real
+// newlines. It leaves everything else alone — including the "{page,id}" text
+// references, which are the thing rules key on and must survive verbatim.
+func stripMarkup(s string) string {
+	if !strings.Contains(s, `[\`) {
+		return s // the overwhelming majority: no markup at all
+	}
+	s = markupRe.ReplaceAllString(s, "")
+	return strings.ReplaceAll(s, lineBreak, "\n")
+}
+
+// intern returns a pooled copy of s. The logbook is the only caller: 17,004
+// entries carry ~800 distinct texts and 5 distinct categories, so pooling turns
+// most of the section's retained bytes into pointers.
+func intern(pool map[string]string, s string) string {
+	if s == "" {
+		return ""
+	}
+	if v, ok := pool[s]; ok {
+		return v
+	}
+	pool[s] = s
+	return s
+}
+
+// logEntry decodes one <entry> from the save's <log>. txt is the raw text
+// attribute, already read by the caller (which also needs it un-stripped for
+// the reputation mining).
+func logEntry(t xml.StartElement, txt string, pool map[string]string) LogEntry {
+	e := LogEntry{
+		Category: intern(pool, attr(t, "category")),
+		Title:    intern(pool, stripMarkup(attr(t, "title"))),
+		Text:     intern(pool, stripMarkup(txt)),
+		// The raw {page,id} reference, kept as written. A rule keyed on
+		// "Antigone Republic" breaks on a German client; a rule keyed on
+		// {20203,201} does not.
+		Faction:   intern(pool, attr(t, "faction")),
+		Entity:    attr(t, "entity"),
+		Component: attr(t, "component"),
+	}
+	e.Time, _ = strconv.ParseFloat(attr(t, "time"), 64)
+	if v := attr(t, "money"); v != "" {
+		m := atoiSafe(v)
+		e.Money = &m
+	}
+	return e
+}
+
+// ---- <stats> ----
+
+func decodeStats(dec *xml.Decoder, start *xml.StartElement, snap *Snapshot) error {
+	var raw struct {
+		Rows []struct {
+			ID    string  `xml:"id,attr"`
+			Value float64 `xml:"value,attr"`
+		} `xml:"stat"`
+	}
+	if err := dec.DecodeElement(&raw, start); err != nil {
+		return fmt.Errorf("decode stats: %w", err)
+	}
+	// Set BEFORE the loop: a save whose <stats> block is empty has been read
+	// and holds nothing, which is a different fact from never reaching it.
+	snap.StatsSeen = true
+	snap.Stats = make(map[string]float64, len(raw.Rows))
+	for _, r := range raw.Rows {
+		if r.ID != "" {
+			snap.Stats[r.ID] = r.Value
+		}
+	}
+	return nil
+}
+
+// ---- <missions> ----
+
+type rawMissionRow struct {
+	ID          string  `xml:"id,attr"`
+	Name        string  `xml:"name,attr"`
+	Description string  `xml:"description,attr"`
+	Faction     string  `xml:"faction,attr"`
+	Group       string  `xml:"group,attr"`
+	Type        string  `xml:"type,attr"`
+	Level       string  `xml:"level,attr"`
+	RewardText  string  `xml:"rewardtext,attr"`
+	Component   string  `xml:"component,attr"`
+	Active      string  `xml:"active,attr"`
+	Time        float64 `xml:"time,attr"`
+	// Reward is a POINTER: 13.6% of offers carry one and the rest carry no cash
+	// reward at all, which is not a reward of zero credits.
+	Reward *int64 `xml:"reward,attr"`
+}
+
+func decodeMissions(dec *xml.Decoder, start *xml.StartElement, snap *Snapshot) error {
+	var raw struct {
+		Offers   []rawMissionRow `xml:"offer"`
+		Missions []rawMissionRow `xml:"mission"`
+	}
+	if err := dec.DecodeElement(&raw, start); err != nil {
+		return fmt.Errorf("decode missions: %w", err)
+	}
+	// Set before the loops, for the reason StatsSeen is: an empty board is the
+	// NORMAL case for guild offers (96.5% of saves), so "none seen" has to be
+	// distinguishable from "not read". See Snapshot.MissionsSeen.
+	snap.MissionsSeen = true
+	for _, r := range raw.Offers {
+		snap.MissionOffers = append(snap.MissionOffers, MissionOffer{
+			ID: r.ID, Name: r.Name, Description: r.Description,
+			Faction: r.Faction, Group: r.Group, Type: r.Type, Level: r.Level,
+			RewardText: r.RewardText, Component: r.Component, Reward: r.Reward,
+		})
+	}
+	for _, r := range raw.Missions {
+		snap.Missions = append(snap.Missions, Mission{
+			ID: r.ID, Name: r.Name, Description: r.Description,
+			Faction: r.Faction, Group: r.Group, Type: r.Type, Level: r.Level,
+			RewardText: r.RewardText, Active: r.Active == "1", Time: r.Time,
+			Reward: r.Reward,
+		})
+	}
+	return nil
+}
+
+// ---- <inventory> ----
+
+// rawInventory is a <ware> list. Amount is a POINTER because an absent amount
+// is ONE, not zero: 5,143 of 15,018 inventory wares in one real save carry no
+// amount, the writer never emits amount="1" anywhere in the file, and it emits
+// <item amount="1"/> 2,537 times — so `1` is the value <ware> is omitting.
+// Reading it as zero says the player is carrying 5,143 things they have none
+// of. (docs/probes/README.md, docs/probes/a-build-storage.md)
+type rawInventory struct {
+	Wares []rawWare `xml:"ware"`
+}
+
+type rawWare struct {
+	Ware   string `xml:"ware,attr"`
+	Amount *int64 `xml:"amount,attr"`
+}
+
+// wareAmount decodes a <ware> with the omitted-default rule applied.
+func (w rawWare) wareAmount() WareAmount {
+	if w.Amount == nil {
+		return WareAmount{Ware: w.Ware, Amount: 1}
+	}
+	return WareAmount{Ware: w.Ware, Amount: *w.Amount}
+}
+
+func applyInventory(inv *rawInventory, snap *Snapshot) {
+	snap.InventorySeen = true
+	for _, w := range inv.Wares {
+		if w.Ware != "" {
+			snap.Inventory = append(snap.Inventory, w.wareAmount())
+		}
+	}
+}
+
+// ---- <resourceareas> ----
+
+// threatOwners are the factions whose discovered components are captured as
+// threats. Both are permanently hostile to everyone, so their presence in a
+// sector is information regardless of the player's standing.
+var threatOwners = map[string]bool{"khaak": true, "xenon": true}
+
+// yieldCap maps a yieldid's DENSITY token to the area's maximum stock. Measured
+// over ~650,000 area observations with zero violations (probe C §4.3).
+//
+// `verylow` is deliberately absent: it has no single cap (150 … 4,868 across
+// seven yieldids) and whatever sets it lives in the game's data files, not in
+// the save. An area on that tier contributes to UnknownCapAreas and to nothing
+// else, because a denominator we cannot read must not be guessed.
+var yieldCap = map[string]int64{
+	"low":      50_000,
+	"medium":   200_000,
+	"high":     1_000_000,
+	"veryhigh": 2_000_000,
+}
+
+// foldResourceArea folds one <area> into the per-sector aggregate and returns
+// the resource it belongs to ("" if the element is not decodable as one).
+//
+// The absence rule is the whole point: `yield` is omitted on 465 of 3,246 areas
+// and it means the area is AT CAPACITY, not empty. It is dropped only when an
+// area respawns elsewhere (4,017 present->absent transitions, every one with a
+// position/starttime reset; zero without). Reading absence as zero would report
+// 14% of the universe — precisely the freshly refilled patches — as exhausted.
+func foldResourceArea(agg map[string]map[string]*SectorResource, sector string, t xml.StartElement) string {
+	// yieldid is sphere_<size>_<resource>_<density>_<regenspeed> and never
+	// changes for a given area — it is the area's fixed archetype.
+	parts := strings.Split(attr(t, "yieldid"), "_")
+	if len(parts) != 5 || parts[2] == "" {
+		return ""
+	}
+	res, density := parts[2], parts[3]
+	m := agg[sector]
+	if m == nil {
+		m = map[string]*SectorResource{}
+		agg[sector] = m
+	}
+	row := m[res]
+	if row == nil {
+		row = &SectorResource{Resource: res}
+		m[res] = row
+	}
+	row.Areas++
+	if st, err := strconv.ParseFloat(attr(t, "starttime"), 64); err == nil && st > row.LastRelocation {
+		row.LastRelocation = st
+	}
+	capacity, known := yieldCap[density]
+	if !known {
+		row.UnknownCapAreas++
+		return res
+	}
+	row.Capacity += capacity
+	if v := attr(t, "yield"); v != "" {
+		row.Current += atoiSafe(v)
+	} else {
+		row.Current += capacity
+		row.AtCapacityAreas++
+	}
+	return res
+}
+
+// ---- <component class="buildstorage"> ----
+
+// rawBuildStorage is a construction site, decoded narrowly. Everything the
+// element holds that is not declared here — the cargo bays, the docking bays,
+// the drone settings — costs tokens and no retention.
+type rawBuildStorage struct {
+	ID    string `xml:"id,attr"`
+	Code  string `xml:"code,attr"`
+	Macro string `xml:"macro,attr"`
+	Owner string `xml:"owner,attr"`
+
+	// The build TASK: which station, and how many modules the whole order is.
+	Tasks []struct {
+		Component string `xml:"component,attr"`
+		Type      string `xml:"type,attr"`
+		// Entries carries no fields on purpose: only its LENGTH is wanted (the
+		// module count of the order, 618 on one real site) and a struct{}
+		// element occupies no bytes.
+		Entries []struct{} `xml:"sequence>entry"`
+	} `xml:"buildtasks>inprogress>build"`
+
+	// The budget. amount absent decodes to 0 credits — a DIFFERENT writer from
+	// <ware>, and this one does emit amount="1", so its own default really is
+	// zero (docs/probes/a-build-storage.md).
+	Account *struct {
+		Amount *int64 `xml:"amount,attr"`
+		Max    *int64 `xml:"max,attr"`
+	} `xml:"account"`
+
+	Nodes []rawBuildNode `xml:"connections>connection>component"`
+}
+
+// rawBuildNode is a component inside the build storage: the storage module that
+// holds what has been delivered, and the buildmodule/buildprocessor chain that
+// holds the running job. Recursive because the processor sits one or two
+// connection levels down depending on the save.
+type rawBuildNode struct {
+	Class string    `xml:"class,attr"`
+	Cargo []rawWare `xml:"cargo>ware"`
+	Build *struct {
+		State         string  `xml:"state,attr"`
+		Start         float64 `xml:"start,attr"`
+		Step          int     `xml:"step,attr"`
+		Steps         int     `xml:"steps,attr"`
+		SequenceIndex int     `xml:"sequenceindex,attr"`
+		Resources     *struct {
+			Wares        []rawWare `xml:"ware"`
+			Insufficient *struct {
+				// @amount here is a GAME-TIME TIMESTAMP, not a quantity, so
+				// only the ware NAMES are taken.
+				Wares []struct {
+					Ware string `xml:"ware,attr"`
+				} `xml:"ware"`
+			} `xml:"insufficient"`
+		} `xml:"resources"`
+		Next *struct {
+			Wares []rawWare `xml:"ware"`
+		} `xml:"nextresources"`
+	} `xml:"build"`
+	Nodes []rawBuildNode `xml:"connections>connection>component"`
+}
+
+func buildBuildStorage(bs *rawBuildStorage, sector string) BuildStorage {
+	out := BuildStorage{
+		ID: bs.ID, Code: bs.Code, Macro: bs.Macro, Owner: bs.Owner, Sector: sector,
+	}
+	if len(bs.Tasks) > 0 {
+		t := bs.Tasks[0]
+		out.TaskSeen = true
+		out.Station = t.Component
+		out.TaskType = t.Type
+		out.TaskModules = len(t.Entries)
+	}
+	if bs.Account != nil {
+		// Absent amount decodes to 0 credits; a missing <account> element
+		// stays nil, which is a different statement.
+		amount := int64(0)
+		if bs.Account.Amount != nil {
+			amount = *bs.Account.Amount
+		}
+		out.Account = &amount
+		out.AccountMax = bs.Account.Max
+	}
+	delivered := map[string]int64{}
+	walkBuildNodes(bs.Nodes, &out, delivered)
+	out.Delivered = sortedWares(delivered)
+
+	// The deficit is COMPUTED. The game's own <insufficient> list is a SUBSET
+	// of the true shortage — it under-reports in 29.6% of observed stalls — so
+	// it is kept as a hint and never as the answer.
+	var deficit []WareAmount
+	for _, need := range out.Required {
+		if short := need.Amount - delivered[need.Ware]; short > 0 {
+			deficit = append(deficit, WareAmount{Ware: need.Ware, Amount: short})
+		}
+	}
+	out.Deficit = deficit
+	return out
+}
+
+// walkBuildNodes gathers the delivered cargo and the one running job from a
+// build storage's component tree.
+func walkBuildNodes(nodes []rawBuildNode, out *BuildStorage, delivered map[string]int64) {
+	for i := range nodes {
+		n := &nodes[i]
+		for _, w := range n.Cargo {
+			if w.Ware != "" {
+				// A ware listed with no amount is not a ware to skip: on one
+				// real site the ware with no amount was precisely the one
+				// blocking the build.
+				delivered[w.Ware] += w.wareAmount().Amount
+			}
+		}
+		// <build deployed="1"/> on a buildmodule is not a job; a job carries a
+		// step or a state.
+		if b := n.Build; b != nil && !out.JobSeen && (b.State != "" || b.Steps > 0) {
+			out.JobSeen = true
+			out.State = b.State
+			out.Start = b.Start
+			out.Step, out.Steps = b.Step, b.Steps
+			out.SequenceIndex = b.SequenceIndex // absent decodes to 0: the first module
+			if b.Resources != nil {
+				for _, w := range b.Resources.Wares {
+					if w.Ware != "" {
+						out.Required = append(out.Required, w.wareAmount())
+					}
+				}
+				if ins := b.Resources.Insufficient; ins != nil {
+					for _, w := range ins.Wares {
+						if w.Ware != "" {
+							out.Insufficient = append(out.Insufficient, w.Ware)
+						}
+					}
+				}
+			}
+			// Absent <nextresources> means "nothing required after this
+			// module" — the last one — and never "unknown". 14.6% of jobs.
+			if b.Next != nil {
+				out.NextSeen = true
+				for _, w := range b.Next.Wares {
+					if w.Ware != "" {
+						out.Next = append(out.Next, w.wareAmount())
+					}
+				}
+			}
+		}
+		walkBuildNodes(n.Nodes, out, delivered)
+	}
+}
+
+// sortedWares renders a ware->amount map in a stable order. Map order is not an
+// order, and a snapshot that reshuffles between two identical parses is a wire
+// diff nobody can explain.
+func sortedWares(m map[string]int64) []WareAmount {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make([]WareAmount, 0, len(m))
+	for w, a := range m {
+		out = append(out, WareAmount{Ware: w, Amount: a})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Ware < out[j].Ware })
+	return out
 }

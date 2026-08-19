@@ -61,13 +61,62 @@
             "weight": 12000,
             "fields": 1
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 443227,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "reservations": 2,
+            "last_relocation": 360455.41
+          }
         ]
       },
       {
         "macro": "cluster_02_sector001_macro",
         "code": "BBB-002",
         "owner": "player",
-        "player_owned": true
+        "player_owned": true,
+        "resources": [
+          {
+            "resource": "ore",
+            "weight": 1075059,
+            "fields": 1
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1000000,
+            "capacity": 1000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 502298.732
+          },
+          {
+            "resource": "hydrogen",
+            "areas": 1,
+            "current": 150000,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 410000.5
+          },
+          {
+            "resource": "nividium",
+            "areas": 1,
+            "current": 0,
+            "capacity": 0,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 1,
+            "last_relocation": 300000
+          }
+        ]
       },
       {
         "macro": "cluster_03_sector001_macro",
@@ -81,6 +130,11 @@
         "owner": "ownerless"
       }
     ],
-    "other_counts": {}
+    "other_counts": {},
+    "logbook_seen": false,
+    "stats_seen": false,
+    "missions_seen": false,
+    "licences_seen": false,
+    "inventory_seen": false
   }
 }

@@ -31,9 +31,24 @@ const (
 // result too — the torn-file fixture exists precisely to pin the error — so the
 // error text is golden'd rather than being an untested code path.
 type goldenResult struct {
-	ParseError string    `json:"parse_error,omitempty"`
-	Snapshot   *Snapshot `json:"snapshot,omitempty"`
+	ParseError string `json:"parse_error,omitempty"`
+	// Elided names the sections canonical() summarised rather than wrote out,
+	// with their true lengths. It is part of the golden: a section that changes
+	// length still fails here even though its middle is not pinned.
+	Elided   map[string]int `json:"elided,omitempty"`
+	Snapshot *Snapshot      `json:"snapshot,omitempty"`
 }
+
+// goldenListCap is how many entries of a long list a golden pins verbatim —
+// the first goldenListCap/2 and the last goldenListCap/2.
+//
+// The distilled fixture's logbook is 9,012 entries and writes 1.9 MB of JSON.
+// A golden that large stops being read, and a golden nobody reads is not a
+// gate; it is a file people re-bless. Both ends plus the length catch the
+// failures this actually guards against — a section going empty, a field
+// changing shape, entries arriving in a different order — and the cost is that
+// a change confined to the middle of a long log is not pinned.
+const goldenListCap = 20
 
 // fixture is one committed savegame under testdata: either a hand-written .xml
 // (gzipped into a temp dir at parse time, so it stays diffable in git) or an
@@ -100,13 +115,26 @@ func (f fixture) canonical(t *testing.T, res *goldenResult) []byte {
 		s.SourceMod = 0
 		s.ParsedAt = 0
 		s.ParseMS = 0
-		res = &goldenResult{Snapshot: &s}
+		var elided map[string]int
+		if n := len(s.Logbook); n > goldenListCap {
+			elided = map[string]int{"logbook": n}
+			s.Logbook = elideList(s.Logbook)
+		}
+		res = &goldenResult{Elided: elided, Snapshot: &s}
 	}
 	b, err := json.MarshalIndent(res, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return append(b, '\n')
+}
+
+// elideList keeps the head and tail of a long list, dropping the middle.
+func elideList[T any](in []T) []T {
+	half := goldenListCap / 2
+	out := make([]T, 0, goldenListCap)
+	out = append(out, in[:half]...)
+	return append(out, in[len(in)-half:]...)
 }
 
 // TestGoldenFixtures is the CI backbone: every committed fixture is parsed and

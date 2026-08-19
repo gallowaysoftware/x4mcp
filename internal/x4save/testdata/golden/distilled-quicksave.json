@@ -1,4 +1,7 @@
 {
+  "elided": {
+    "logbook": 9012
+  },
   "snapshot": {
     "source_path": "distilled-quicksave.xml.gz",
     "source_size": 0,
@@ -114,7 +117,16 @@
           "boarding": 0
         },
         "crew_count": 49,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 579256.894,
+          "intentional_time": 579256.894,
+          "ship_time": 579256.894,
+          "method": "lowattentionattack",
+          "attacker": "[0x181cedb4]",
+          "attacker_ship": "[0x181cedb4]"
+        },
+        "spawn_time": 368573.51
       },
       {
         "id": "[0xe473]",
@@ -144,7 +156,16 @@
           "boarding": 0
         },
         "crew_count": 49,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 580048.275,
+          "intentional_time": 580048.275,
+          "ship_time": 580048.275,
+          "method": "lowattentionattack",
+          "attacker": "[0x181cedb4]",
+          "attacker_ship": "[0x181cedb4]"
+        },
+        "spawn_time": 380439.955
       },
       {
         "id": "[0xf9e0]",
@@ -171,7 +192,16 @@
           "boarding": 0
         },
         "crew_count": 24,
-        "docked_at": "[0xe7a7]"
+        "docked_at": "[0xe7a7]",
+        "attack": {
+          "time": 580506.609,
+          "intentional_time": 580506.609,
+          "ship_time": 580506.609,
+          "method": "lowattentionattack",
+          "attacker": "[0x5e0046ee]",
+          "attacker_ship": "[0x5e0046ee]"
+        },
+        "spawn_time": 380439.805
       },
       {
         "id": "[0x1cd2a]",
@@ -201,7 +231,16 @@
           "boarding": 0
         },
         "crew_count": 24,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 574696.318,
+          "intentional_time": 574696.318,
+          "ship_time": 574696.318,
+          "method": "lowattentionattack",
+          "attacker": "[0x4a1c8671]",
+          "attacker_ship": "[0x4a1c8671]"
+        },
+        "spawn_time": 490774.953
       },
       {
         "id": "[0x501a67a2]",
@@ -228,7 +267,16 @@
           "boarding": 0
         },
         "crew_count": 24,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 588585.398,
+          "intentional_time": 588585.398,
+          "ship_time": 588585.398,
+          "method": "lowattentionattack",
+          "attacker": "[0x5a1b8de0]",
+          "attacker_ship": "[0x5a1b8de0]"
+        },
+        "spawn_time": 580876.887
       },
       {
         "id": "[0x641bd9e7]",
@@ -258,7 +306,8 @@
           "boarding": 0
         },
         "crew_count": 49,
-        "account": 5492825
+        "account": 5492825,
+        "spawn_time": 580574.546
       },
       {
         "id": "[0x236ff]",
@@ -284,7 +333,16 @@
           "morale": 8,
           "boarding": 0
         },
-        "crew_count": 17
+        "crew_count": 17,
+        "attack": {
+          "time": 504947.2,
+          "intentional_time": 393434.052,
+          "ship_time": 504947.2,
+          "method": "collided",
+          "attacker": "[0x418f6]",
+          "attacker_ship": "[0x418f6]"
+        },
+        "spawn_time": 270927.601
       },
       {
         "id": "[0x418f6]",
@@ -310,7 +368,16 @@
           "morale": 4,
           "boarding": 0
         },
-        "crew_count": 150
+        "crew_count": 150,
+        "attack": {
+          "time": 576534.339,
+          "intentional_time": 576534.339,
+          "ship_time": 576534.339,
+          "method": "lowattentionattack",
+          "attacker": "[0x4c1d6122]",
+          "attacker_ship": "[0x4c1d6122]"
+        },
+        "spawn_time": 446487.621
       },
       {
         "id": "[0x3debd]",
@@ -340,7 +407,8 @@
           "boarding": 3
         },
         "crew_count": 7,
-        "account": 5492825
+        "account": 5492825,
+        "spawn_time": 440958.466
       },
       {
         "id": "[0x45009]",
@@ -367,7 +435,8 @@
           "boarding": 0
         },
         "crew_count": 6,
-        "account": 5492825
+        "account": 5492825,
+        "spawn_time": 156633.028
       },
       {
         "id": "[0x45033]",
@@ -393,7 +462,8 @@
           "morale": 8,
           "boarding": 0
         },
-        "crew_count": 9
+        "crew_count": 9,
+        "spawn_time": 318871.438
       },
       {
         "id": "[0x84cea]",
@@ -420,7 +490,16 @@
           "morale": 8,
           "boarding": 0
         },
-        "crew_count": 38
+        "crew_count": 38,
+        "attack": {
+          "time": 561117.678,
+          "intentional_time": 561117.678,
+          "ship_time": 561117.678,
+          "method": "lowattentionattack",
+          "attacker": "[0x2818978e]",
+          "attacker_ship": "[0x2818978e]"
+        },
+        "spawn_time": 417565.807
       },
       {
         "id": "[0x864e8]",
@@ -448,7 +527,16 @@
           "boarding": 0
         },
         "crew_count": 6,
-        "docked_at": "[0x44326]"
+        "docked_at": "[0x44326]",
+        "attack": {
+          "time": 566360.066,
+          "intentional_time": 566360.066,
+          "ship_time": 566360.066,
+          "method": "lowattentionattack",
+          "attacker": "[0x3218f36a]",
+          "attacker_ship": "[0x3218f36a]"
+        },
+        "spawn_time": 407828.821
       },
       {
         "id": "[0x4435f]",
@@ -476,7 +564,16 @@
           "boarding": 0
         },
         "crew_count": 4,
-        "docked_at": "[0x44326]"
+        "docked_at": "[0x44326]",
+        "attack": {
+          "time": 561537.806,
+          "intentional_time": 561537.806,
+          "ship_time": 561537.806,
+          "method": "lowattentionattack",
+          "attacker": "[0x2818978e]",
+          "attacker_ship": "[0x2818978e]"
+        },
+        "spawn_time": 407829.533
       },
       {
         "id": "[0x44db1]",
@@ -503,7 +600,8 @@
           "boarding": 0
         },
         "crew_count": 40,
-        "docked_at": "[0x44326]"
+        "docked_at": "[0x44326]",
+        "spawn_time": 318484.924
       },
       {
         "id": "[0x44ee9]",
@@ -529,7 +627,8 @@
           "morale": 8,
           "boarding": 0
         },
-        "crew_count": 7
+        "crew_count": 7,
+        "spawn_time": 271997.83
       },
       {
         "id": "[0x44dca]",
@@ -557,7 +656,8 @@
           "boarding": 0
         },
         "crew_count": 40,
-        "account": 5492825
+        "account": 5492825,
+        "spawn_time": 318485.038
       },
       {
         "id": "[0x44ec7]",
@@ -585,7 +685,8 @@
           "boarding": 0
         },
         "crew_count": 38,
-        "account": 5492825
+        "account": 5492825,
+        "spawn_time": 400662.701
       },
       {
         "id": "[0x44077]",
@@ -611,7 +712,8 @@
           "morale": 8,
           "boarding": 0
         },
-        "crew_count": 5
+        "crew_count": 5,
+        "spawn_time": 156632.861
       },
       {
         "id": "[0x44de9]",
@@ -639,7 +741,8 @@
           "boarding": 0
         },
         "crew_count": 9,
-        "account": 5492825
+        "account": 5492825,
+        "spawn_time": 224049.769
       },
       {
         "id": "[0x43ff3]",
@@ -667,7 +770,8 @@
           "boarding": 0
         },
         "crew_count": 38,
-        "account": 5492825
+        "account": 5492825,
+        "spawn_time": 402417.16
       },
       {
         "id": "[0x44013]",
@@ -694,7 +798,8 @@
           "boarding": 0
         },
         "crew_count": 9,
-        "account": 5492825
+        "account": 5492825,
+        "spawn_time": 319140.11
       },
       {
         "id": "[0x1cae4]",
@@ -722,7 +827,16 @@
           "boarding": 0
         },
         "crew_count": 48,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 590896.668,
+          "intentional_time": 590896.668,
+          "ship_time": 590896.668,
+          "method": "hitbyareadamage",
+          "attacker": "[0x1cbcc]",
+          "attacker_ship": "[0x1cbcc]"
+        },
+        "spawn_time": 518572.733
       },
       {
         "id": "[0x1ca23]",
@@ -750,7 +864,16 @@
           "boarding": 0
         },
         "crew_count": 48,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 583307.696,
+          "intentional_time": 583307.696,
+          "ship_time": 583307.696,
+          "method": "hitbybullet",
+          "attacker": "[0x7b910]",
+          "attacker_ship": "[0x7b910]"
+        },
+        "spawn_time": 474493.317
       },
       {
         "id": "[0x141e0f55]",
@@ -778,7 +901,16 @@
           "boarding": 0
         },
         "crew_count": 45,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 583215.38,
+          "intentional_time": 583215.38,
+          "ship_time": 583215.38,
+          "method": "hitbyareadamage",
+          "attacker": "[0x1cb60]",
+          "attacker_ship": "[0x1cb60]"
+        },
+        "spawn_time": 547290.294
       },
       {
         "id": "[0x1cb60]",
@@ -806,7 +938,16 @@
           "boarding": 0
         },
         "crew_count": 48,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 590908.069,
+          "intentional_time": 583119.962,
+          "ship_time": 583119.962,
+          "method": "hitbyareadamage",
+          "attacker": "[0x1cc51]",
+          "attacker_ship": "[0x6a1eb944]"
+        },
+        "spawn_time": 471286.417
       },
       {
         "id": "[0x1cab0]",
@@ -837,7 +978,16 @@
           "boarding": 0
         },
         "crew_count": 1,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 590881.38,
+          "intentional_time": 590881.38,
+          "ship_time": 590881.38,
+          "method": "hitbybullet",
+          "attacker": "[0x5ab1a]",
+          "attacker_ship": "[0x5ab1a]"
+        },
+        "spawn_time": 5663.273
       },
       {
         "id": "[0x1cb96]",
@@ -865,7 +1015,16 @@
           "boarding": 0
         },
         "crew_count": 48,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 590923.988,
+          "intentional_time": 590923.988,
+          "ship_time": 590923.988,
+          "method": "hitbybullet",
+          "attacker": "[0x1cb60]",
+          "attacker_ship": "[0x1cb60]"
+        },
+        "spawn_time": 457853.303
       },
       {
         "id": "[0x1cc17]",
@@ -893,7 +1052,16 @@
           "boarding": 0
         },
         "crew_count": 48,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 589239.859,
+          "intentional_time": 583495.619,
+          "ship_time": 583495.619,
+          "method": "hitbyareadamage",
+          "attacker": "[0x80b9b3e]",
+          "attacker_ship": "[0x10092a41]"
+        },
+        "spawn_time": 493990.123
       },
       {
         "id": "[0x1cb20]",
@@ -921,7 +1089,16 @@
           "boarding": 0
         },
         "crew_count": 48,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 585673.283,
+          "intentional_time": 583209.829,
+          "ship_time": 583451.5,
+          "method": "hitbyareadamage",
+          "attacker": "[0x1cbc4]",
+          "attacker_ship": "[0x7b910]"
+        },
+        "spawn_time": 519683.866
       },
       {
         "id": "[0x1cbcc]",
@@ -949,7 +1126,16 @@
           "boarding": 0
         },
         "crew_count": 48,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 583511.832,
+          "intentional_time": 583511.832,
+          "ship_time": 583511.832,
+          "method": "hitbybullet",
+          "attacker": "[0x141e0f55]",
+          "attacker_ship": "[0x141e0f55]"
+        },
+        "spawn_time": 479388.287
       },
       {
         "id": "[0x10092a41]",
@@ -977,7 +1163,16 @@
           "boarding": 0
         },
         "crew_count": 48,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 589189.593,
+          "intentional_time": 583179.559,
+          "ship_time": 589189.593,
+          "method": "collided",
+          "attacker": "[0x1cc17]",
+          "attacker_ship": "[0x1cc17]"
+        },
+        "spawn_time": 545019.198
       },
       {
         "id": "[0x1ca5a]",
@@ -1005,7 +1200,16 @@
           "boarding": 0
         },
         "crew_count": 220,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 582670.847,
+          "intentional_time": 582358.807,
+          "ship_time": 582670.847,
+          "method": "collided",
+          "attacker": "[0x1cb96]",
+          "attacker_ship": "[0x1cb96]"
+        },
+        "spawn_time": 512852.843
       },
       {
         "id": "[0x1d4cf]",
@@ -1036,7 +1240,15 @@
         },
         "crew_count": 2,
         "account": 5492825,
-        "docked_at": "[0x1ca5a]"
+        "docked_at": "[0x1ca5a]",
+        "attack": {
+          "time": 538131.159,
+          "intentional_time": 527500.256,
+          "ship_time": 527500.256,
+          "method": "collided",
+          "attacker": "[0x1db14]"
+        },
+        "spawn_time": 440610.019
       },
       {
         "id": "[0x7b910]",
@@ -1064,7 +1276,16 @@
           "boarding": 0
         },
         "crew_count": 48,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 583514.959,
+          "intentional_time": 583514.959,
+          "ship_time": 583514.959,
+          "method": "hitbybullet",
+          "attacker": "[0x10092a41]",
+          "attacker_ship": "[0x10092a41]"
+        },
+        "spawn_time": 529077.514
       },
       {
         "id": "[0x7b8e5]",
@@ -1092,7 +1313,16 @@
           "boarding": 0
         },
         "crew_count": 48,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 583070.32,
+          "intentional_time": 583070.32,
+          "ship_time": 583070.32,
+          "method": "hitbybullet",
+          "attacker": "[0x1e08191e]",
+          "attacker_ship": "[0x1e08191e]"
+        },
+        "spawn_time": 527548.939
       },
       {
         "id": "[0x180e478f]",
@@ -1120,7 +1350,16 @@
           "boarding": 0
         },
         "crew_count": 3,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 583625.885,
+          "intentional_time": 583393.166,
+          "ship_time": 583625.885,
+          "method": "collided",
+          "attacker": "[0x1ca5a]",
+          "attacker_ship": "[0x1ca5a]"
+        },
+        "spawn_time": 548696.544
       },
       {
         "id": "[0xc1bd2b9]",
@@ -1146,7 +1385,16 @@
           "morale": 7,
           "boarding": 0
         },
-        "crew_count": 17
+        "crew_count": 17,
+        "attack": {
+          "time": 590067.834,
+          "intentional_time": 588637.239,
+          "ship_time": 588637.239,
+          "method": "collided",
+          "attacker": "[0x5a1dedf5]",
+          "attacker_ship": "[0x5e1d75f3]"
+        },
+        "spawn_time": 542866.764
       },
       {
         "id": "[0x120bde37]",
@@ -1177,7 +1425,16 @@
           "boarding": 0
         },
         "crew_count": 130,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 580490.372,
+          "intentional_time": 580490.372,
+          "ship_time": 580490.372,
+          "method": "lowattentionattack",
+          "attacker": "[0x4817f012]",
+          "attacker_ship": "[0x4817f012]"
+        },
+        "spawn_time": 546552.308
       },
       {
         "id": "[0x3a1882e8]",
@@ -1206,7 +1463,15 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 577718.902,
+          "ship_time": 577718.902,
+          "method": "collided",
+          "attacker": "[0x3e1acad8]",
+          "attacker_ship": "[0x3e1acad8]"
+        },
+        "spawn_time": 571922.003
       },
       {
         "id": "[0x261887a4]",
@@ -1235,7 +1500,16 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 580958.982,
+          "intentional_time": 580958.982,
+          "ship_time": 580958.982,
+          "method": "lowattentionattack",
+          "attacker": "[0x161e5560]",
+          "attacker_ship": "[0x161e5560]"
+        },
+        "spawn_time": 557029.741
       },
       {
         "id": "[0x3e1acad8]",
@@ -1264,7 +1538,16 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 578001.882,
+          "intentional_time": 576925.993,
+          "ship_time": 578001.882,
+          "method": "collided",
+          "attacker": "[0x26190ada]",
+          "attacker_ship": "[0x26190ada]"
+        },
+        "spawn_time": 571585.241
       },
       {
         "id": "[0x2e15628c]",
@@ -1293,7 +1576,16 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 578557.936,
+          "intentional_time": 576822.703,
+          "ship_time": 578550.218,
+          "method": "hitbyareadamage",
+          "attacker": "[0x121e0625]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 569328.151
       },
       {
         "id": "[0x181bbc96]",
@@ -1322,7 +1614,16 @@
         },
         "crew_count": 0,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 577295.549,
+          "intentional_time": 576929.434,
+          "ship_time": 577295.549,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 553740.594
       },
       {
         "id": "[0x4636b]",
@@ -1351,7 +1652,16 @@
         },
         "crew_count": 0,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 576828.202,
+          "intentional_time": 576828.202,
+          "ship_time": 576828.202,
+          "method": "hitbybullet",
+          "attacker": "[0x32178c84]",
+          "attacker_ship": "[0x32178c84]"
+        },
+        "spawn_time": 402653.94
       },
       {
         "id": "[0x1e1f2cff]",
@@ -1380,7 +1690,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 577416.762,
+          "intentional_time": 576940.591,
+          "ship_time": 577416.762,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 553005.327
       },
       {
         "id": "[0x1a1dec06]",
@@ -1409,7 +1728,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 577028.951,
+          "intentional_time": 576838.225,
+          "ship_time": 577028.951,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 552581.493
       },
       {
         "id": "[0x1c1a57b0]",
@@ -1438,7 +1766,15 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579698.703,
+          "ship_time": 579698.703,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 551882.719
       },
       {
         "id": "[0x2218bef3]",
@@ -1467,7 +1803,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579573.575,
+          "intentional_time": 579573.575,
+          "ship_time": 579572.512,
+          "method": "hitbybullet",
+          "attacker": "[0x41b3165]",
+          "attacker_ship": "[0x41b3165]"
+        },
+        "spawn_time": 553951.571
       },
       {
         "id": "[0x2a1c8716]",
@@ -1496,7 +1841,15 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 576923.083,
+          "ship_time": 576923.083,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 559421.825
       },
       {
         "id": "[0x14155705]",
@@ -1525,7 +1878,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579547.389,
+          "intentional_time": 576828.174,
+          "ship_time": 579547.389,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 558099.046
       },
       {
         "id": "[0x2a1e36fe]",
@@ -1554,7 +1916,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 577419.572,
+          "intentional_time": 576842.723,
+          "ship_time": 577419.572,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 558729.454
       },
       {
         "id": "[0x261b0c90]",
@@ -1583,7 +1954,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579480.039,
+          "intentional_time": 578715.942,
+          "ship_time": 579480.039,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 560703.25
       },
       {
         "id": "[0x1a1a0085]",
@@ -1612,7 +1992,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579599.212,
+          "intentional_time": 576869.074,
+          "ship_time": 579599.212,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 549997.149
       },
       {
         "id": "[0x18006d18]",
@@ -1641,7 +2030,15 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579723.395,
+          "ship_time": 579723.395,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 549332.112
       },
       {
         "id": "[0x1a17d396]",
@@ -1670,7 +2067,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579606.521,
+          "intentional_time": 576705.251,
+          "ship_time": 579606.521,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 549240.839
       },
       {
         "id": "[0x241df0e0]",
@@ -1699,7 +2105,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579627.971,
+          "intentional_time": 576904.097,
+          "ship_time": 579627.971,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 556467.895
       },
       {
         "id": "[0x2c1818a4]",
@@ -1728,7 +2143,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579604.451,
+          "intentional_time": 579056.012,
+          "ship_time": 579604.451,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 561643.074
       },
       {
         "id": "[0x26197494]",
@@ -1757,7 +2181,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579617.596,
+          "intentional_time": 579617.596,
+          "ship_time": 579617.596,
+          "method": "hitbybullet",
+          "attacker": "[0x1a1ebe5a]",
+          "attacker_ship": "[0x1a1ebe5a]"
+        },
+        "spawn_time": 561102.825
       },
       {
         "id": "[0x1a1be5a8]",
@@ -1786,7 +2219,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579366.111,
+          "intentional_time": 578699.353,
+          "ship_time": 579366.111,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 549997.348
       },
       {
         "id": "[0x1e08805e]",
@@ -1815,7 +2257,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579619.491,
+          "intentional_time": 578700.037,
+          "ship_time": 579619.491,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 554108.837
       },
       {
         "id": "[0x201a580f]",
@@ -1844,7 +2295,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579710.707,
+          "intentional_time": 576867.864,
+          "ship_time": 579710.707,
+          "method": "collided",
+          "attacker": "[0x361c8c80]",
+          "attacker_ship": "[0x361c8c80]"
+        },
+        "spawn_time": 554685.522
       },
       {
         "id": "[0x181ea2c0]",
@@ -1873,7 +2333,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579837.431,
+          "intentional_time": 578494.384,
+          "ship_time": 579837.431,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 554685.717
       },
       {
         "id": "[0x1c1509fc]",
@@ -1902,7 +2371,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579849.463,
+          "intentional_time": 578639.07,
+          "ship_time": 579849.463,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 561102.604
       },
       {
         "id": "[0x1a1ebe5a]",
@@ -1931,7 +2409,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579392.936,
+          "intentional_time": 576936.576,
+          "ship_time": 579390.988,
+          "method": "collided",
+          "attacker": "[0x12191cfb]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 549996.959
       },
       {
         "id": "[0x20070548]",
@@ -1960,7 +2447,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579477.1,
+          "intentional_time": 578643.487,
+          "ship_time": 579477.1,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 554109.031
       },
       {
         "id": "[0x361c6c35]",
@@ -1989,7 +2485,16 @@
         },
         "crew_count": 2,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 580488.854,
+          "intentional_time": 580488.854,
+          "ship_time": 580488.854,
+          "method": "lowattentionattack",
+          "attacker": "[0x161e5560]",
+          "attacker_ship": "[0x161e5560]"
+        },
+        "spawn_time": 564562.474
       },
       {
         "id": "[0x20052df4]",
@@ -2018,7 +2523,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579865.227,
+          "intentional_time": 578691.216,
+          "ship_time": 579865.227,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 554685.312
       },
       {
         "id": "[0x2c00232f]",
@@ -2047,7 +2561,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579093.495,
+          "intentional_time": 578690.161,
+          "ship_time": 579093.495,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 561643.257
       },
       {
         "id": "[0x341d0e58]",
@@ -2076,7 +2599,16 @@
         },
         "crew_count": 2,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579476.498,
+          "intentional_time": 576847.813,
+          "ship_time": 579476.498,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 562880.523
       },
       {
         "id": "[0x341a167f]",
@@ -2105,7 +2637,16 @@
         },
         "crew_count": 2,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579455.202,
+          "intentional_time": 576835.505,
+          "ship_time": 579113.125,
+          "method": "collided",
+          "attacker": "[0x12191cfb]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 563171.018
       },
       {
         "id": "[0x241fe610]",
@@ -2134,7 +2675,16 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 576911.696,
+          "intentional_time": 576911.696,
+          "ship_time": 576911.696,
+          "method": "hitbybullet",
+          "attacker": "[0x9df87]",
+          "attacker_ship": "[0x9df87]"
+        },
+        "spawn_time": 556468.714
       },
       {
         "id": "[0x3c1e14bd]",
@@ -2163,7 +2713,8 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "spawn_time": 569981.377
       },
       {
         "id": "[0x3c1c80d0]",
@@ -2192,7 +2743,16 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 576766.462,
+          "intentional_time": 576766.462,
+          "ship_time": 576766.462,
+          "method": "hitbybullet",
+          "attacker": "[0x2e19c0cf]",
+          "attacker_ship": "[0x2e19c0cf]"
+        },
+        "spawn_time": 567017.281
       },
       {
         "id": "[0x3c1e38eb]",
@@ -2221,7 +2781,16 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 580479.102,
+          "intentional_time": 580479.102,
+          "ship_time": 580479.102,
+          "method": "lowattentionattack",
+          "attacker": "[0x4817f012]",
+          "attacker_ship": "[0x4817f012]"
+        },
+        "spawn_time": 567017.485
       },
       {
         "id": "[0x4418148d]",
@@ -2250,7 +2819,16 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 577692.183,
+          "intentional_time": 576833.431,
+          "ship_time": 577692.183,
+          "method": "collided",
+          "attacker": "[0x381a7ec5]",
+          "attacker_ship": "[0x381a7ec5]"
+        },
+        "spawn_time": 570658.32
       },
       {
         "id": "[0x26190ada]",
@@ -2279,7 +2857,16 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 580817.682,
+          "intentional_time": 580817.682,
+          "ship_time": 580817.682,
+          "method": "lowattentionattack",
+          "attacker": "[0x141b1562]",
+          "attacker_ship": "[0x141b1562]"
+        },
+        "spawn_time": 557029.53
       },
       {
         "id": "[0x381a7ec5]",
@@ -2308,7 +2895,15 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 577692.183,
+          "ship_time": 577692.183,
+          "method": "collided",
+          "attacker": "[0x4418148d]",
+          "attacker_ship": "[0x4418148d]"
+        },
+        "spawn_time": 567966.43
       },
       {
         "id": "[0x361c8c80]",
@@ -2337,7 +2932,16 @@
         },
         "crew_count": 9,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 578692.54,
+          "intentional_time": 578692.54,
+          "ship_time": 578692.54,
+          "method": "hitbybullet",
+          "attacker": "[0x1a1ebe5a]",
+          "attacker_ship": "[0x1a1ebe5a]"
+        },
+        "spawn_time": 569982.155
       },
       {
         "id": "[0x361d4218]",
@@ -2366,7 +2970,16 @@
         },
         "crew_count": 2,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579628.83,
+          "intentional_time": 578643.033,
+          "ship_time": 579628.83,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 563708.48
       },
       {
         "id": "[0x3618ff1c]",
@@ -2395,7 +3008,16 @@
         },
         "crew_count": 2,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 580930.891,
+          "intentional_time": 580930.891,
+          "ship_time": 580930.891,
+          "method": "lowattentionattack",
+          "attacker": "[0x161e5560]",
+          "attacker_ship": "[0x161e5560]"
+        },
+        "spawn_time": 564116.267
       },
       {
         "id": "[0x341b9c4f]",
@@ -2424,7 +3046,16 @@
         },
         "crew_count": 2,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579724.213,
+          "intentional_time": 576913.496,
+          "ship_time": 579724.213,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 563171.636
       },
       {
         "id": "[0x2e1e03c4]",
@@ -2453,7 +3084,16 @@
         },
         "crew_count": 2,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579805.608,
+          "intentional_time": 576762.435,
+          "ship_time": 579805.608,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 565922.801
       },
       {
         "id": "[0x361e31ee]",
@@ -2482,7 +3122,16 @@
         },
         "crew_count": 2,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 581080.909,
+          "intentional_time": 581080.909,
+          "ship_time": 581080.909,
+          "method": "lowattentionattack",
+          "attacker": "[0x71215]",
+          "attacker_ship": "[0x71215]"
+        },
+        "spawn_time": 564116.014
       },
       {
         "id": "[0x2e16e6fa]",
@@ -2511,7 +3160,16 @@
         },
         "crew_count": 2,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579801.145,
+          "intentional_time": 572853.561,
+          "ship_time": 579801.145,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 563170.26
       },
       {
         "id": "[0x3208874c]",
@@ -2540,7 +3198,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 580578.099,
+          "intentional_time": 580578.099,
+          "ship_time": 580578.099,
+          "method": "lowattentionattack",
+          "attacker": "[0x581d5ffa]",
+          "attacker_ship": "[0x581d5ffa]"
+        },
+        "spawn_time": 562073.858
       },
       {
         "id": "[0x205b938]",
@@ -2569,7 +3236,16 @@
         },
         "crew_count": 3,
         "account": 5492825,
-        "docked_at": "[0x120bde37]"
+        "docked_at": "[0x120bde37]",
+        "attack": {
+          "time": 579723.191,
+          "intentional_time": 578639.709,
+          "ship_time": 579723.191,
+          "method": "collided",
+          "attacker": "[0x120bde37]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 560703.516
       },
       {
         "id": "[0x32178c84]",
@@ -2596,7 +3272,16 @@
           "boarding": 0
         },
         "crew_count": 2,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 579737.956,
+          "intentional_time": 576869.271,
+          "ship_time": 579737.956,
+          "method": "collided",
+          "attacker": "[0x12191cfb]",
+          "attacker_ship": "[0x120bde37]"
+        },
+        "spawn_time": 562881.338
       },
       {
         "id": "[0x4754e]",
@@ -2640,7 +3325,16 @@
           "boarding": 0
         },
         "crew_count": 2,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 588830.328,
+          "intentional_time": 588830.328,
+          "ship_time": 588830.328,
+          "method": "lowattentionattack",
+          "attacker": "[0x661b0d2a]",
+          "attacker_ship": "[0x661b0d2a]"
+        },
+        "spawn_time": 308437.541
       },
       {
         "id": "[0x481c0]",
@@ -2666,7 +3360,16 @@
           "morale": 7,
           "boarding": 0
         },
-        "crew_count": 14
+        "crew_count": 14,
+        "attack": {
+          "time": 563601.137,
+          "intentional_time": 563601.137,
+          "ship_time": 563601.137,
+          "method": "lowattentionattack",
+          "attacker": "[0x2a01c94e]",
+          "attacker_ship": "[0x2a01c94e]"
+        },
+        "spawn_time": 488615.14
       },
       {
         "id": "[0xa00e2e6]",
@@ -2692,7 +3395,16 @@
           "morale": 8,
           "boarding": 0
         },
-        "crew_count": 17
+        "crew_count": 17,
+        "attack": {
+          "time": 563337.113,
+          "intentional_time": 563337.113,
+          "ship_time": 563337.113,
+          "method": "hitbybullet",
+          "attacker": "[0x1e17f3a3]",
+          "attacker_ship": "[0x1e17f3a3]"
+        },
+        "spawn_time": 542866.606
       },
       {
         "id": "[0x2c1c3d25]",
@@ -2718,7 +3430,8 @@
           "morale": 3,
           "boarding": 0
         },
-        "crew_count": 49
+        "crew_count": 49,
+        "spawn_time": 580575.327
       },
       {
         "id": "[0x40bf12d]",
@@ -2744,7 +3457,16 @@
           "morale": 7,
           "boarding": 0
         },
-        "crew_count": 17
+        "crew_count": 17,
+        "attack": {
+          "time": 559329.973,
+          "intentional_time": 559329.973,
+          "ship_time": 559329.973,
+          "method": "lowattentionattack",
+          "attacker": "[0x260cba6c]",
+          "attacker_ship": "[0x260cba6c]"
+        },
+        "spawn_time": 542866.861
       },
       {
         "id": "[0x4433a]",
@@ -2770,7 +3492,16 @@
           "morale": 8,
           "boarding": 0
         },
-        "crew_count": 14
+        "crew_count": 14,
+        "attack": {
+          "time": 560935.813,
+          "intentional_time": 560935.813,
+          "ship_time": 560935.813,
+          "method": "lowattentionattack",
+          "attacker": "[0x2818978e]",
+          "attacker_ship": "[0x2818978e]"
+        },
+        "spawn_time": 489183.656
       },
       {
         "id": "[0x1f136]",
@@ -2796,7 +3527,16 @@
           "morale": 8,
           "boarding": 0
         },
-        "crew_count": 13
+        "crew_count": 13,
+        "attack": {
+          "time": 588954.463,
+          "intentional_time": 588954.463,
+          "ship_time": 588954.463,
+          "method": "lowattentionattack",
+          "attacker": "[0x5a1b8de0]",
+          "attacker_ship": "[0x5a1b8de0]"
+        },
+        "spawn_time": 504974.952
       },
       {
         "id": "[0x1cc06]",
@@ -2822,7 +3562,16 @@
           "morale": 7,
           "boarding": 0
         },
-        "crew_count": 13
+        "crew_count": 13,
+        "attack": {
+          "time": 557623.409,
+          "intentional_time": 523722.134,
+          "ship_time": 557623.409,
+          "method": "collided",
+          "attacker": "[0x84930]",
+          "attacker_ship": "[0x84930]"
+        },
+        "spawn_time": 504975.082
       },
       {
         "id": "[0x61f16]",
@@ -2852,7 +3601,16 @@
           "boarding": 0
         },
         "crew_count": 24,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 549477.191,
+          "intentional_time": 549477.191,
+          "ship_time": 549477.191,
+          "method": "lowattentionattack",
+          "attacker": "[0x181ab2f4]",
+          "attacker_ship": "[0x181ab2f4]"
+        },
+        "spawn_time": 364066.365
       },
       {
         "id": "[0x61eec]",
@@ -2882,7 +3640,16 @@
           "boarding": 0
         },
         "crew_count": 49,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 590806.536,
+          "intentional_time": 590806.536,
+          "ship_time": 590806.536,
+          "method": "lowattentionattack",
+          "attacker": "[0x2e1eb4dd]",
+          "attacker_ship": "[0x2e1eb4dd]"
+        },
+        "spawn_time": 368573.417
       },
       {
         "id": "[0x61c39]",
@@ -2912,7 +3679,16 @@
           "boarding": 0
         },
         "crew_count": 24,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 549269.959,
+          "intentional_time": 549269.959,
+          "ship_time": 549269.959,
+          "method": "lowattentionattack",
+          "attacker": "[0x161d8dc1]",
+          "attacker_ship": "[0x161d8dc1]"
+        },
+        "spawn_time": 364066.497
       },
       {
         "id": "[0x61c7a]",
@@ -2942,7 +3718,16 @@
           "boarding": 0
         },
         "crew_count": 49,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 586572.572,
+          "intentional_time": 586572.572,
+          "ship_time": 586572.572,
+          "method": "lowattentionattack",
+          "attacker": "[0x601ddb55]",
+          "attacker_ship": "[0x601ddb55]"
+        },
+        "spawn_time": 368906.216
       },
       {
         "id": "[0x6343a]",
@@ -2968,7 +3753,14 @@
           "morale": 9,
           "boarding": 0
         },
-        "crew_count": 17
+        "crew_count": 17,
+        "attack": {
+          "time": 495076,
+          "intentional_time": 495076,
+          "ship_time": 495076,
+          "method": "lowattentionattack"
+        },
+        "spawn_time": 446079.496
       },
       {
         "id": "[0x62102]",
@@ -2994,7 +3786,14 @@
           "morale": 7,
           "boarding": 0
         },
-        "crew_count": 17
+        "crew_count": 17,
+        "attack": {
+          "time": 473804.881,
+          "intentional_time": 473804.881,
+          "ship_time": 473804.881,
+          "method": "lowattentionattack"
+        },
+        "spawn_time": 446079.553
       },
       {
         "id": "[0x601c9296]",
@@ -3023,7 +3822,16 @@
           "boarding": 0
         },
         "crew_count": 49,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 584679.627,
+          "intentional_time": 584679.627,
+          "ship_time": 584679.627,
+          "method": "lowattentionattack",
+          "attacker": "[0x501d2fd7]",
+          "attacker_ship": "[0x501d2fd7]"
+        },
+        "spawn_time": 581772.766
       },
       {
         "id": "[0x5e1e006d]",
@@ -3053,7 +3861,16 @@
           "boarding": 0
         },
         "crew_count": 49,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 584596.679,
+          "intentional_time": 584596.679,
+          "ship_time": 584596.679,
+          "method": "lowattentionattack",
+          "attacker": "[0x661c6ecb]",
+          "attacker_ship": "[0x661c6ecb]"
+        },
+        "spawn_time": 580845.595
       },
       {
         "id": "[0x834e3]",
@@ -3083,7 +3900,16 @@
           "boarding": 0
         },
         "crew_count": 40,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 577628.257,
+          "intentional_time": 577628.257,
+          "ship_time": 577628.257,
+          "method": "lowattentionattack",
+          "attacker": "[0x4a18ab69]",
+          "attacker_ship": "[0x4a18ab69]"
+        },
+        "spawn_time": 424162.924
       },
       {
         "id": "[0x7d037]",
@@ -3113,7 +3939,14 @@
           "boarding": 0
         },
         "crew_count": 24,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 519339.688,
+          "intentional_time": 519339.688,
+          "ship_time": 519339.688,
+          "method": "lowattentionattack"
+        },
+        "spawn_time": 508823.415
       },
       {
         "id": "[0x7d012]",
@@ -3140,7 +3973,16 @@
           "boarding": 0
         },
         "crew_count": 40,
-        "account": 5492825
+        "account": 5492825,
+        "attack": {
+          "time": 554134.132,
+          "intentional_time": 554134.132,
+          "ship_time": 554134.132,
+          "method": "lowattentionattack",
+          "attacker": "[0xa0368ae]",
+          "attacker_ship": "[0xa0368ae]"
+        },
+        "spawn_time": 433023.933
       },
       {
         "id": "[0x84c7d]",
@@ -3167,7 +4009,16 @@
           "morale": 10,
           "boarding": 0
         },
-        "crew_count": 6
+        "crew_count": 6,
+        "attack": {
+          "time": 561568.459,
+          "intentional_time": 561568.459,
+          "ship_time": 561568.459,
+          "method": "lowattentionattack",
+          "attacker": "[0x2818978e]",
+          "attacker_ship": "[0x2818978e]"
+        },
+        "spawn_time": 407830.301
       },
       {
         "id": "[0x440df]",
@@ -3194,7 +4045,16 @@
           "morale": 6,
           "boarding": 0
         },
-        "crew_count": 38
+        "crew_count": 38,
+        "attack": {
+          "time": 588178.512,
+          "intentional_time": 588178.512,
+          "ship_time": 588178.512,
+          "method": "lowattentionattack",
+          "attacker": "[0x1e05d851]",
+          "attacker_ship": "[0x1e05d851]"
+        },
+        "spawn_time": 415378.126
       },
       {
         "id": "[0x84f24]",
@@ -3221,7 +4081,8 @@
           "boarding": 0
         },
         "crew_count": 38,
-        "account": 5492825
+        "account": 5492825,
+        "spawn_time": 431631.346
       },
       {
         "id": "[0x440bb]",
@@ -3248,7 +4109,16 @@
           "morale": 8,
           "boarding": 0
         },
-        "crew_count": 38
+        "crew_count": 38,
+        "attack": {
+          "time": 563571.507,
+          "intentional_time": 563571.507,
+          "ship_time": 563571.507,
+          "method": "lowattentionattack",
+          "attacker": "[0x2a01c94e]",
+          "attacker_ship": "[0x2a01c94e]"
+        },
+        "spawn_time": 431897.569
       }
     ],
     "stations": [
@@ -3443,7 +4313,11 @@
           "s",
           "m",
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 42,
+          "damaged": 0
+        }
       },
       {
         "id": "[0x1d0e0]",
@@ -3819,7 +4693,11 @@
           "s",
           "m",
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 383,
+          "damaged": 0
+        }
       },
       {
         "id": "[0x1d2d0]",
@@ -3841,7 +4719,38 @@
           "s",
           "m",
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 1424,
+          "damaged": 5,
+          "details": [
+            {
+              "macro": "dockarea_bor_m_station_01_standard_macro",
+              "class": "dockarea",
+              "hull": 538751.155
+            },
+            {
+              "macro": "pier_arg_harbor_03_macro",
+              "class": "pier",
+              "hull": 984058.533
+            },
+            {
+              "macro": "defence_arg_disc_01_macro",
+              "class": "defencemodule",
+              "hull": 190343.107
+            },
+            {
+              "macro": "defence_arg_disc_01_macro",
+              "class": "defencemodule",
+              "hull": 195368.62
+            },
+            {
+              "macro": "defence_arg_disc_01_macro",
+              "class": "defencemodule",
+              "hull": 196835.852
+            }
+          ]
+        }
       },
       {
         "id": "[0x1d8ed]",
@@ -3863,7 +4772,11 @@
           "s",
           "m",
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 1424,
+          "damaged": 0
+        }
       },
       {
         "id": "[0x345d1]",
@@ -3950,7 +4863,11 @@
           "s",
           "m",
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 26,
+          "damaged": 0
+        }
       },
       {
         "id": "[0x3dee4]",
@@ -4017,7 +4934,18 @@
           "s",
           "m",
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 67,
+          "damaged": 1,
+          "details": [
+            {
+              "macro": "signalleak_s_standard_01_macro",
+              "class": "signalleak",
+              "hull": 10
+            }
+          ]
+        }
       },
       {
         "id": "[0x44326]",
@@ -4270,7 +5198,11 @@
           "s",
           "m",
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 134,
+          "damaged": 0
+        }
       },
       {
         "id": "[0x5817eaf3]",
@@ -4291,7 +5223,18 @@
         ],
         "dock_sizes_pending": [
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 4,
+          "damaged": 1,
+          "details": [
+            {
+              "macro": "pier_arg_harbor_03_macro",
+              "class": "pier",
+              "hull": 886666.687
+            }
+          ]
+        }
       },
       {
         "id": "[0x4c17cabe]",
@@ -4313,7 +5256,28 @@
           "s",
           "m",
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 797,
+          "damaged": 3,
+          "details": [
+            {
+              "macro": "defence_arg_disc_01_macro",
+              "class": "defencemodule",
+              "hull": 185115.648
+            },
+            {
+              "macro": "defence_arg_disc_01_macro",
+              "class": "defencemodule",
+              "hull": 116061.183
+            },
+            {
+              "macro": "defence_arg_disc_01_macro",
+              "class": "defencemodule",
+              "hull": 101520.002
+            }
+          ]
+        }
       },
       {
         "id": "[0x61ecb]",
@@ -4540,7 +5504,11 @@
           "s",
           "m",
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 88,
+          "damaged": 0
+        }
       },
       {
         "id": "[0x7cd3d]",
@@ -4908,7 +5876,11 @@
           "s",
           "m",
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 152,
+          "damaged": 0
+        }
       },
       {
         "id": "[0x84ed5]",
@@ -5274,7 +6246,11 @@
           "s",
           "m",
           "xl"
-        ]
+        ],
+        "module_health": {
+          "modules": 152,
+          "damaged": 0
+        }
       }
     ],
     "player_assets_seen": true,
@@ -6158,6 +7134,17 @@
             "weight": 6450354,
             "fields": 6
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 2,
+            "current": 1443227,
+            "capacity": 2000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 502298.732
+          }
         ]
       },
       {
@@ -6180,17 +7167,31 @@
             "weight": 22764,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 199394,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 591022.769
+          }
         ]
       },
       {
         "macro": "cluster_417_sector001_macro",
         "code": "FPE-679",
-        "owner": "argon"
+        "owner": "argon",
+        "knownto": "player"
       },
       {
         "macro": "cluster_05_sector001_macro",
         "code": "EDW-456",
-        "owner": "teladi"
+        "owner": "teladi",
+        "knownto": "player"
       },
       {
         "macro": "cluster_37_sector001_macro",
@@ -6201,6 +7202,18 @@
             "resource": "ore",
             "weight": 107094,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 341766,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 183550.798
           }
         ]
       },
@@ -6214,6 +7227,16 @@
             "weight": 124218,
             "fields": 6
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "rawscrap",
+            "areas": 1,
+            "current": 40095,
+            "capacity": 50000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6225,6 +7248,17 @@
             "resource": "ore",
             "weight": 5365560,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1000000,
+            "capacity": 1000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 453844.858
           }
         ]
       },
@@ -6238,6 +7272,18 @@
             "weight": 16826094,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "silicon",
+            "areas": 1,
+            "current": 998040,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 590196.144
+          }
         ]
       },
       {
@@ -6249,6 +7295,16 @@
             "resource": "ore",
             "weight": 404694,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 397424,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6262,6 +7318,16 @@
             "weight": 404694,
             "fields": 6
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 593654,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6274,12 +7340,25 @@
             "weight": 4530702,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1000000,
+            "capacity": 1000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 230547.645
+          }
         ]
       },
       {
         "macro": "cluster_12_sector001_macro",
         "code": "CGF-135",
-        "owner": "holyorder"
+        "owner": "holyorder",
+        "knownto": "player"
       },
       {
         "macro": "cluster_49_sector001_macro",
@@ -6291,6 +7370,18 @@
             "resource": "ore",
             "weight": 4926936,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1912694,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 246087.598
           }
         ]
       },
@@ -6304,17 +7395,31 @@
             "weight": 21556764,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 819087,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 550034.296
+          }
         ]
       },
       {
         "macro": "cluster_423_sector001_macro",
         "code": "ZFO-628",
-        "owner": "paranid"
+        "owner": "paranid",
+        "knownto": "player"
       },
       {
         "macro": "cluster_423_sector002_macro",
         "code": "VIO-718",
-        "owner": "paranid"
+        "owner": "paranid",
+        "knownto": "player"
       },
       {
         "macro": "cluster_02_sector001_macro",
@@ -6325,6 +7430,17 @@
             "resource": "ore",
             "weight": 1154748,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 49398,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6337,6 +7453,17 @@
             "resource": "ore",
             "weight": 1302714,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 138372,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6353,7 +7480,8 @@
       {
         "macro": "cluster_30_sector001_macro",
         "code": "YFO-498",
-        "owner": "argon"
+        "owner": "argon",
+        "knownto": "player"
       },
       {
         "macro": "cluster_604_sector001_macro",
@@ -6365,32 +7493,48 @@
             "weight": 260208,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "rawscrap",
+            "areas": 1,
+            "current": 187083,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
         "macro": "cluster_405_sector001_macro",
         "code": "SQT-583",
-        "owner": "split"
+        "owner": "split",
+        "knownto": "player"
       },
       {
         "macro": "cluster_606_sector003_macro",
         "code": "DLF-637",
-        "owner": "boron"
+        "owner": "boron",
+        "knownto": "player"
       },
       {
         "macro": "cluster_606_sector001_macro",
         "code": "VMA-320",
-        "owner": "boron"
+        "owner": "boron",
+        "knownto": "player"
       },
       {
         "macro": "cluster_606_sector002_macro",
         "code": "GYP-073",
-        "owner": "boron"
+        "owner": "boron",
+        "knownto": "player"
       },
       {
         "macro": "cluster_406_sector001_macro",
         "code": "TJI-638",
-        "owner": "split"
+        "owner": "split",
+        "knownto": "player"
       },
       {
         "macro": "cluster_701_sector001_macro",
@@ -6401,12 +7545,14 @@
         "macro": "cluster_404_sector001_macro",
         "code": "XWB-985",
         "owner": "split",
-        "contested": true
+        "contested": true,
+        "knownto": "player"
       },
       {
         "macro": "cluster_723_sector001_macro",
         "code": "UJA-313",
-        "owner": "paranid"
+        "owner": "paranid",
+        "knownto": "player"
       },
       {
         "macro": "cluster_602_sector001_macro",
@@ -6418,12 +7564,24 @@
             "weight": 3947430,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1142011,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
         "macro": "cluster_416_sector001_macro",
         "code": "UEC-688",
-        "owner": "argon"
+        "owner": "argon",
+        "knownto": "player"
       },
       {
         "macro": "cluster_416_sector002_macro",
@@ -6434,6 +7592,18 @@
             "resource": "ice",
             "weight": 14790318,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ice",
+            "areas": 1,
+            "current": 999125,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 586490.319
           }
         ]
       },
@@ -6447,6 +7617,18 @@
             "weight": 19631687,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 2,
+            "current": 1225972,
+            "capacity": 2200000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 194390.293
+          }
         ]
       },
       {
@@ -6459,6 +7641,17 @@
             "weight": 7553964,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 25396,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6470,6 +7663,16 @@
             "resource": "ore",
             "weight": 4971198,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 979256,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6488,6 +7691,17 @@
             "weight": 7143582,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 336231,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6500,6 +7714,17 @@
             "weight": 7144272,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 325598,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6511,6 +7736,17 @@
             "resource": "ore",
             "weight": 7144392,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1457754,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6529,6 +7765,16 @@
             "weight": 1626780,
             "fields": 6
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 433223,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6541,6 +7787,17 @@
             "weight": 8193420,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1107744,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6552,6 +7809,17 @@
             "resource": "ore",
             "weight": 5686626,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1879836,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 207504.961
           }
         ]
       },
@@ -6575,6 +7843,17 @@
             "weight": 549822,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 5821,
+            "capacity": 50000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6586,6 +7865,18 @@
             "resource": "ore",
             "weight": 13236,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 123482,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 547712.969
           }
         ]
       },
@@ -6599,6 +7890,18 @@
             "weight": 54858,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 426266,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 456286.127
+          }
         ]
       },
       {
@@ -6611,6 +7914,17 @@
             "weight": 564768,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1318474,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6622,6 +7936,18 @@
             "resource": "ore",
             "weight": 394332,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 994439,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 302516.434
           }
         ]
       },
@@ -6636,12 +7962,25 @@
             "weight": 1276644,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 994660,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 518623.318
+          }
         ]
       },
       {
         "macro": "cluster_403_sector001_macro",
         "code": "DJB-787",
-        "owner": "split"
+        "owner": "split",
+        "knownto": "player"
       },
       {
         "macro": "cluster_102_sector001_macro",
@@ -6658,6 +7997,17 @@
             "weight": 1768818,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "rawscrap",
+            "areas": 1,
+            "current": 176042,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6670,12 +8020,25 @@
             "weight": 7143582,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1662830,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 468607.861
+          }
         ]
       },
       {
         "macro": "cluster_101_sector001_macro",
         "code": "OCO-011",
-        "owner": "terran"
+        "owner": "terran",
+        "knownto": "player"
       },
       {
         "macro": "cluster_501_sector001_macro",
@@ -6686,6 +8049,17 @@
             "resource": "ore",
             "weight": 25132740,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1404644,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6699,6 +8073,17 @@
             "weight": 69654,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 9321,
+            "capacity": 50000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6710,6 +8095,17 @@
             "resource": "ore",
             "weight": 106862,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 2,
+            "current": 216576,
+            "capacity": 400000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6723,12 +8119,25 @@
             "weight": 225846,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 666347,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 455683.201
+          }
         ]
       },
       {
         "macro": "cluster_419_sector001_macro",
         "code": "JZA-942",
-        "owner": "teladi"
+        "owner": "teladi",
+        "knownto": "player"
       },
       {
         "macro": "cluster_01_sector002_macro",
@@ -6739,6 +8148,17 @@
             "resource": "ore",
             "weight": 130248,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 442030,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6752,6 +8172,18 @@
             "weight": 101124,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1000000,
+            "capacity": 1000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 373999.201
+          }
         ]
       },
       {
@@ -6763,6 +8195,17 @@
             "resource": "ore",
             "weight": 1155510,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 129601,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6777,6 +8220,16 @@
             "weight": 250104,
             "fields": 6
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 683811,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6788,6 +8241,17 @@
             "resource": "ore",
             "weight": 564768,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 668655,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6801,17 +8265,31 @@
             "weight": 72246,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 2000000,
+            "capacity": 2000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 591911.834
+          }
         ]
       },
       {
         "macro": "cluster_108_sector002_macro",
         "code": "ZXK-103",
-        "owner": "terran"
+        "owner": "terran",
+        "knownto": "player"
       },
       {
         "macro": "cluster_108_sector001_macro",
         "code": "FIU-729",
-        "owner": "terran"
+        "owner": "terran",
+        "knownto": "player"
       },
       {
         "macro": "cluster_25_sector002_macro",
@@ -6822,6 +8300,17 @@
             "resource": "ore",
             "weight": 564768,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1817913,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6836,6 +8325,17 @@
             "weight": 250104,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1761978,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6847,6 +8347,18 @@
             "resource": "ore",
             "weight": 22770,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 125935,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 545865.417
           }
         ]
       },
@@ -6865,6 +8377,18 @@
             "weight": 7143582,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 2000000,
+            "capacity": 2000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 448148.516
+          }
         ]
       },
       {
@@ -6876,6 +8400,16 @@
             "resource": "ore",
             "weight": 21248808,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 557772,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6889,6 +8423,17 @@
             "weight": 1568610,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 65531,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6900,6 +8445,16 @@
             "resource": "ore",
             "weight": 1017720,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 12229,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6913,12 +8468,23 @@
             "weight": 12301986,
             "fields": 6
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ice",
+            "areas": 1,
+            "current": 702045,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
         "macro": "cluster_502_sector001_macro",
         "code": "XZA-595",
-        "owner": "loanshark"
+        "owner": "loanshark",
+        "knownto": "player"
       },
       {
         "macro": "cluster_17_sector001_macro",
@@ -6929,6 +8495,17 @@
             "resource": "ore",
             "weight": 25132740,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1585253,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6942,12 +8519,23 @@
             "weight": 15208152,
             "fields": 6
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 825489,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
         "macro": "cluster_424_sector001_macro",
         "code": "QWB-651",
-        "owner": "paranid"
+        "owner": "paranid",
+        "knownto": "player"
       },
       {
         "macro": "cluster_407_sector001_macro",
@@ -6965,6 +8553,17 @@
             "weight": 35999448,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1150904,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -6976,6 +8575,16 @@
             "resource": "ore",
             "weight": 163320,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 894060,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -6989,6 +8598,18 @@
             "weight": 5425656,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 849605,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 82960.933
+          }
         ]
       },
       {
@@ -7000,6 +8621,16 @@
             "resource": "ore",
             "weight": 605550,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 221904,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -7013,6 +8644,16 @@
             "weight": 1639458,
             "fields": 6
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 954288,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -7024,6 +8665,18 @@
             "resource": "ore",
             "weight": 48096,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 398664,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 87151.521
           }
         ]
       },
@@ -7037,6 +8690,17 @@
             "weight": 8193420,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 305388,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -7048,6 +8712,17 @@
             "resource": "ore",
             "weight": 7143582,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1918634,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 589385.322
           }
         ]
       },
@@ -7061,6 +8736,18 @@
             "weight": 4034022,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 2,
+            "current": 376118,
+            "capacity": 400000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 398468.833
+          }
         ]
       },
       {
@@ -7071,7 +8758,8 @@
       {
         "macro": "cluster_22_sector001_macro",
         "code": "TLW-214",
-        "owner": "paranid"
+        "owner": "paranid",
+        "knownto": "player"
       },
       {
         "macro": "cluster_422_sector001_macro",
@@ -7083,12 +8771,25 @@
             "weight": 1130460,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 819728,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 441740.756
+          }
         ]
       },
       {
         "macro": "cluster_603_sector001_macro",
         "code": "BZY-414",
-        "owner": "boron"
+        "owner": "boron",
+        "knownto": "player"
       },
       {
         "macro": "cluster_421_sector001_macro",
@@ -7101,12 +8802,23 @@
             "weight": 73314,
             "fields": 6
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "rawscrap",
+            "areas": 1,
+            "current": 153305,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
         "macro": "cluster_107_sector001_macro",
         "code": "VSK-864",
-        "owner": "terran"
+        "owner": "terran",
+        "knownto": "player"
       },
       {
         "macro": "cluster_609_sector001_macro",
@@ -7117,6 +8829,18 @@
             "resource": "ore",
             "weight": 7143582,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 903750,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 572548.653
           }
         ]
       },
@@ -7130,12 +8854,24 @@
             "weight": 142140,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 6794,
+            "capacity": 50000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
         "macro": "cluster_34_sector001_macro",
         "code": "YNV-655",
-        "owner": "teladi"
+        "owner": "teladi",
+        "knownto": "player"
       },
       {
         "macro": "cluster_411_sector001_macro",
@@ -7146,6 +8882,17 @@
             "resource": "ore",
             "weight": 957660,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 909496,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 395789.922
           }
         ]
       },
@@ -7159,6 +8906,18 @@
             "weight": 92022,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 385030,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 255619.788
+          }
         ]
       },
       {
@@ -7170,6 +8929,18 @@
             "resource": "ore",
             "weight": 49068,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 184820,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 227396.266
           }
         ]
       },
@@ -7183,12 +8954,24 @@
             "weight": 4611216,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 130446,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
         "macro": "cluster_23_sector001_macro",
         "code": "QWA-762",
-        "owner": "paranid"
+        "owner": "paranid",
+        "knownto": "player"
       },
       {
         "macro": "cluster_413_sector001_macro",
@@ -7199,6 +8982,16 @@
             "resource": "ice",
             "weight": 15358692,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ice",
+            "areas": 1,
+            "current": 364096,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -7212,12 +9005,24 @@
             "weight": 7143582,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 664818,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
         "macro": "cluster_14_sector001_macro",
         "code": "JNC-937",
-        "owner": "argon"
+        "owner": "argon",
+        "knownto": "player"
       },
       {
         "macro": "cluster_100_sector001_macro",
@@ -7229,12 +9034,25 @@
             "weight": 27993894,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1844609,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 498455.367
+          }
         ]
       },
       {
         "macro": "cluster_115_sector001_macro",
         "code": "LMO-149",
-        "owner": "pioneers"
+        "owner": "pioneers",
+        "knownto": "player"
       },
       {
         "macro": "cluster_11_sector001_macro",
@@ -7245,6 +9063,18 @@
             "resource": "ice",
             "weight": 29448,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ice",
+            "areas": 1,
+            "current": 968642,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 418548.39
           }
         ]
       },
@@ -7258,12 +9088,25 @@
             "weight": 168216,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 281669,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 522058.449
+          }
         ]
       },
       {
         "macro": "cluster_29_sector001_macro",
         "code": "IHQ-756",
-        "owner": "hatikvah"
+        "owner": "hatikvah",
+        "knownto": "player"
       },
       {
         "macro": "cluster_28_sector001_macro",
@@ -7274,6 +9117,17 @@
             "resource": "ore",
             "weight": 349776,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 367981,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -7287,6 +9141,17 @@
             "weight": 190332,
             "fields": 6
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 583506,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 497754.56
+          }
         ]
       },
       {
@@ -7298,6 +9163,17 @@
             "resource": "ore",
             "weight": 459960,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 135160,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -7311,6 +9187,17 @@
             "weight": 7143582,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 700143,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -7322,6 +9209,17 @@
             "resource": "ore",
             "weight": 1124880,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1000000,
+            "capacity": 1000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 492161.743
           }
         ]
       },
@@ -7335,6 +9233,18 @@
             "weight": 1795308,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 976936,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 306186.938
+          }
         ]
       },
       {
@@ -7346,6 +9256,16 @@
             "resource": "ore",
             "weight": 1829544,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 141736,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -7359,6 +9279,16 @@
             "weight": 1606968,
             "fields": 6
           }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 270992,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -7370,6 +9300,18 @@
             "resource": "ore",
             "weight": 1705734,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1000000,
+            "capacity": 1000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 469255.018
           }
         ]
       },
@@ -7383,12 +9325,24 @@
             "weight": 5459196,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "rawscrap",
+            "areas": 1,
+            "current": 953393,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
         "macro": "cluster_09_sector001_macro",
         "code": "LKG-154",
-        "owner": "teladi"
+        "owner": "teladi",
+        "knownto": "player"
       },
       {
         "macro": "cluster_401_sector001_macro",
@@ -7400,6 +9354,17 @@
             "resource": "ore",
             "weight": 1049646,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 776021,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -7413,6 +9378,17 @@
             "weight": 2225658,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 995366,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -7425,17 +9401,31 @@
             "weight": 16871574,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1000000,
+            "capacity": 1000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 184148.962
+          }
         ]
       },
       {
         "macro": "cluster_39_sector001_macro",
         "code": "LEQ-714",
-        "owner": "teladi"
+        "owner": "teladi",
+        "knownto": "player"
       },
       {
         "macro": "cluster_10_sector001_macro",
         "code": "XDT-153",
-        "owner": "paranid"
+        "owner": "paranid",
+        "knownto": "player"
       },
       {
         "macro": "cluster_708_sector001_macro",
@@ -7446,6 +9436,16 @@
             "resource": "ore",
             "weight": 505332,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 4396,
+            "capacity": 50000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -7458,6 +9458,17 @@
             "resource": "ore",
             "weight": 3609990,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 586346,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -7472,6 +9483,17 @@
             "weight": 1176636,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 843235,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -7483,6 +9505,16 @@
             "resource": "ore",
             "weight": 7584,
             "fields": 6
+          }
+        ],
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 26755,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -7496,12 +9528,25 @@
             "weight": 1176396,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1000000,
+            "capacity": 1000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 77343.061
+          }
         ]
       },
       {
         "macro": "cluster_714_sector001_macro",
         "code": "GVV-356",
-        "owner": "holyorder"
+        "owner": "holyorder",
+        "knownto": "player"
       },
       {
         "macro": "cluster_45_sector001_macro",
@@ -7512,6 +9557,17 @@
             "resource": "ore",
             "weight": 8939238,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 31403,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -7525,6 +9581,17 @@
             "weight": 89880,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 996272,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
@@ -7537,12 +9604,25 @@
             "weight": 5856,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 12739,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 404720.363
+          }
         ]
       },
       {
         "macro": "cluster_06_sector002_macro",
         "code": "EPS-915",
-        "owner": "argon"
+        "owner": "argon",
+        "knownto": "player"
       },
       {
         "macro": "cluster_722_sector001_macro",
@@ -7553,6 +9633,17 @@
             "resource": "ore",
             "weight": 433338,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 847259,
+            "capacity": 1000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
           }
         ]
       },
@@ -7567,6 +9658,18 @@
             "weight": 496014,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 1000000,
+            "capacity": 1000000,
+            "at_capacity_areas": 1,
+            "unknown_cap_areas": 0,
+            "last_relocation": 546213.479
+          }
         ]
       },
       {
@@ -7579,22 +9682,36 @@
             "weight": 2651616,
             "fields": 6
           }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 911994,
+            "capacity": 2000000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0
+          }
         ]
       },
       {
         "macro": "cluster_04_sector002_macro",
         "code": "UVJ-264",
-        "owner": "ownerless"
+        "owner": "ownerless",
+        "knownto": "player"
       },
       {
         "macro": "cluster_109_sector001_macro",
         "code": "QFI-362",
-        "owner": "terran"
+        "owner": "terran",
+        "knownto": "player"
       },
       {
         "macro": "cluster_400_sector001_macro",
         "code": "EUO-121",
-        "owner": "split"
+        "owner": "split",
+        "knownto": "player"
       },
       {
         "macro": "cluster_15_sector001_macro",
@@ -7605,6 +9722,18 @@
             "resource": "ice",
             "weight": 4248,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ice",
+            "areas": 1,
+            "current": 50515,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 358285.121
           }
         ]
       },
@@ -7617,6 +9746,18 @@
             "resource": "ore",
             "weight": 5202,
             "fields": 6
+          }
+        ],
+        "knownto": "player",
+        "resource_areas": [
+          {
+            "resource": "ore",
+            "areas": 1,
+            "current": 123886,
+            "capacity": 200000,
+            "at_capacity_areas": 0,
+            "unknown_cap_areas": 0,
+            "last_relocation": 449608.091
           }
         ]
       }
@@ -8692,6 +10833,2202 @@
       "research_teleportation_range_03",
       "research_mod_ship_mk2",
       "research_mod_shield_mk2"
+    ],
+    "logbook": [
+      {
+        "time": 128.116,
+        "category": "tips",
+        "title": "Tip",
+        "text": "To learn about missions and other activities, open the 'Tutorials and Help' menu with H and select a tutorial."
+      },
+      {
+        "time": 213.979,
+        "category": "tips",
+        "title": "Tip",
+        "text": "Inventory items are small things you carry with you whereas cargo is stored in your ships."
+      },
+      {
+        "time": 268.55,
+        "category": "tips",
+        "title": "Tip",
+        "text": "Request docking permission using the ship menu (+) or by pressing ."
+      },
+      {
+        "time": 579.594,
+        "category": "missions",
+        "title": "Escaping the Clutches of the Ministry of Finance",
+        "text": "You managed to escape the prison station, together with the Axiom. As the next step, you are to be introduced to someone called 'the Maestro', who is interested in offering you a job.",
+        "faction": "{1021,1202}"
+      },
+      {
+        "time": 1248.776,
+        "title": "Reputation gained",
+        "text": "Reason: Trade Completed\nCurrent reputation: 0",
+        "faction": "{20203,901}"
+      },
+      {
+        "time": 1256.061,
+        "category": "missions",
+        "title": "Contraband delivered",
+        "text": "As a first test of your resolve, and familiarity with illicit activity, the Maestro had you deliver Spaceweed on behalf of the Empyrean Curs.",
+        "faction": "{1021,1202}"
+      },
+      {
+        "time": 1770.927,
+        "category": "tips",
+        "title": "Tip",
+        "text": "Press + to start matching the speed of your current target."
+      },
+      {
+        "time": 2385.212,
+        "category": "tips",
+        "title": "Tip",
+        "text": "Inventory items are small things you carry with you whereas cargo is stored in your ships."
+      },
+      {
+        "time": 2950.598,
+        "category": "tips",
+        "title": "Tip",
+        "text": "There is a Signal Leak nearby, which could contain a hidden mission offer. To learn more about this activity, open the 'Tutorials and Help' menu with H and select the 'Ship Modes' tutorial."
+      },
+      {
+        "time": 2978.118,
+        "category": "missions",
+        "title": "Favours Amongst Friends",
+        "text": "Mission accepted.",
+        "faction": "{20203,601}",
+        "entity": "Tissmaneos Yuyamados Trantaeos VIII"
+      },
+      {
+        "time": 591463.791,
+        "title": "Police Interdiction",
+        "text": "Crane E (Gas) VDV-749 in Argon Prime\nOrdered by Argon Federation police to stop and be inspected.\nResponse: Comply",
+        "faction": "{20203,201}"
+      },
+      {
+        "time": 591466,
+        "title": "Reputation gained",
+        "text": "Reason: Trade Completed\nCurrent reputation: 23",
+        "faction": "{20203,2901}"
+      },
+      {
+        "time": 591490.367,
+        "title": "Reputation gained",
+        "text": "Reason: Trade Completed\nCurrent reputation: 21",
+        "faction": "{20203,501}"
+      },
+      {
+        "time": 591516.467,
+        "title": "Reputation gained",
+        "text": "Reason: Trade Completed\nCurrent reputation: 17",
+        "faction": "{20203,601}"
+      },
+      {
+        "time": 591522.991,
+        "title": "Reputation gained",
+        "text": "Reason: Trade Completed\nCurrent reputation: 21",
+        "faction": "{20203,201}"
+      },
+      {
+        "time": 591583.671,
+        "category": "upkeep",
+        "title": "The account for Segaris High Tech Factory II in Segaris has dropped to 13,884,074 Credits.",
+        "component": "[0x44326]"
+      },
+      {
+        "time": 591603.08,
+        "title": "Pirate Harassment",
+        "text": "Mercury Vanguard NTE-299 in Grand Exchange III\nAccosted by Teladi Company pirate ship\nTEL Pillager Minotaur Raider MKI-506.\nResponse: Escape and deploy laser towers",
+        "faction": "{20203,601}"
+      },
+      {
+        "time": 591673.946,
+        "category": "upkeep",
+        "title": "The account for Eighteen Billion Everything Factory in Eighteen Billion has dropped to 9,445,395 Credits.",
+        "component": "[0x1d0e0]"
+      },
+      {
+        "time": 591693.128,
+        "title": "Police Interdiction",
+        "text": "Crane E (Gas) ZGI-284 in Argon Prime\nOrdered by Argon Federation police to stop and be inspected.\nResponse: Comply",
+        "faction": "{20203,201}"
+      },
+      {
+        "time": 591694.728,
+        "category": "upkeep",
+        "title": "The account for Argon Prime Everything Factory in Argon Prime has dropped to 15,965,101 Credits.",
+        "component": "[0x7cd3d]"
+      }
+    ],
+    "logbook_seen": true,
+    "stats": {
+      "accelerators_discovered": 40,
+      "accelerators_traversed": 60,
+      "adsigns_destroyed": 0,
+      "anomalies_discovered": 22,
+      "anomalies_traversed": 7,
+      "boarding_attempts": 0,
+      "bullets_fired": 83989,
+      "bullets_hit": 60984,
+      "bullets_hit_percent": 72.6095,
+      "bullets_per_hour": 510,
+      "capships_destroyed": 0,
+      "clothing_mods_installed": 0,
+      "clusters_discovered": 96,
+      "commissions_unlocked": 32,
+      "countermeasures_launched": 0,
+      "crates_opened": 2,
+      "diplomacy_actions_completed": 10,
+      "diplomacy_actions_failed": 0,
+      "diplomacy_agents_hired": 1,
+      "diplomacy_agents_lost": 0,
+      "diplomacy_event_influenced": 0,
+      "diplomacy_event_instigated": 0,
+      "discounts_unlocked": 22,
+      "distance_autopilot": 4835235.308,
+      "distance_local_highways": 27580.098,
+      "distance_space": 101269.359,
+      "distance_superhighways": 4922019.874,
+      "distance_walked": 17108.615,
+      "drones_launched": 0,
+      "drops_collected": 1082,
+      "engine_mods_installed": 1,
+      "escort_missions_completed": 0,
+      "fight_rank": 15,
+      "fight_score": 581,
+      "gates_discovered": 196,
+      "gates_traversed": 573,
+      "illegal_drops_collected": 162,
+      "khaak_ships_destroyed": 28,
+      "lasertowers_launched": 0,
+      "lockboxes_opened": 0,
+      "max_faction_relation": 23,
+      "mines_launched": 5,
+      "missiles_fired": 0,
+      "missiles_hit": 201,
+      "missiles_hit_percent": 0,
+      "missiles_per_hour": 0,
+      "missions_accepted": 11,
+      "missions_completed": 9,
+      "modules_destroyed": 35,
+      "money_player": 5492825,
+      "navbeacons_launched": 7,
+      "objects_recycled": 0,
+      "paint_mods_installed": 0,
+      "passenger_missions_completed": 0,
+      "pilots_bailed": 5,
+      "resourceprobes_launched": 0,
+      "satellites_launched": 11,
+      "savegames_loaded": 40,
+      "sectors_discovered": 112,
+      "shield_mods_installed": 0,
+      "ship_mods_installed": 2,
+      "ships_boarded": 0,
+      "ships_claimed": 2,
+      "ships_destroyed": 172,
+      "ships_owned": 189,
+      "staff_hired": 0,
+      "station_modules_constructed": 1128,
+      "stations_constructed": 11,
+      "stations_owned": 12,
+      "terraforming_complications_suffered": 0,
+      "terraforming_delivery_drones_built": 0,
+      "terraforming_delivery_drones_lost": 0,
+      "terraforming_expenses": 0,
+      "terraforming_missions_completed": 0,
+      "terraforming_payout": 0,
+      "terraforming_personnel_trained_in_groups": 0,
+      "terraforming_personnel_trained_individually": 0,
+      "terraforming_projects_completed": 0,
+      "terraforming_projects_failed": 0,
+      "time_autopilot": 34487.525,
+      "time_boosting": 1903.544,
+      "time_local_highways": 4381.799,
+      "time_mode_scan": 8334.212,
+      "time_mode_scan_longrange": 2176.791,
+      "time_mode_seta": 422510.522,
+      "time_mode_travel": 33430.88,
+      "time_playership": 426892.897,
+      "time_seta_saved": 352039.282,
+      "time_spacesuit": 9652.45,
+      "time_superhighways": 174.486,
+      "time_total": 591711.419,
+      "trade_rank": 20,
+      "trade_score": 410860,
+      "trade_value": 2755366881,
+      "trades_executed": 40167,
+      "turrets_destroyed": 12,
+      "venture_missions_completed": 0,
+      "venture_ships_returned": 0,
+      "venture_ships_sent": 0,
+      "visitor_ships_destroyed": 0,
+      "visitor_ships_encountered": 0,
+      "weapon_mods_installed": 0,
+      "xenon_ships_destroyed": 29
+    },
+    "stats_seen": true,
+    "mission_offers": [
+      {
+        "id": "627187",
+        "name": "14) Boarding Ships",
+        "description": "Boarding large ships.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627227",
+        "name": "13) Capturing Ships",
+        "description": "Capturing small ships.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627267",
+        "name": "12) Crew Management",
+        "description": "Assigning crew and pilots to ships.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627300",
+        "name": " 5) Item deployment",
+        "description": "Deploying satellites and mines.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627331",
+        "name": " 2) Flight Basics",
+        "description": "Learn the basics of operating a ship.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627445",
+        "name": " 1) Joystick, HOTAS and Gamepad Mapping",
+        "description": "Customising controls for different input devices.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627476",
+        "name": " 8) Map: Basic usage",
+        "description": "Learn the basics of operating the map.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627510",
+        "name": " 9) Map: Ships and squads usage",
+        "description": "Commanding ships using the map.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627549",
+        "name": " 4) Mission Management",
+        "description": "Managing active missions, briefings and objectives.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627588",
+        "name": "10) Map: Trading",
+        "description": "Remote trading and finding good buy and sell offers.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627629",
+        "name": "16) Mining and Crystals",
+        "description": "Obtaining resources from asteroids.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627685",
+        "name": " 3) Ship Modes",
+        "description": "Learn the basics of ship modes, including remote scanning and the travel drive.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627728",
+        "name": " 6) Platform Tutorial",
+        "description": "Learn the basics of docking, crafting and the encyclopedia.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627774",
+        "name": "17) Fleet resupply",
+        "description": "Tutorial to resupply your fleet.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627806",
+        "name": " 7) Spacesuit usage",
+        "description": "Using spacesuit and items.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627845",
+        "name": "11) Stations: Building",
+        "description": "Reserving your plot, building and extending stations.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "627916",
+        "name": "15) Shipyards",
+        "description": "Tutorial to help construct your first shipyard.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      },
+      {
+        "id": "635067",
+        "name": "Holy Order vs. Paranid",
+        "description": "The so-called Godrealm of the Paranid name us heretics, but it is they who betray our beliefs and our principles. They are weak, and they must be crushed. It is simply a matter of time before we know victory against them, but we still seek brave and strong warriors to join our fight and share in our righteous glory! Praise be to the true Pontifex!",
+        "faction": "holyorder",
+        "group": "holyorder_war_paranid",
+        "type": "fight",
+        "level": "trivial"
+      },
+      {
+        "id": "634887",
+        "name": "Argon Vs. Xenon",
+        "description": "Due to our close proximity to Xenon space, we are looking for volunteers help secure our borders as well as repel any Xenon incursions. We have a wide variety of tasks to assign so whatever your skills do not hesitate to sign up!",
+        "faction": "argon",
+        "group": "argon_war_xenon",
+        "type": "fight",
+        "level": "trivial"
+      },
+      {
+        "id": "634932",
+        "name": "Argon Vs. Holy Order",
+        "description": "The Holy Order, an offshoot faction of the Paranid Empire, continues to test our borders and those of our allies. These 'heretics', as described by the Godrealm of the Paranid, are being pushed from all sides with no allies to speak of. We are looking for trusted friends of the Argon Federation to help keep them in check.",
+        "faction": "argon",
+        "group": "argon_war_holyorder",
+        "type": "fight",
+        "level": "trivial"
+      },
+      {
+        "id": "635022",
+        "name": "Holy Order vs. Argon",
+        "description": "In its infinite stupidity, the Argon Federation has sided with the weak and pathetic Godrealm of the Paranid and have joined in their fight against us. The fools have made a grave error in judgement. We seek a brave and strong warrior to join our fight and show those that stand against us that they will know no victory.",
+        "faction": "holyorder",
+        "group": "holyorder_war_argon",
+        "type": "fight",
+        "level": "trivial"
+      },
+      {
+        "id": "634977",
+        "name": "The Righteous Paranid Empire Vs. the 'Heretical Order'",
+        "description": "Our burning holy light continues to grow with each passing day. We find ourselves tested with our own brethren being led astray by their own hubris. While we hope to bring a number of them back into the fold, their 'governing' leaders wish them to continue down this path of blasphemy and destruction. We seek to uplift those willing to aid the Paranid Empire, so that they can bathe in its glory. Should you have faith in your abilities, we are willing to listen to your pleas.",
+        "faction": "paranid",
+        "group": "paranid_war_holyorder",
+        "type": "fight",
+        "level": "trivial"
+      },
+      {
+        "id": "632746",
+        "name": "Split Vs. Argon",
+        "description": "Wretched Argon Federation refuse to back down. Their insistence on opposing subjugation can only be met with open war. Split are looking for capable individuals to aid with Argon annihilation. Reinforce borders. Lead attacks on their turf. Split can offer a variety of duties for you to tend to!",
+        "faction": "split",
+        "group": "split_war_argon",
+        "type": "fight",
+        "level": "trivial"
+      },
+      {
+        "id": "635367",
+        "name": "Terran Vs. Xenon",
+        "description": "The Community of Planets' irresponsible inaction in containing the Xenon has once again demonstrated that Sol can only be safe if the Terran Protectorate takes a proactive stance. We request that any able citizen of the Sol system reports to their designated representative. Furthermore, we also welcome any individual from outside Sol, as long as they prove to be capable.",
+        "faction": "terran",
+        "group": "ter_war_xenon",
+        "type": "fight",
+        "level": "trivial"
+      },
+      {
+        "id": "11085",
+        "name": "Guerilla Research and Development",
+        "description": "Oh hey, you![\\012]You look like someone resourceful, would you mind helping me out? Until recently, I was employed as head of Research and Development at Jinko-Tekina Technologies, the industry-leading ship manufacturing company. While working on their ship designs, in my free time and using company resources, I also pioneered a new kind of experimental on-board computer: a sentient machine, able not only to interpret information, but also to predict it, and to learn. A computer able to feel empathy and appreciate arts, to be self-aware and sapient.[\\012]Think of the effects such a computer, with a personality, could have on the crew, too. No more need for dangerous missions to be manned. Lone pilots would have someone they could talk to on those long delivery runs... It would have changed everything. But alas, my superiors grew restless when progress temporarily stalled on my other projects, and things escalated when they became aware of what I was pursuing. They didn't believe I could actually pull it off, but still, they didn't want their brand to be associated with A.I. Research, and some board members even became scared, and voiced ethical concerns. How very narrow-minded of them. I was this close to success, but they fired me, and in doing so cut off all of my funding.[\\012]However, I was able to smuggle out most of my research and various company resources with me when I left. Now, stranded on this wharf, I intend to finish what I started, and change the universe forever, for the better.[\\012]I just need some technical parts to finish my work, but I can't acquire them myself for fear of leaving my project unguarded. They are fairly common processing units, you should be able to find them attached to... well, Xenon ships. If you bring me what I need, not only will I pay you for your work, but you'll be remembered in history as the person who made it all happen!",
+        "faction": "civilian",
+        "type": "deliver",
+        "level": "easy",
+        "component": "[0x1e1ba]",
+        "reward": 43889
+      }
+    ],
+    "missions": [
+      {
+        "id": "629083",
+        "name": "Historical Logs",
+        "description": "I have an insatiable appetite for the history of our civilisations, especially that of the Argon-Xenon conflict. Should you find any historical accounts, I would be very happy to read them.",
+        "faction": "civilian",
+        "type": "find",
+        "level": "hard",
+        "time": 22171.477
+      },
+      {
+        "id": "14957",
+        "name": "High-Profile Military Target(s)",
+        "description": "A number of enemy ships have been spotted recently that give us cause for concern. The reports have all been from civilians, and so don't give us enough information to track down the ships, but we believe we have accurate descriptions of what the ships look like. We are looking for someone willing to remove these ships should you come accross them on your travels.[\\012]Ship Specifications:[\\012]Xenon N[\\012][\\012]Note: the target signature has been loaded into your ship computer. While this mission is active, your ship computer will notify you whenever matches are detected in the vicinity. At the start of this mission, intelligence reported sightings of matching targets in the following location: Tharka's Cascade XV.",
+        "faction": "loanshark",
+        "type": "destroy",
+        "level": "medium",
+        "time": 42551.324,
+        "reward": 309170
+      },
+      {
+        "id": "614457",
+        "name": "Second Assistant",
+        "description": "The Segarian chief scientist has requested further assistance from you. To help the Segarians with Project Genesis, you are asked to report to an independent scientist by the name of Kuromanckami.",
+        "faction": "pioneers",
+        "group": "story_terraforming",
+        "type": "plot",
+        "level": "medium",
+        "reward_text": "A Colleague for an Expedition",
+        "time": 54436.095
+      },
+      {
+        "id": "13739",
+        "name": "Laser Tower Deployment",
+        "description": "We seek a contractor to deploy a number of laser towers around a potentially vulnerable station. While laser towers are commonly used as a deterrent, they have in the past turned the tide of battles when used effectively. In these uncertain times, we deem it fit to increase our military presence wherever possible.[\\012][\\012]Note: Procuring the required deployables is your responsibility. You can equip your ship with deployables on Wharfs, Shipyards and Equipment Docks. Their cost will be reimbursed through the mission reward after completion.",
+        "faction": "split",
+        "type": "drop",
+        "level": "medium",
+        "time": 80785.692,
+        "reward": 352800
+      },
+      {
+        "id": "618201",
+        "name": "Epilogue: Consequences",
+        "description": "You went for it! You stole the distribution module blueprints from right under the Twins' noses! With this module, and the knowledge of where you can procure more Protectyon, you can build up a rival trade empire in Avarice, and lower the prices significantly should you so choose. But of course the Northriver Company will not sit idly by. It appears they have put a price on your head, and the Syndicate is looking to collect. Though, if you handle this right, you can surely get them off your back again.",
+        "faction": "civilian",
+        "group": "story_thefan",
+        "type": "plot",
+        "level": "hard",
+        "reward_text": "Get the Vigor Syndicate off your back",
+        "time": 106645.605
+      },
+      {
+        "id": "620901",
+        "name": "A Demonstration of Power",
+        "description": "The Syndicate will not let up until you show them that you are a real danger if you are provoked to attack. Destroying a station crucial to their operations should do the trick!",
+        "faction": "player",
+        "group": "story_thefan",
+        "type": "plot",
+        "level": "veryhard",
+        "reward_text": "Intimidating the Vigor Syndicate",
+        "active": true,
+        "time": 106666.11
+      },
+      {
+        "id": "620886",
+        "name": "Reaching Out to the Enemy",
+        "description": "Show the Syndicate that the Northriver Company are not the only ones around these parts with deep pockets, and they might be persuaded to back off. Buying their indifference will probably not be cheap, though.",
+        "faction": "player",
+        "group": "story_thefan",
+        "type": "plot",
+        "level": "medium",
+        "reward_text": "Making Friends in Low Places",
+        "time": 106704.628
+      },
+      {
+        "id": "628144",
+        "name": "Assign subordinate",
+        "description": "Assign a trade ship to this station to help in the buying of resources and selling of products.",
+        "faction": "player",
+        "type": "upkeep_subordinates",
+        "time": 114333.854
+      },
+      {
+        "id": "628091",
+        "name": "Assign subordinate",
+        "description": "Assign a tug to this station to help in the collection of resources.",
+        "faction": "player",
+        "type": "upkeep_subordinates",
+        "time": 135284.176
+      },
+      {
+        "id": "628182",
+        "name": "Assign subordinate",
+        "description": "Assign a mining ship to this station to help in the collection of resources.",
+        "faction": "player",
+        "type": "upkeep_subordinates",
+        "time": 156353.975
+      },
+      {
+        "id": "628163",
+        "name": "Assign subordinate",
+        "description": "Assign a mining ship to this station to help in the collection of resources.",
+        "faction": "player",
+        "type": "upkeep_subordinates",
+        "time": 157200.453
+      },
+      {
+        "id": "632566",
+        "name": "Teladi Trade Guild",
+        "description": "The well known and respected Teladi Trade Guild is always looking for skilled and proven traders to bolster our ranks. You have caught our attention and we wish to extend this invitation to you. If you are interested, please meet with me.",
+        "faction": "teladi",
+        "group": "teladi_trade_guild",
+        "type": "fight",
+        "level": "trivial",
+        "time": 235592.524
+      },
+      {
+        "id": "598175",
+        "name": "The Queen's Herald",
+        "description": "The Queendom of Boron seeks to re-establish diplomatic relations with various governments in the Jump gate network. You are tasked with reaching out to various parties on the Queendom's behalf.",
+        "faction": "boron",
+        "group": "story_boron_herald",
+        "type": "plot",
+        "level": "medium",
+        "reward_text": "Diplomatic Arrangements",
+        "time": 380707.02
+      },
+      {
+        "id": "598906",
+        "name": "Hatikvah Arms Delivery",
+        "description": "The Queendom of Boron seeks to provide Boron combat ships to the Hatikvah Free League. Your task is to provide a first fleet, while the Queendom negotiates further shipments.[\\012][\\012]3x Mako[\\012] Equipment[\\012]   BOR S All-round Engine Mk1[\\012]   BOR S Phase Gun Mk1[\\012]   BOR S Phase Gun Mk1[\\012]   BOR S Shield Generator Mk1[\\012]   S Combat Thrusters Mk1[\\012]",
+        "faction": "boron",
+        "group": "story_boron_herald",
+        "type": "plot",
+        "level": "medium",
+        "reward_text": "Diplomatic Arrangements",
+        "time": 383663.193
+      },
+      {
+        "id": "599111",
+        "name": "Riptide Waters",
+        "description": "The Queendom of Boron seeks to help the Riptide Rakers of Avarice with water deliveries. You are tasked with delivering the first shipment. Be wary of potential adversaries.",
+        "faction": "boron",
+        "group": "story_boron_herald",
+        "type": "plot",
+        "level": "medium",
+        "reward_text": "Charitable Aid",
+        "time": 383663.193
+      },
+      {
+        "id": "599166",
+        "name": "Diplomatic Outpost in Teladi Space",
+        "description": "The Queendom of Boron seeks to establish a Diplomatic Outpost in order to stay in contact with the Teladi Company. You are tasked with initiating, overseeing and completing the construction of the new Boron station.[\\012][\\012]Destination: Eighteen Billion (at specified location)[\\012]Minimum plot size: 5 x 3 x 4 km[\\012]Required constructs: 1 x Boron 4M14S Luxury Dock Area, 1 x Boron 1-Dock Pier, 1 x Boron S Container Storage, 1 x Boron S Oasis, 1 x Boron Disc Defence Platform, 6 x Shield Generators",
+        "faction": "boron",
+        "group": "story_boron_herald",
+        "type": "plot",
+        "level": "medium",
+        "reward_text": "Boron Corvette",
+        "time": 383664.209
+      },
+      {
+        "id": "628239",
+        "name": "Assign subordinate",
+        "description": "Assign a mining ship to this station to help in the collection of resources.",
+        "faction": "player",
+        "type": "upkeep_subordinates",
+        "time": 410247.874
+      },
+      {
+        "id": "621613",
+        "name": "A Pirate's Trail",
+        "description": "Operative! We've recently made a breakthrough in our investigation and are in need of someone who's capable and determined enough to go down a particular rabbit hole. The main objective is to gather information, but judging by our intel, it would be prudent to attempt this task in an agile, yet generously armed military ship. You're about to hunt down a few pirates.",
+        "faction": "terran",
+        "group": "story_yaki",
+        "type": "plot",
+        "level": "medium",
+        "reward_text": "One Less Threat",
+        "time": 445824.711
+      },
+      {
+        "id": "611284",
+        "name": "Infiltrating Split Politics",
+        "description": "Dal Busta requested a meeting to share his insights on the Split.",
+        "faction": "player",
+        "group": "story_split",
+        "type": "plot",
+        "level": "easy",
+        "reward_text": "A Friend among the Split",
+        "time": 459919.847
+      },
+      {
+        "id": "628220",
+        "name": "Assign subordinate",
+        "description": "Assign a trade ship to this station to help in the buying of resources and selling of products.",
+        "faction": "player",
+        "type": "upkeep_subordinates",
+        "time": 460237.449
+      },
+      {
+        "id": "599853",
+        "name": "Covert Operations",
+        "description": "As expected, access to the server room is strictly limited. Our agents are already working hard on orchestrating a diversion and getting you access to that room. While they do that, we want you to run operations that will weaken the Argon Federation's position.",
+        "faction": "terran",
+        "group": "story_covert_operations",
+        "type": "plot",
+        "level": "medium",
+        "reward_text": "Furthering the Terran Agenda",
+        "time": 479780.933
+      },
+      {
+        "id": "600981",
+        "name": "Operation Draco",
+        "description": "For some time now, we have been dealing with some rather unsavoury characters outside the Sol system, with the explicit goal of applying pressure on the Argon Federation. Being a thorn in the Argon Federation's side, the Scale Plate Pact is being armed and partially financed by us. We want you to provide a fully supplied ship for them.[\\012][\\012]1x Minotaur Sentinel[\\012] Equipment[\\012]   ARG M Combat Engine Mk2[\\012]   ARG M Shield Generator Mk2[\\012]   M Combat Thrusters Mk2[\\012]   ARG M Bolt Turret Mk1[\\012]   M Pulse Laser Mk2[\\012] Ammunition[\\012]   20x Laser Tower Mk1[\\012]   10x Friend/Foe Mine[\\012][\\012] Wares[\\012]   10x Drone Components[\\012]   100x Missile Components[\\012]   20x Weapon Components[\\012][\\012]The Minotaur Sentinel can be ordered from the Antigone Republic wharf.",
+        "faction": "terran",
+        "group": "story_covert_operations",
+        "type": "plot",
+        "level": "medium",
+        "reward_text": "Furthering the Terran Agenda",
+        "time": 479785.241
+      },
+      {
+        "id": "628201",
+        "name": "Assign subordinate",
+        "description": "Assign a trade ship to this station to help in the buying of resources and selling of products.",
+        "faction": "player",
+        "type": "upkeep_subordinates",
+        "time": 480118.877
+      },
+      {
+        "id": "629294",
+        "name": "A Grand Experiment",
+        "description": "I must speak with you regarding an experiment I have devised. Please come and see me as soon as you can, so that I can explain it in detail.",
+        "faction": "civilian",
+        "type": "plot",
+        "level": "hard",
+        "time": 490892.564
+      },
+      {
+        "id": "606100",
+        "name": "Opportunity of a Lifetime",
+        "description": "It's come to my ears that you're on good standing with both the False Godrealm and the Heretic Order, as they affectionately call each other. Well, it turns out that by not choosing a side, you might have created the opportunity for both of us to make history! Come and find me at our Headquarters.[\\012][\\012]- Dal Busta",
+        "faction": "player",
+        "group": "story_paranid",
+        "type": "plot",
+        "level": "medium",
+        "reward_text": "A Fool-Proof Plan",
+        "time": 525779.522
+      },
+      {
+        "id": "589427",
+        "name": "Promotion to: Servant of the Order",
+        "description": "You are being promoted by: Holy Order of the Pontifex. They'd like to honour the occasion by inviting you to talk with their representative at their headquarters.",
+        "faction": "holyorder",
+        "type": "talkto",
+        "level": "trivial",
+        "reward_text": "Rewards associated with the rank of: Servant of the Order",
+        "time": 533219.176
+      },
+      {
+        "id": "651866",
+        "name": "Promotion to: Honour Guard of Xaar",
+        "description": "You are being promoted by: Godrealm of the Paranid. They'd like to honour the occasion by inviting you to talk with their representative at their headquarters.",
+        "faction": "paranid",
+        "type": "talkto",
+        "level": "trivial",
+        "reward_text": "Rewards associated with the rank of: Honour Guard of Xaar",
+        "time": 552255.907
+      }
+    ],
+    "missions_seen": true,
+    "licences": [
+      {
+        "faction": "pioneers",
+        "type": "capitalequipment"
+      },
+      {
+        "faction": "argon",
+        "type": "capitalequipment"
+      },
+      {
+        "faction": "antigone",
+        "type": "capitalequipment"
+      },
+      {
+        "faction": "pioneers",
+        "type": "capitalship"
+      },
+      {
+        "faction": "argon",
+        "type": "capitalship"
+      },
+      {
+        "faction": "antigone",
+        "type": "capitalship"
+      },
+      {
+        "faction": "antigone",
+        "type": "ceremonyfriend"
+      },
+      {
+        "faction": "scavenger",
+        "type": "ceremonyfriend"
+      },
+      {
+        "faction": "argon",
+        "type": "ceremonyfriend"
+      },
+      {
+        "faction": "pioneers",
+        "type": "ceremonyfriend"
+      },
+      {
+        "faction": "split",
+        "type": "ceremonyfriend"
+      },
+      {
+        "faction": "holyorder",
+        "type": "ceremonyfriend"
+      },
+      {
+        "faction": "paranid",
+        "type": "ceremonyfriend"
+      },
+      {
+        "faction": "terran",
+        "type": "ceremonyfriend"
+      },
+      {
+        "faction": "boron",
+        "type": "ceremonyfriend"
+      },
+      {
+        "faction": "teladi",
+        "type": "ceremonyfriend"
+      },
+      {
+        "faction": "pioneers",
+        "type": "ceremonyally"
+      },
+      {
+        "faction": "argon",
+        "type": "ceremonyally"
+      },
+      {
+        "faction": "antigone",
+        "type": "ceremonyally"
+      },
+      {
+        "faction": "alliance",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "antigone",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "argon",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "buccaneers",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "hatikvah",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "holyorder",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "paranid",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "scaleplate",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "teladi",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "trinity",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "court",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "freesplit",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "pioneers",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "terran",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "scavenger",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "boron",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "kaori",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "split",
+        "type": "generaluseequipment"
+      },
+      {
+        "faction": "alliance",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "antigone",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "argon",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "buccaneers",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "hatikvah",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "holyorder",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "paranid",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "scaleplate",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "teladi",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "trinity",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "court",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "freesplit",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "pioneers",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "scavenger",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "boron",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "split",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "terran",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "antigone",
+        "type": "militaryequipment"
+      },
+      {
+        "faction": "scavenger",
+        "type": "militaryequipment"
+      },
+      {
+        "faction": "argon",
+        "type": "militaryequipment"
+      },
+      {
+        "faction": "pioneers",
+        "type": "militaryequipment"
+      },
+      {
+        "faction": "split",
+        "type": "militaryequipment"
+      },
+      {
+        "faction": "holyorder",
+        "type": "militaryequipment"
+      },
+      {
+        "faction": "paranid",
+        "type": "militaryequipment"
+      },
+      {
+        "faction": "terran",
+        "type": "militaryequipment"
+      },
+      {
+        "faction": "boron",
+        "type": "militaryequipment"
+      },
+      {
+        "faction": "teladi",
+        "type": "militaryequipment"
+      },
+      {
+        "faction": "antigone",
+        "type": "militaryship"
+      },
+      {
+        "faction": "scavenger",
+        "type": "militaryship"
+      },
+      {
+        "faction": "argon",
+        "type": "militaryship"
+      },
+      {
+        "faction": "pioneers",
+        "type": "militaryship"
+      },
+      {
+        "faction": "split",
+        "type": "militaryship"
+      },
+      {
+        "faction": "holyorder",
+        "type": "militaryship"
+      },
+      {
+        "faction": "paranid",
+        "type": "militaryship"
+      },
+      {
+        "faction": "terran",
+        "type": "militaryship"
+      },
+      {
+        "faction": "boron",
+        "type": "militaryship"
+      },
+      {
+        "faction": "teladi",
+        "type": "militaryship"
+      },
+      {
+        "faction": "argon",
+        "type": "police"
+      },
+      {
+        "faction": "alliance",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "antigone",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "argon",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "buccaneers",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "hatikvah",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "holyorder",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "paranid",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "scaleplate",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "teladi",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "trinity",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "court",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "freesplit",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "pioneers",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "terran",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "scavenger",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "boron",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "split",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "antigone",
+        "type": "station_gen_intermediate"
+      },
+      {
+        "faction": "scavenger",
+        "type": "station_gen_intermediate"
+      },
+      {
+        "faction": "argon",
+        "type": "station_gen_intermediate"
+      },
+      {
+        "faction": "pioneers",
+        "type": "station_gen_intermediate"
+      },
+      {
+        "faction": "split",
+        "type": "station_gen_intermediate"
+      },
+      {
+        "faction": "holyorder",
+        "type": "station_gen_intermediate"
+      },
+      {
+        "faction": "paranid",
+        "type": "station_gen_intermediate"
+      },
+      {
+        "faction": "terran",
+        "type": "station_gen_intermediate"
+      },
+      {
+        "faction": "boron",
+        "type": "station_gen_intermediate"
+      },
+      {
+        "faction": "teladi",
+        "type": "station_gen_intermediate"
+      },
+      {
+        "faction": "pioneers",
+        "type": "station_gen_advanced"
+      },
+      {
+        "faction": "argon",
+        "type": "station_gen_advanced"
+      },
+      {
+        "faction": "antigone",
+        "type": "station_gen_advanced"
+      },
+      {
+        "faction": "pioneers",
+        "type": "station_equip_sm"
+      },
+      {
+        "faction": "argon",
+        "type": "station_equip_sm"
+      },
+      {
+        "faction": "antigone",
+        "type": "station_equip_sm"
+      },
+      {
+        "faction": "pioneers",
+        "type": "station_equip_lxl"
+      },
+      {
+        "faction": "argon",
+        "type": "station_equip_lxl"
+      },
+      {
+        "faction": "antigone",
+        "type": "station_equip_lxl"
+      },
+      {
+        "faction": "hatikvah",
+        "type": "station_illegal"
+      },
+      {
+        "faction": "scaleplate",
+        "type": "station_illegal"
+      },
+      {
+        "faction": "teladi",
+        "type": "station_illegal"
+      },
+      {
+        "faction": "argon",
+        "type": "subgroupfriend"
+      },
+      {
+        "faction": "teladi",
+        "type": "subgroupfriend"
+      },
+      {
+        "faction": "terran",
+        "type": "outercore_access"
+      },
+      {
+        "faction": "holyorder",
+        "type": "hyperion_access"
+      },
+      {
+        "faction": "ministry",
+        "type": "envoy_access"
+      },
+      {
+        "faction": "argon",
+        "type": "envoy_access"
+      }
+    ],
+    "boosters": [
+      {
+        "faction": "argon",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.127969,
+        "time": 591522.991
+      },
+      {
+        "faction": "argon",
+        "group": "discounts",
+        "target": "player",
+        "amount": 0.15,
+        "time": 587372.944
+      },
+      {
+        "faction": "scavenger",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.0307008,
+        "time": 47844.798
+      },
+      {
+        "faction": "scavenger",
+        "group": "discounts",
+        "target": "player",
+        "amount": 0.05,
+        "time": 587372.944
+      },
+      {
+        "faction": "antigone",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.141016,
+        "time": 590879.527
+      },
+      {
+        "faction": "antigone",
+        "group": "discounts",
+        "target": "player",
+        "amount": 0.15,
+        "time": 587372.944
+      },
+      {
+        "faction": "pioneers",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.229003,
+        "time": 591466
+      },
+      {
+        "faction": "pioneers",
+        "group": "discounts",
+        "target": "player",
+        "amount": 0.15,
+        "time": 587372.944
+      },
+      {
+        "faction": "split",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.0515023,
+        "time": 590777.852
+      },
+      {
+        "faction": "split",
+        "group": "discounts",
+        "target": "player",
+        "amount": 0.05,
+        "time": 587372.944
+      },
+      {
+        "faction": "alliance",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.009,
+        "time": 371562.66
+      },
+      {
+        "faction": "holyorder",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.127911,
+        "time": 591490.367
+      },
+      {
+        "faction": "holyorder",
+        "group": "discounts",
+        "target": "player",
+        "amount": 0.15,
+        "time": 587372.944
+      },
+      {
+        "faction": "ministry",
+        "group": "relations",
+        "target": "player",
+        "relation": -0.0208282,
+        "time": 577633.603
+      },
+      {
+        "faction": "loanshark",
+        "group": "relations",
+        "target": "player",
+        "relation": -0.32,
+        "time": 107562.526
+      },
+      {
+        "faction": "boron",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.038741,
+        "time": 590828.339
+      },
+      {
+        "faction": "boron",
+        "group": "discounts",
+        "target": "player",
+        "amount": 0.05,
+        "time": 587372.944
+      },
+      {
+        "faction": "paranid",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.106347,
+        "time": 589480.212
+      },
+      {
+        "faction": "paranid",
+        "group": "discounts",
+        "target": "player",
+        "amount": 0.15,
+        "time": 587372.944
+      },
+      {
+        "faction": "terran",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.03656,
+        "time": 479746.855
+      },
+      {
+        "faction": "terran",
+        "group": "discounts",
+        "target": "player",
+        "amount": 0.05,
+        "time": 587372.944
+      },
+      {
+        "faction": "teladi",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.0622658,
+        "time": 591516.467
+      },
+      {
+        "faction": "teladi",
+        "group": "discounts",
+        "target": "player",
+        "amount": 0.05,
+        "time": 587372.944
+      },
+      {
+        "faction": "hatikvah",
+        "group": "relations",
+        "target": "player",
+        "relation": 0.00202705,
+        "time": 588813.095
+      }
+    ],
+    "licences_seen": true,
+    "inventory": [
+      {
+        "ware": "weapon_gen_spacesuit_repairlaser_01_mk1",
+        "amount": 1
+      },
+      {
+        "ware": "software_scannerobjectmk3",
+        "amount": 2
+      },
+      {
+        "ware": "weapon_gen_spacesuit_laser_01_mk1",
+        "amount": 2
+      },
+      {
+        "ware": "inv_bandages",
+        "amount": 46
+      },
+      {
+        "ware": "inv_crystalbit",
+        "amount": 70
+      },
+      {
+        "ware": "engine_gen_spacesuit_01_mk2",
+        "amount": 2
+      },
+      {
+        "ware": "modpart_nividiumcrystallite",
+        "amount": 218
+      },
+      {
+        "ware": "modpart_nividiumoxide",
+        "amount": 256
+      },
+      {
+        "ware": "modpart_extendedfuelcontainer",
+        "amount": 197
+      },
+      {
+        "ware": "modpart_shipnanoweave_t1",
+        "amount": 48
+      },
+      {
+        "ware": "modpart_tuningsoftware",
+        "amount": 226
+      },
+      {
+        "ware": "inv_processing_panel_7A",
+        "amount": 228
+      },
+      {
+        "ware": "inv_decryptionmodule",
+        "amount": 160
+      },
+      {
+        "ware": "inv_advancedtargetingmodule",
+        "amount": 119
+      },
+      {
+        "ware": "inv_salvagedelectronics",
+        "amount": 30
+      },
+      {
+        "ware": "inv_sedative",
+        "amount": 53
+      },
+      {
+        "ware": "inv_produce",
+        "amount": 25
+      },
+      {
+        "ware": "inv_capacitor",
+        "amount": 38
+      },
+      {
+        "ware": "inv_processing_panel_8X",
+        "amount": 299
+      },
+      {
+        "ware": "inv_unstablecrystal",
+        "amount": 10
+      },
+      {
+        "ware": "inv_processing_panel_46B",
+        "amount": 6
+      },
+      {
+        "ware": "inv_snailshells",
+        "amount": 35
+      },
+      {
+        "ware": "inv_glowmalt",
+        "amount": 14
+      },
+      {
+        "ware": "inv_hallucinogenics",
+        "amount": 172
+      },
+      {
+        "ware": "inv_securecontainer",
+        "amount": 76
+      },
+      {
+        "ware": "inv_massompowder",
+        "amount": 20
+      },
+      {
+        "ware": "inv_datafragment",
+        "amount": 33
+      },
+      {
+        "ware": "inv_xenoinscriptions",
+        "amount": 12
+      },
+      {
+        "ware": "inv_lostfragment",
+        "amount": 40
+      },
+      {
+        "ware": "modpart_enginefuelinjector_t1",
+        "amount": 68
+      },
+      {
+        "ware": "inv_cahoonas",
+        "amount": 16
+      },
+      {
+        "ware": "inv_mixedfruit",
+        "amount": 23
+      },
+      {
+        "ware": "paintmod_0218",
+        "amount": 8
+      },
+      {
+        "ware": "paintmod_0288",
+        "amount": 8
+      },
+      {
+        "ware": "inv_agidevice_03",
+        "amount": 70
+      },
+      {
+        "ware": "inv_agidevice_01",
+        "amount": 146
+      },
+      {
+        "ware": "modpart_highenergycatalyst",
+        "amount": 275
+      },
+      {
+        "ware": "inv_spaceflyeggs",
+        "amount": 111
+      },
+      {
+        "ware": "inv_argnusteak",
+        "amount": 38
+      },
+      {
+        "ware": "modpart_weaponchamber_t1",
+        "amount": 42
+      },
+      {
+        "ware": "inv_securityslicer",
+        "amount": 11
+      },
+      {
+        "ware": "weapon_gen_spacesuit_demolition_01_mk1",
+        "amount": 2
+      },
+      {
+        "ware": "inv_aquaponicvegetable",
+        "amount": 13
+      },
+      {
+        "ware": "inv_seminar_management_0",
+        "amount": 3
+      },
+      {
+        "ware": "modpart_shieldgeneratorcoil_t1",
+        "amount": 50
+      },
+      {
+        "ware": "weapon_gen_spacesuit_laser_02_mk1",
+        "amount": 1
+      },
+      {
+        "ware": "inv_timewarp",
+        "amount": 1
+      },
+      {
+        "ware": "inv_neuralstimulator",
+        "amount": 5
+      },
+      {
+        "ware": "inv_seminar_piloting_0",
+        "amount": 1
+      },
+      {
+        "ware": "inv_remotedetonator",
+        "amount": 38
+      },
+      {
+        "ware": "inv_seminar_management_1",
+        "amount": 2
+      },
+      {
+        "ware": "inv_processing_panel_19L",
+        "amount": 7
+      },
+      {
+        "ware": "inv_interfaceunit",
+        "amount": 105
+      },
+      {
+        "ware": "inv_antimatter_injection_sensor",
+        "amount": 4
+      },
+      {
+        "ware": "inv_algaescrubber",
+        "amount": 60
+      },
+      {
+        "ware": "inv_rapidsandfilter",
+        "amount": 54
+      },
+      {
+        "ware": "inv_microgimble",
+        "amount": 78
+      },
+      {
+        "ware": "inv_herbicide",
+        "amount": 69
+      },
+      {
+        "ware": "inv_micromotor",
+        "amount": 30
+      },
+      {
+        "ware": "inv_carbonfilter",
+        "amount": 28
+      },
+      {
+        "ware": "inv_hydraulicpump",
+        "amount": 46
+      },
+      {
+        "ware": "inv_modulartrigger",
+        "amount": 183
+      },
+      {
+        "ware": "inv_agidevice_02",
+        "amount": 79
+      },
+      {
+        "ware": "inv_programmablefieldarray",
+        "amount": 18
+      },
+      {
+        "ware": "inv_damagedsingularityengine",
+        "amount": 9
+      },
+      {
+        "ware": "inv_charged_particle_regulator",
+        "amount": 2
+      },
+      {
+        "ware": "inv_research_blackbox",
+        "amount": 1
+      },
+      {
+        "ware": "inv_needle",
+        "amount": 31
+      },
+      {
+        "ware": "inv_rarespices",
+        "amount": 4
+      },
+      {
+        "ware": "inv_encrypted_report",
+        "amount": 1
+      },
+      {
+        "ware": "paintmod_0081",
+        "amount": 4
+      },
+      {
+        "ware": "inv_securitybypasssystem",
+        "amount": 9
+      },
+      {
+        "ware": "inv_crystal_02",
+        "amount": 2
+      },
+      {
+        "ware": "inv_crystal_03",
+        "amount": 1
+      },
+      {
+        "ware": "inv_securitydecryptionsystem",
+        "amount": 7
+      },
+      {
+        "ware": "inv_fluxcapacitor",
+        "amount": 12
+      },
+      {
+        "ware": "inv_seminar_piloting_1",
+        "amount": 4
+      },
+      {
+        "ware": "bomb_player_limpet_emp_01_mk1",
+        "amount": 8
+      },
+      {
+        "ware": "inv_encrypted_contract",
+        "amount": 1
+      },
+      {
+        "ware": "inv_unmarked_black_box",
+        "amount": 1
+      },
+      {
+        "ware": "paintmod_0185",
+        "amount": 9
+      },
+      {
+        "ware": "inv_processing_panel_12G",
+        "amount": 5
+      },
+      {
+        "ware": "inv_quantum_data_shard",
+        "amount": 2
+      },
+      {
+        "ware": "inv_crystalbinder",
+        "amount": 22
+      },
+      {
+        "ware": "modpart_weaponchamber_t2",
+        "amount": 2
+      },
+      {
+        "ware": "inv_kyondevice_03",
+        "amount": 1
+      },
+      {
+        "ware": "inv_magneticmaterial",
+        "amount": 7
+      },
+      {
+        "ware": "modpart_shipnanoweave_t3",
+        "amount": 1
+      }
+    ],
+    "inventory_seen": true,
+    "threat_components": [
+      {
+        "class": "ship_m",
+        "macro": "ship_xen_m_miner_solid_01_a_macro",
+        "code": "PCJ-200",
+        "owner": "xenon",
+        "knownto": "player",
+        "sector": "cluster_18_sector001_macro"
+      },
+      {
+        "class": "ship_m",
+        "macro": "ship_xen_m_miner_solid_01_a_macro",
+        "code": "WBV-475",
+        "owner": "xenon",
+        "knownto": "player",
+        "sector": "cluster_18_sector001_macro"
+      },
+      {
+        "class": "ship_m",
+        "macro": "ship_xen_m_miner_solid_01_a_macro",
+        "code": "UPC-962",
+        "owner": "xenon",
+        "knownto": "player",
+        "sector": "cluster_33_sector001_macro"
+      },
+      {
+        "class": "ship_s",
+        "macro": "ship_xen_s_fighter_02_a_macro",
+        "code": "SVY-835",
+        "owner": "xenon",
+        "knownto": "player",
+        "sector": "cluster_33_sector001_macro"
+      },
+      {
+        "class": "ship_s",
+        "macro": "ship_xen_s_fighter_02_a_macro",
+        "code": "BPQ-788",
+        "owner": "xenon",
+        "knownto": "player",
+        "sector": "cluster_33_sector001_macro"
+      },
+      {
+        "class": "ship_s",
+        "macro": "ship_kha_s_fighter_02_a_macro",
+        "code": "OAY-612",
+        "owner": "khaak",
+        "knownto": "player",
+        "sector": "cluster_02_sector001_macro"
+      },
+      {
+        "class": "ship_m",
+        "macro": "ship_kha_m_fighter_02_a_macro",
+        "code": "KJD-540",
+        "owner": "khaak",
+        "knownto": "player",
+        "sector": "cluster_02_sector001_macro"
+      },
+      {
+        "class": "ship_m",
+        "macro": "ship_kha_m_fighter_02_a_macro",
+        "code": "VLA-927",
+        "owner": "khaak",
+        "knownto": "player",
+        "sector": "cluster_02_sector001_macro"
+      },
+      {
+        "class": "ship_s",
+        "macro": "ship_kha_s_fighter_01_a_macro",
+        "code": "SDO-469",
+        "owner": "khaak",
+        "knownto": "player",
+        "sector": "cluster_02_sector001_macro"
+      },
+      {
+        "class": "ship_s",
+        "macro": "ship_kha_s_fighter_01_a_macro",
+        "code": "MAW-870",
+        "owner": "khaak",
+        "knownto": "player",
+        "sector": "cluster_02_sector001_macro"
+      },
+      {
+        "class": "ship_m",
+        "macro": "ship_kha_m_fighter_02_a_macro",
+        "code": "FSN-552",
+        "owner": "khaak",
+        "knownto": "player",
+        "sector": "cluster_02_sector001_macro"
+      },
+      {
+        "class": "ship_m",
+        "macro": "ship_kha_m_fighter_01_a_macro",
+        "code": "OSH-984",
+        "owner": "khaak",
+        "knownto": "player",
+        "sector": "cluster_02_sector001_macro"
+      }
+    ],
+    "build_storages": [
+      {
+        "id": "[0xdf32]",
+        "code": "HSK-850",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_18_sector001_macro",
+        "task_seen": false,
+        "job_seen": false,
+        "sequence_index": 0,
+        "next_seen": false,
+        "account": 0
+      },
+      {
+        "id": "[0x1c8dc]",
+        "code": "AWR-834",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_02_sector001_macro",
+        "task_seen": false,
+        "job_seen": false,
+        "sequence_index": 0,
+        "next_seen": false,
+        "account": 0
+      },
+      {
+        "id": "[0x1c911]",
+        "code": "RCD-738",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_02_sector001_macro",
+        "task_seen": false,
+        "job_seen": false,
+        "sequence_index": 0,
+        "next_seen": false,
+        "delivered": [
+          {
+            "ware": "advancedelectronics",
+            "amount": 788
+          },
+          {
+            "ware": "energycells",
+            "amount": 219716
+          },
+          {
+            "ware": "fieldcoils",
+            "amount": 6263
+          },
+          {
+            "ware": "shieldcomponents",
+            "amount": 22
+          },
+          {
+            "ware": "turretcomponents",
+            "amount": 4
+          },
+          {
+            "ware": "water",
+            "amount": 2139
+          }
+        ],
+        "account": 2,
+        "account_max": 17850429
+      },
+      {
+        "id": "[0x1d43e]",
+        "code": "KSQ-781",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_02_sector001_macro",
+        "task_seen": false,
+        "job_seen": false,
+        "sequence_index": 0,
+        "next_seen": false,
+        "delivered": [
+          {
+            "ware": "advancedelectronics",
+            "amount": 3180
+          },
+          {
+            "ware": "energycells",
+            "amount": 97779
+          },
+          {
+            "ware": "fieldcoils",
+            "amount": 2196
+          },
+          {
+            "ware": "shieldcomponents",
+            "amount": 11
+          },
+          {
+            "ware": "turretcomponents",
+            "amount": 25
+          },
+          {
+            "ware": "water",
+            "amount": 971
+          }
+        ],
+        "account": 13,
+        "account_max": 16590703
+      },
+      {
+        "id": "[0x3442f]",
+        "code": "JDA-829",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_500_sector003_macro",
+        "task_seen": false,
+        "job_seen": false,
+        "sequence_index": 0,
+        "next_seen": false,
+        "account": 0
+      },
+      {
+        "id": "[0x3de84]",
+        "code": "FEN-360",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_31_sector001_macro",
+        "task_seen": false,
+        "job_seen": false,
+        "sequence_index": 0,
+        "next_seen": false,
+        "account": 0
+      },
+      {
+        "id": "[0x43ec7]",
+        "code": "WLG-261",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_113_sector001_macro",
+        "task_seen": false,
+        "job_seen": false,
+        "sequence_index": 0,
+        "next_seen": false,
+        "delivered": [
+          {
+            "ware": "plasmaconductors",
+            "amount": 113
+          }
+        ],
+        "account": 0,
+        "account_max": 8114814
+      },
+      {
+        "id": "[0x5a1dedf5]",
+        "code": "GNR-801",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_501_sector001_macro",
+        "station": "[0x5817eaf3]",
+        "task_type": "expand",
+        "task_modules": 57,
+        "task_seen": true,
+        "job_seen": true,
+        "state": "building",
+        "start": 591658.876,
+        "step": 14,
+        "steps": 15,
+        "sequence_index": 1,
+        "required": [
+          {
+            "ware": "claytronics",
+            "amount": 625
+          },
+          {
+            "ware": "energycells",
+            "amount": 1250
+          },
+          {
+            "ware": "hullparts",
+            "amount": 2287
+          }
+        ],
+        "next": [
+          {
+            "ware": "advancedelectronics",
+            "amount": 19504
+          },
+          {
+            "ware": "energycells",
+            "amount": 370874
+          },
+          {
+            "ware": "turretcomponents",
+            "amount": 59784
+          },
+          {
+            "ware": "fieldcoils",
+            "amount": 25864
+          },
+          {
+            "ware": "shieldcomponents",
+            "amount": 21624
+          },
+          {
+            "ware": "claytronics",
+            "amount": 5343
+          },
+          {
+            "ware": "hullparts",
+            "amount": 19572
+          }
+        ],
+        "next_seen": true,
+        "delivered": [
+          {
+            "ware": "claytronics",
+            "amount": 1343
+          },
+          {
+            "ware": "energycells",
+            "amount": 82733
+          },
+          {
+            "ware": "hullparts",
+            "amount": 2353
+          },
+          {
+            "ware": "shieldcomponents",
+            "amount": 731
+          },
+          {
+            "ware": "water",
+            "amount": 517
+          }
+        ],
+        "account": 1688285
+      },
+      {
+        "id": "[0x60b1555]",
+        "code": "ATS-516",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_501_sector001_macro",
+        "station": "[0x4c17cabe]",
+        "task_type": "expand",
+        "task_modules": 57,
+        "task_seen": true,
+        "job_seen": true,
+        "state": "waitingforresources",
+        "start": 591658.122,
+        "step": 4,
+        "steps": 7,
+        "sequence_index": 26,
+        "required": [
+          {
+            "ware": "claytronics",
+            "amount": 98
+          },
+          {
+            "ware": "energycells",
+            "amount": 196
+          },
+          {
+            "ware": "hullparts",
+            "amount": 359
+          }
+        ],
+        "next": [
+          {
+            "ware": "advancedelectronics",
+            "amount": 17916
+          },
+          {
+            "ware": "energycells",
+            "amount": 336642
+          },
+          {
+            "ware": "turretcomponents",
+            "amount": 54914
+          },
+          {
+            "ware": "fieldcoils",
+            "amount": 23720
+          },
+          {
+            "ware": "shieldcomponents",
+            "amount": 19830
+          },
+          {
+            "ware": "claytronics",
+            "amount": 2979
+          },
+          {
+            "ware": "hullparts",
+            "amount": 10912
+          }
+        ],
+        "next_seen": true,
+        "delivered": [
+          {
+            "ware": "advancedelectronics",
+            "amount": 35
+          },
+          {
+            "ware": "claytronics",
+            "amount": 267
+          },
+          {
+            "ware": "energycells",
+            "amount": 72290
+          },
+          {
+            "ware": "fieldcoils",
+            "amount": 25
+          },
+          {
+            "ware": "hullparts",
+            "amount": 22
+          },
+          {
+            "ware": "shieldcomponents",
+            "amount": 793
+          },
+          {
+            "ware": "turretcomponents",
+            "amount": 30
+          },
+          {
+            "ware": "water",
+            "amount": 371
+          }
+        ],
+        "deficit": [
+          {
+            "ware": "hullparts",
+            "amount": 337
+          }
+        ],
+        "insufficient": [
+          "hullparts"
+        ],
+        "account": 124380,
+        "account_max": 16288942
+      },
+      {
+        "id": "[0x61b73]",
+        "code": "JMR-256",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_24_sector001_macro",
+        "task_seen": false,
+        "job_seen": false,
+        "sequence_index": 0,
+        "next_seen": false,
+        "account": 0
+      },
+      {
+        "id": "[0x7cc6e]",
+        "code": "MYM-248",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_14_sector001_macro",
+        "task_seen": false,
+        "job_seen": false,
+        "sequence_index": 0,
+        "next_seen": false,
+        "account": 0
+      },
+      {
+        "id": "[0x84bba]",
+        "code": "LJB-261",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_28_sector001_macro",
+        "task_seen": false,
+        "job_seen": false,
+        "sequence_index": 0,
+        "next_seen": false,
+        "account": 0
+      }
     ]
   }
 }

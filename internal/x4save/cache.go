@@ -29,16 +29,25 @@ func CacheDir() string {
 }
 
 // schemaVersion is bumped whenever the parser/Snapshot shape changes, so a
-// code change automatically invalidates stale cached snapshots. 27 adds the
-// other three presence flags — Snapshot.PlayerAssetsSeen, Snapshot.GameTimeSeen
-// and Station.Workforce as a pointer — for the reason 26 added MoneySeen: a v26
-// entry has no such field, so every cached save would come back claiming its
-// fleet was never counted and its clock never read, which is the ∅ box on a
-// board that has perfectly good numbers. (25 was the gob header, see
-// cacheHeader: a layout change rather than a parser one, where old entries are
-// unreadable by this build and are removed by name, which is cheaper and safer
-// than decoding one to discover it.)
-const schemaVersion = 27
+// code change automatically invalidates stale cached snapshots. 28 is the F3
+// bump: it adds the sections the S5 probes opened up — logbook, stats, mission
+// offers and war groups, licences and boosters, the player's inventory,
+// discovered Kha'ak/Xenon, hull and attack timestamps, build storage, and the
+// 9.x resource areas — plus Sector.Knownto. Every one of them is a field a v27
+// entry does not have, and several of them decode ABSENCE as a value (a ware
+// with no amount is 1, an area with no yield is full, a ship with no hull is
+// undamaged), so a stale entry would answer those questions with a zero that
+// looks exactly like a reading.
+//
+// 27 added the other three presence flags — Snapshot.PlayerAssetsSeen,
+// Snapshot.GameTimeSeen and Station.Workforce as a pointer — for the reason 26
+// added MoneySeen: a v26 entry has no such field, so every cached save would
+// come back claiming its fleet was never counted and its clock never read,
+// which is the ∅ box on a board that has perfectly good numbers. (25 was the
+// gob header, see cacheHeader: a layout change rather than a parser one, where
+// old entries are unreadable by this build and are removed by name, which is
+// cheaper and safer than decoding one to discover it.)
+const schemaVersion = 28
 
 // SchemaVersion is the parser's current snapshot schema, exported so the
 // watcher can report it (a schema mismatch is a player-visible state, design

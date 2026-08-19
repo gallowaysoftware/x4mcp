@@ -1,0 +1,151 @@
+{
+  "snapshot": {
+    "source_path": "14_hull_states.xml",
+    "source_size": 0,
+    "source_mtime": 0,
+    "parsed_at": 0,
+    "parse_ms": 0,
+    "save_name": "Fixture Save",
+    "save_date": 1700000000,
+    "game_version": "900",
+    "game_build": "611726",
+    "game_time_s": 591711.419,
+    "start_type": "x4ep1_gamestart_pirate2",
+    "game_guid": "00000000-0000-4000-8000-000000000000",
+    "seed": "1234567890",
+    "player_name": "Test Pilot",
+    "money": 5492825,
+    "location_raw": "{20004,5010011}",
+    "dlcs": [],
+    "money_seen": true,
+    "game_time_seen": true,
+    "relations": null,
+    "ships": [
+      {
+        "id": "[0x700]",
+        "code": "PLY-701",
+        "name": "Lost Cause",
+        "class": "ship_l",
+        "macro": "ship_arg_l_destroyer_01_a_macro",
+        "faction": "Argon",
+        "size": "L",
+        "role": "Destroyer",
+        "sector": "cluster_01_sector001_macro",
+        "crew_count": 0,
+        "state": "wreck",
+        "attack": {
+          "time": 591700.5,
+          "intentional_time": 591700.5,
+          "attacker": "[0x9001]"
+        },
+        "spawn_time": 100000
+      },
+      {
+        "id": "[0x701]",
+        "code": "PLY-702",
+        "name": "Half Built",
+        "class": "ship_xl",
+        "macro": "ship_arg_xl_builder_01_a_macro",
+        "faction": "Argon",
+        "size": "XL",
+        "role": "Builder",
+        "sector": "cluster_01_sector001_macro",
+        "crew_count": 0,
+        "state": "construction",
+        "hull": {
+          "value": 410000
+        }
+      },
+      {
+        "id": "[0x702]",
+        "code": "PLY-703",
+        "name": "Untouched",
+        "class": "ship_s",
+        "macro": "ship_arg_s_scout_01_a_macro",
+        "faction": "Argon",
+        "size": "S",
+        "role": "Scout",
+        "sector": "cluster_01_sector001_macro",
+        "crew_count": 0
+      },
+      {
+        "id": "[0x703]",
+        "code": "PLY-704",
+        "name": "Plot Capital",
+        "class": "ship_xl",
+        "macro": "ship_arg_xl_carrier_01_a_macro",
+        "faction": "Argon",
+        "size": "XL",
+        "role": "Carrier",
+        "sector": "cluster_01_sector001_macro",
+        "crew_count": 0,
+        "hull": {
+          "min": 25000
+        }
+      },
+      {
+        "id": "[0x715]",
+        "code": "PLY-706",
+        "name": "Docked Fighter",
+        "class": "ship_s",
+        "macro": "ship_arg_s_fighter_01_a_macro",
+        "faction": "Argon",
+        "size": "S",
+        "role": "Fighter",
+        "sector": "cluster_01_sector001_macro",
+        "crew_count": 0,
+        "docked_at": "[0x710]",
+        "hull": {
+          "value": 1200
+        }
+      }
+    ],
+    "stations": [
+      {
+        "id": "[0x710]",
+        "code": "PLS-700",
+        "name": "Bastion",
+        "macro": "station_gen_default_macro",
+        "sector": "cluster_01_sector001_macro",
+        "workforce": 0,
+        "subordinates": 0,
+        "dock_sizes": [
+          "m"
+        ],
+        "module_health": {
+          "modules": 4,
+          "damaged": 2,
+          "details": [
+            {
+              "macro": "module_gen_defence_claim_01_macro",
+              "class": "defencemodule",
+              "hull": 197104
+            },
+            {
+              "macro": "dockingbay_gen_m_01_macro",
+              "class": "dockingbay",
+              "hull": 4200
+            }
+          ]
+        }
+      }
+    ],
+    "player_assets_seen": true,
+    "owned_sectors": null,
+    "blueprints_seen": false,
+    "sectors": [
+      {
+        "macro": "cluster_01_sector001_macro",
+        "code": "AAA-001",
+        "owner": "argon",
+        "knownto": "player"
+      }
+    ],
+    "other_counts": {},
+    "logbook_seen": false,
+    "stats_seen": false,
+    "missions_seen": false,
+    "licences_seen": false,
+    "inventory_seen": false
+  }
+}

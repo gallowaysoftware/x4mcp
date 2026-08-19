@@ -25,6 +25,26 @@
     "player_assets_seen": false,
     "owned_sectors": null,
     "blueprints_seen": false,
-    "other_counts": {}
+    "other_counts": {},
+    "logbook_seen": false,
+    "stats": {
+      "distance_travelled": 41822730.5,
+      "modules_built": 147,
+      "money_earned_trade": 1204880000,
+      "money_spent_ships": 642300000,
+      "money_spent_stations": 311050000,
+      "ships_boarded": 6,
+      "ships_destroyed": 1284,
+      "ships_lost": 17,
+      "stations_built": 12,
+      "time_playership": 426892.897,
+      "time_seta_saved": 352039.282,
+      "time_spacesuit": 9652.45,
+      "time_total": 591711.419
+    },
+    "stats_seen": true,
+    "missions_seen": false,
+    "licences_seen": false,
+    "inventory_seen": false
   }
 }

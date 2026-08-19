@@ -3,7 +3,11 @@
      must NOT be reported as a user order), the last failed-order message, the
      captain's skills, cargo, the ship's own trade wallet, and a fighter docked
      inside it. Also the two player-owned things that are deliberately not
-     fleet: a lasertower (deployable equipment) and a satellite. -->
+     fleet: a lasertower (deployable equipment) and a satellite.
+     The miner also carries the damage record probe B is about — a <hull> with
+     a real value, a hull-multiplying modification, and the three last-attacked
+     timestamps. The docked fighter carries NONE of it, which is what "absent
+     means full" has to be tested against. -->
 <savegame>
 <info>
 <save date="1700000000" name="Fixture Save"/>
@@ -23,7 +27,15 @@
 <component class="zone" macro="zone001_cluster_01_sector001_macro" connection="sector" id="[0x4]">
 <connections>
 <connection connection="ships">
-<component class="ship_l" macro="ship_arg_l_miner_solid_01_b_macro" connection="space" code="PLY-100" owner="player" name="Mineral Hauler" thruster="thruster_arg_l_travel_01_mk3_macro" id="[0x300]">
+<component class="ship_l" macro="ship_arg_l_miner_solid_01_b_macro" connection="space" code="PLY-100" owner="player" name="Mineral Hauler" thruster="thruster_arg_l_travel_01_mk3_macro" spawntime="120000.25" attacker="[0x9900]" attackership="[0x9900]" attackmethod="lowattentionattack" attacktime="591000.5" shipattacktime="591000.5" intentionalattacktime="590900.25" id="[0x300]">
+<!-- A hull element with a value is a REAL reading, and it is ABSOLUTE: a
+     percentage needs the macro's max hull, which lives in the game install and
+     not in the save. -->
+<hull value="72000"/>
+<modification>
+<paint ware="paintmod_0009" generated="1"/>
+<ship ware="mod_ship_maxhull_01_mk1" maxhull="1.19745"/>
+</modification>
 <account amount="1250000"/>
 <people>
 <person role="captain" id="[0x301]"/>

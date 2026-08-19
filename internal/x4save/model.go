@@ -141,6 +141,405 @@ type Snapshot struct {
 	// Research is the list of completed player research ware ids (teleportation,
 	// seta, trade interface, ...) from the player character's <research> node.
 	Research []string `json:"research,omitempty"`
+
+	// ---- schema 28 (S6): the sections the S5 probes opened up ----
+
+	// Logbook is the save's <log>, in file order. Entries keep their raw
+	// {page,id} faction reference ALONGSIDE any resolved text, because the
+	// rules S7 mines are keyed on the ref: localisation is a display concern
+	// and a rule keyed on an English string breaks on a German client.
+	//
+	// LogbookSeen is the presence flag. An empty log is a real state (a save
+	// made in the first minute of a game start), and it must not arrive at a
+	// caller looking like "the parser never got that far".
+	Logbook     []LogEntry `json:"logbook,omitempty"`
+	LogbookSeen bool       `json:"logbook_seen"`
+
+	// Stats is the <stats> block as id -> value, verbatim. X4 writes ~105 of
+	// them and grows the list with play, so nothing here filters or renames:
+	// the ids are the game's vocabulary and a fixed allow-list would silently
+	// drop whatever the next patch adds.
+	Stats     map[string]float64 `json:"stats,omitempty"`
+	StatsSeen bool               `json:"stats_seen"`
+
+	// MissionOffers / Missions are the <missions> board. Probe D
+	// (docs/probes/d-guild-offers.md) settled that offers are PRESENCE-GATED —
+	// X4 serialises what was instantiated near the player when they saved, not
+	// a durable galaxy board — so every surface built on these must say "seen",
+	// and an empty board is the normal case (96.5% of saves have no guild
+	// offer). MissionsSeen is the flag that lets it say so.
+	MissionOffers []MissionOffer `json:"mission_offers,omitempty"`
+	Missions      []Mission      `json:"missions,omitempty"`
+	MissionsSeen  bool           `json:"missions_seen"`
+
+	// Licences the PLAYER holds, and the boosters attached to a faction's
+	// relations/discounts. A licence is listed on the ISSUING faction with a
+	// space-separated factions= list, so "the player has it" means the player
+	// appears in that list — never that the element merely exists.
+	Licences     []Licence `json:"licences,omitempty"`
+	Boosters     []Booster `json:"boosters,omitempty"`
+	LicencesSeen bool      `json:"licences_seen"`
+
+	// Inventory is the player CHARACTER's <inventory> (spacesuit gear, mod
+	// parts, illegal wares) — not a ship's cargo, and not an NPC's: 1,084
+	// components in one real save carry an <inventory>, and exactly one of
+	// them is the player.
+	//
+	// A <ware> with no amount= is ONE, not zero (docs/probes/README.md).
+	Inventory     []WareAmount `json:"inventory,omitempty"`
+	InventorySeen bool         `json:"inventory_seen"`
+
+	// ThreatComponents are Kha'ak / Xenon components the player has actually
+	// discovered (knownto=player), captured attrs-only. The knownto filter is
+	// the whole point: an undiscovered swarm is not something the player can be
+	// told about, and telling them is spoiling their game.
+	ThreatComponents []ThreatComponent `json:"threat_components,omitempty"`
+
+	// BuildStorages are the player's station-construction sites. The build
+	// storage is a SIBLING of the station it builds, not a child of it — the
+	// only link is buildtasks/inprogress/build/@component
+	// (docs/probes/a-build-storage.md).
+	BuildStorages []BuildStorage `json:"build_storages,omitempty"`
+}
+
+// LogEntry is one row of the save's event log.
+//
+// Faction is the RAW "{page,id}" text reference and is what rules key on;
+// FactionName is filled after load from the game install (ApplyLogbookNames)
+// and is display only. Text has X4's inline markup removed — see stripMarkup.
+type LogEntry struct {
+	Time        float64 `json:"time"`
+	Category    string  `json:"category,omitempty"`
+	Title       string  `json:"title,omitempty"`
+	Text        string  `json:"text,omitempty"`
+	Faction     string  `json:"faction,omitempty"`      // raw {page,id}
+	FactionName string  `json:"faction_name,omitempty"` // resolved post-load
+	Entity      string  `json:"entity,omitempty"`       // named ship/station in the event
+	Component   string  `json:"component,omitempty"`    // "[0x…]" id, this save only
+	// Money is a POINTER: an entry without money= is not an entry worth zero
+	// credits, and a reward of 0 is not the same fact as no reward at all.
+	Money *int64 `json:"money,omitempty"`
+}
+
+// MissionOffer is one un-accepted offer from /savegame/missions/offer.
+//
+// ID is NOT stable across saves (X4 renumbers every offer on every write), so
+// identity across saves has to be (Component, Name). Group is the load-bearing
+// attribute: "<faction>_war_<enemy>" marks a faction war and
+// "<faction>_trade_guild" a guild board.
+type MissionOffer struct {
+	ID          string `json:"id,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Faction     string `json:"faction,omitempty"`
+	Group       string `json:"group,omitempty"`
+	Type        string `json:"type,omitempty"`  // fight / trade / deliver / tutorial / …
+	Level       string `json:"level,omitempty"` // trivial … veryhard
+	RewardText  string `json:"reward_text,omitempty"`
+	Component   string `json:"component,omitempty"` // the offering object; absent on group offers
+	// Reward is a POINTER because 13.6% of offers carry it and the rest carry
+	// no cash reward AT ALL, which is not the same as a reward of 0 credits.
+	Reward *int64 `json:"reward,omitempty"`
+}
+
+// Mission is one accepted/active mission or upkeep prompt.
+type Mission struct {
+	ID          string  `json:"id,omitempty"`
+	Name        string  `json:"name,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Faction     string  `json:"faction,omitempty"`
+	Group       string  `json:"group,omitempty"`
+	Type        string  `json:"type,omitempty"`
+	Level       string  `json:"level,omitempty"`
+	RewardText  string  `json:"reward_text,omitempty"`
+	Active      bool    `json:"active,omitempty"`
+	Time        float64 `json:"time,omitempty"` // in-game seconds when it was taken
+	Reward      *int64  `json:"reward,omitempty"`
+}
+
+// Licence is one trading/building permission the player holds, listed on the
+// faction that grants it.
+type Licence struct {
+	Faction string `json:"faction"` // the ISSUING faction
+	Type    string `json:"type"`    // capitalship / station_gen_basic / …
+}
+
+// Booster is a temporary modifier a faction has applied to the player: a
+// relation bonus (inside <relations>), a trade discount (inside <discounts>),
+// or a subscription (inside <boosters>). The three live under different parent
+// elements with different attributes, so the parent is recorded as Group and
+// every value is optional.
+type Booster struct {
+	Faction  string   `json:"faction"`          // the issuing faction
+	Group    string   `json:"group"`            // relations / discounts / boosters
+	Type     string   `json:"type,omitempty"`   // e.g. tradesubscription
+	Target   string   `json:"target,omitempty"` // who it applies to (usually "player")
+	Amount   *float64 `json:"amount,omitempty"`
+	Relation *float64 `json:"relation,omitempty"`
+	Time     *float64 `json:"time,omitempty"`    // when it was granted (in-game seconds)
+	EndTime  *float64 `json:"endtime,omitempty"` // when it lapses, when the save says
+}
+
+// ThreatComponent is a discovered hostile (Kha'ak or Xenon), captured from the
+// element's own attributes with the subtree skipped — the ClaimableShips
+// pattern. Knownto is kept verbatim so a surface can filter to knownto=player
+// rather than trusting that the parser already did.
+type ThreatComponent struct {
+	Class      string `json:"class"`
+	Macro      string `json:"macro"`
+	Code       string `json:"code,omitempty"`
+	Owner      string `json:"owner"`
+	Knownto    string `json:"knownto,omitempty"`
+	Sector     string `json:"sector,omitempty"`
+	SectorName string `json:"sector_name,omitempty"`
+}
+
+// Hull is a component's health as the save records it: an ABSOLUTE value, not a
+// percentage, and both attributes optional.
+//
+// Value nil with the element present means the <hull> carries only a min= floor
+// (a script-set minimum, 151 player observations in the corpus) — which decodes
+// to "at maximum", NOT to zero. A bare float64 defaulting to 0 here is how a
+// plot capital gets reported at 0% hull while it sits undamaged.
+type Hull struct {
+	Value *float64 `json:"value,omitempty"`
+	Min   *float64 `json:"min,omitempty"`
+}
+
+// Attack is a component's last-attacked record. The corpus says these
+// timestamps — not a hull delta — are the right trigger: over 18,402
+// consecutive-save ship pairs every hull drop came with a timestamp advance,
+// while 94.1% of timestamp advances produced no hull drop at all, because hull
+// delta only sees the attacks that got through the shields.
+type Attack struct {
+	Time            float64 `json:"time,omitempty"`             // any damage event, collisions included
+	IntentionalTime float64 `json:"intentional_time,omitempty"` // the trigger
+	ShipTime        float64 `json:"ship_time,omitempty"`        // last hit BY A SHIP, vs a turret or mine
+	Method          string  `json:"method,omitempty"`           // collided / lowattentionattack / …
+	Attacker        string  `json:"attacker,omitempty"`         // "[0x…]", resolvable within this save only
+	AttackerShip    string  `json:"attacker_ship,omitempty"`
+}
+
+// HullState is the ordered decode of probe B §8, which is not a threshold on a
+// number: a wreck carries no <hull> at all and a healthy ship carries none
+// either, so the state has to be read before the value.
+type HullState string
+
+const (
+	// HullDestroyed is state="wreck": the hulk keeps its component for a save
+	// or two and drops its <hull>. 2,437 player wrecks in the corpus, zero
+	// carrying the element. Reading that absence as 100% reports a destroyed
+	// destroyer at full health.
+	HullDestroyed HullState = "destroyed"
+	// HullBuilding is state="construction": a <hull value> here is real, but
+	// the denominator is the FINISHED module's maximum, so any percentage
+	// understates by design. Report as building, never as damaged.
+	HullBuilding HullState = "building"
+	// HullFull is the absence rule: no <hull>, or a <hull> with no value=,
+	// means the entity is at maximum. 92,816 never-attacked player-ship
+	// observations, none carrying the element; 31,589 that do, none at max.
+	HullFull HullState = "full"
+	// HullDamaged is a real reading: <hull value="N"/>, absolute.
+	HullDamaged HullState = "damaged"
+)
+
+// hullState applies probe B §8 rules 1–5 in order. It deliberately does not
+// implement rule 6 (classes with no hull model): that is a denominator
+// question, and the probe's own note says to keep the exclusion list tolerant
+// of a surprise rather than to panic on one.
+func hullState(state string, h *Hull) HullState {
+	switch {
+	case state == "wreck":
+		return HullDestroyed
+	case state == "construction":
+		return HullBuilding
+	case h == nil || h.Value == nil:
+		return HullFull
+	default:
+		return HullDamaged
+	}
+}
+
+// HullState reports the ship's health state per probe B §8.
+func (s Ship) HullState() HullState { return hullState(s.State, s.Hull) }
+
+// SectorResource is a sector's stock of one minable resource, aggregated over
+// the <resourceareas> the 9.x economy model records, WITH the denominators that
+// make it readable.
+//
+// Capacity is derived from the yieldid's density token, and an area whose
+// density has no known cap (the `verylow` tier, 13 yieldids) contributes to
+// UnknownCapAreas instead — a percentage computed without that count is a guess
+// wearing a decimal point.
+type SectorResource struct {
+	Resource        string  `json:"resource"` // ore / silicon / ice / nividium / hydrogen / methane / helium / rawscrap / rawkhaakscrap
+	Areas           int     `json:"areas"`
+	Current         int64   `json:"current"`                   // Σ yield, with an ABSENT yield counted at capacity
+	Capacity        int64   `json:"capacity"`                  // Σ cap over the areas whose cap is known
+	AtCapacityAreas int     `json:"at_capacity_areas"`         // areas whose yield was absent (freshly relocated)
+	UnknownCapAreas int     `json:"unknown_cap_areas"`         // areas excluded from Capacity/Current
+	Reservations    int     `json:"reservations,omitempty"`    // ships holding a claim; NPC miners included
+	LastRelocation  float64 `json:"last_relocation,omitempty"` // max area starttime
+}
+
+// BuildStorage is a station-construction site: what the current step needs,
+// what has been delivered, and what the build wallet holds.
+//
+// It is a top-level object in the zone, NOT a child of the station it is
+// building; Station is the id it names via buildtasks/inprogress/build/@component.
+type BuildStorage struct {
+	ID         string `json:"id"`
+	Code       string `json:"code,omitempty"` // display only — NOT unique across sites
+	Macro      string `json:"macro,omitempty"`
+	Owner      string `json:"owner,omitempty"`
+	Sector     string `json:"sector,omitempty"`
+	SectorName string `json:"sector_name,omitempty"`
+
+	// Station is the id of the station being built, and TaskType/TaskModules
+	// come from buildtasks/inprogress/build. A site with no task is idle.
+	Station     string `json:"station,omitempty"`
+	TaskType    string `json:"task_type,omitempty"` // expand / buildship
+	TaskModules int    `json:"task_modules,omitempty"`
+	TaskSeen    bool   `json:"task_seen"`
+
+	// JobSeen records whether a <build> job element existed on the build
+	// PROCESSOR at all. Absent means this site is not building anything; 4,440
+	// of 6,019 player build-storage records in the corpus are in that state,
+	// so "player build storage exists" is not "player station under
+	// construction".
+	//
+	// State absent WITH JobSeen is its own case: "ordered, no step in progress"
+	// — not unknown, and not "building".
+	JobSeen       bool    `json:"job_seen"`
+	State         string  `json:"state,omitempty"` // waitingforresources / building / awaitconstructionvessel_build
+	Start         float64 `json:"start,omitempty"`
+	Step          int     `json:"step,omitempty"`
+	Steps         int     `json:"steps,omitempty"`
+	SequenceIndex int     `json:"sequence_index"` // absent decodes to 0 — the FIRST module, never "unknown"
+
+	// Required is what the CURRENT STEP consumes; Next is everything after it.
+	// They differ by two orders of magnitude, so confusing them turns a 359-unit
+	// shortfall into a 20,646-unit one.
+	//
+	// NextSeen false means "nothing is required after this module" — the last
+	// module — and not "unknown". 14.6% of player jobs are in that state.
+	Required  []WareAmount `json:"required,omitempty"`
+	Next      []WareAmount `json:"next,omitempty"`
+	NextSeen  bool         `json:"next_seen"`
+	Delivered []WareAmount `json:"delivered,omitempty"`
+
+	// Deficit is COMPUTED (required − delivered, floored at zero) and is the
+	// authoritative shortage. Insufficient is the game's own opinion, kept as
+	// ware NAMES only: it agrees on the ware 99.8% of the time but omits at
+	// least one genuinely short ware in 29.6% of stalls, and its <ware amount=>
+	// is a GAME-TIME TIMESTAMP, not a quantity.
+	Deficit      []WareAmount `json:"deficit,omitempty"`
+	Insufficient []string     `json:"insufficient,omitempty"`
+
+	// Account is the build budget. A pointer because account/@amount is absent
+	// on 16% of player build storages and that absence decodes to 0 credits,
+	// while a missing <account> element entirely is a different fact.
+	Account    *int64 `json:"account,omitempty"`
+	AccountMax *int64 `json:"account_max,omitempty"`
+}
+
+// Stalled reports the construction stall that F15 fires on. It keys on the
+// job's own state and NOT on a string match for "waitingforresources", because
+// 79% of that string's occurrences in a save sit on <production> — a factory
+// module short of inputs, which is a different alert entirely.
+func (b BuildStorage) Stalled() bool { return b.State == "waitingforresources" }
+
+// StalledFor reports how long the current step has been running, in in-game
+// seconds, given the save's clock. Ok is false when there is no step to time.
+func (b BuildStorage) StalledFor(gameTimeS float64) (float64, bool) {
+	if !b.JobSeen || b.Start <= 0 || gameTimeS <= 0 {
+		return 0, false
+	}
+	return gameTimeS - b.Start, true
+}
+
+// ModuleHealth is a station's module damage WITH the population it was computed
+// over. The denominator is not decoration: module <hull> is present only when
+// damaged, so of 1,091 player defence modules in one real save 128 carry a
+// value and 963 do not. The honest sentence is "128 of 1,091 modules damaged;
+// 963 carry no hull element and are treated as undamaged" — because that
+// TREATMENT is the number.
+//
+// There is deliberately no "worst module" and no percentage here. Hull is
+// ABSOLUTE and each module type has a different maximum, so ranking two
+// modules by their raw numbers compares nothing, and dividing needs a maximum
+// that lives in the game install rather than in the save.
+type ModuleHealth struct {
+	Modules int          `json:"modules"`           // modules of a class that can carry <hull>
+	Damaged int          `json:"damaged"`           // …of which this many carry a <hull value>
+	Details []ModuleHull `json:"details,omitempty"` // the damaged ones, in walk order
+}
+
+// ModuleHull is one damaged station module. Hull is ABSOLUTE; a percentage
+// needs the module's max from the game install, which the save does not carry.
+type ModuleHull struct {
+	Macro string  `json:"macro"`
+	Class string  `json:"class"`
+	Hull  float64 `json:"hull"`
+}
+
+// WarPairings reports the faction wars the save's mission board evidences, as
+// sorted "attacker vs defender" pairs. Probe D: war offers are the sturdiest
+// thing in <missions> (98.4% carry-over, present in essentially every save) but
+// their COUNT moves with where the player is standing — so report the pairings,
+// never a count of offers.
+func (s *Snapshot) WarPairings() []WarPairing {
+	seen := map[string]WarPairing{}
+	add := func(faction, group string) {
+		// A tutorial offer is faction="player" and must never read as a war.
+		if faction == "player" || group == "" {
+			return
+		}
+		i := strings.Index(group, "_war_")
+		if i <= 0 || i+5 >= len(group) {
+			return
+		}
+		p := WarPairing{Faction: group[:i], Enemy: group[i+5:], Group: group}
+		seen[group] = p
+	}
+	for _, o := range s.MissionOffers {
+		add(o.Faction, o.Group)
+	}
+	for _, m := range s.Missions {
+		add(m.Faction, m.Group)
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]WarPairing, 0, len(seen))
+	for _, p := range seen {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Group < out[j].Group })
+	return out
+}
+
+// WarPairing is one live faction war, read off a mission offer's group attr.
+type WarPairing struct {
+	Faction string `json:"faction"`
+	Enemy   string `json:"enemy"`
+	Group   string `json:"group"`
+}
+
+// ApplyLogbookNames resolves each log entry's raw {page,id} faction reference to
+// a display name, using the same page-20203 map ApplyReputationNames takes. The
+// raw ref is KEPT: rules key on it, and a name that failed to resolve must not
+// erase the thing the rule matches on. Applied after load, like every other
+// game-install lookup, so it is not part of the cached snapshot.
+func (s *Snapshot) ApplyLogbookNames(names map[string]string) {
+	if len(names) == 0 {
+		return
+	}
+	for i := range s.Logbook {
+		if ref := s.Logbook[i].Faction; ref != "" {
+			s.Logbook[i].FactionName = names[ref]
+		}
+	}
 }
 
 // ModResearchScript is the MD script that implements the four ship-modification
@@ -561,6 +960,24 @@ type Ship struct {
 	Account        int64          `json:"account,omitempty"` // ship's own trade wallet
 	Cargo          []WareAmount   `json:"cargo,omitempty"`
 	DockedAt       string         `json:"docked_at,omitempty"` // parent station id, if docked on a player carrier/station
+
+	// ---- health & damage (schema 28, probe B) ----
+
+	// State is the component's raw state=. "wreck" and "construction" gate the
+	// whole hull reading and must be checked BEFORE the absence rule.
+	State string `json:"state,omitempty"`
+	// Hull is nil when the component carries no <hull> child, which per probe B
+	// rule 3 means the ship is at MAXIMUM — see HullState. nil is not unknown
+	// and it is certainly not zero.
+	Hull *Hull `json:"hull,omitempty"`
+	// Attack is nil when nothing has ever attacked this ship.
+	Attack *Attack `json:"attack,omitempty"`
+	// MaxHullMod is the multiplier from an equipped hull modification
+	// (modification/ship/@maxhull). Ignoring it yields percentages over 100%.
+	MaxHullMod *float64 `json:"max_hull_mod,omitempty"`
+	// SpawnTime hardens Code as a cross-save identity; it is cheap and the save
+	// carries it on every ship.
+	SpawnTime float64 `json:"spawn_time,omitempty"`
 }
 
 // ShipOrder is one entry in a ship's order queue. For trade orders it carries the
@@ -605,6 +1022,12 @@ type Station struct {
 	BuildingModules   []string `json:"building_modules,omitempty"`   // macros of modules under construction
 	DockSizes         []string `json:"dock_sizes,omitempty"`         // ship sizes that can dock now (built bays: xs/s/m/l/xl)
 	DockSizesPending  []string `json:"dock_sizes_pending,omitempty"` // dock sizes whose bays are still under construction
+
+	// ModuleHealth is where a station's damage lives. The station component
+	// itself carries no <hull> at all — 0 of 77 player-owned in the corpus —
+	// because a station IS its modules; asking the station is asking the wrong
+	// node. nil means no module of a hull-carrying class was found.
+	ModuleHealth *ModuleHealth `json:"module_health,omitempty"`
 }
 
 // Sector is one sector on the galaxy map.
@@ -619,6 +1042,30 @@ type Sector struct {
 	Gases       []string        `json:"gases,omitempty"`     // minable gases (hydrogen/helium/methane)
 	Sunlight    float64         `json:"sunlight,omitempty"`  // solar factor (~1.0 = 100%); scales energy-cell output
 	Neighbors   []string        `json:"neighbors,omitempty"` // adjacent sector macros (one gate jump)
+
+	// Knownto is the sector component's knownto= attribute, verbatim.
+	//
+	// It is captured and NOT acted on. Probe C found the snapshot already
+	// carries full resource data for 16 sectors the player has never
+	// discovered — 14.5% of the universe's resource areas — and the PRD's rule
+	// ("undiscovered space feeds the coverage denominator, never the threat
+	// list") was written for threat surfaces and never applied to resources.
+	// Whether the PARSER should drop that data or merely tag it is a product
+	// decision, so this build tags it and changes nothing else.
+	Knownto string `json:"knownto,omitempty"`
+
+	// ResourceAreas is the 9.x <resourceareas> model, aggregated per resource.
+	// It supersedes Resources in coverage — it names gases, which have no
+	// <field> children at all, and rawkhaakscrap, whose field macros the field
+	// walk misses — and it is the only source of depletion state. Resources is
+	// kept alongside it unchanged so no existing surface moves.
+	ResourceAreas []SectorResource `json:"resource_areas,omitempty"`
+
+	// PlayerProbes counts player-owned resource probes deployed in the sector.
+	// Captured, deliberately not surfaced: the corpus contains zero of them in
+	// 200 saves, so a coverage clause built on it would ship a rule that has
+	// never once evaluated true against real data.
+	PlayerProbes int `json:"player_probes,omitempty"`
 }
 
 // ResourceField summarizes a minable resource's abundance in a sector,
