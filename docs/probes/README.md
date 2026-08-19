@@ -157,6 +157,36 @@ A class name that sounds structural was decoration; the ones that sound like
 plumbing hold the structure. Check the macros of the instances before trusting
 what a class is called.
 
+### An aggregate carries its own denominator
+
+Everything above is about decoding one field. The moment those fields are summed
+— modules into a station, areas into a sector, ships into a fleet — the decode
+rule becomes invisible, and that is when it does the most damage.
+
+**An aggregate must state the population it was computed over, and never
+silently average across what it could not read.** A single percentage is a
+number with the inference hidden inside it, and averaging is precisely what
+makes a guess look like a clean fact.
+
+Station health is the case this project will hit first. Module `<hull>` is
+category 2 — present only when damaged — so of 945 player defence modules, 118
+carry a value and 827 do not. The honest aggregate is not "your stations are at
+94%". It is *"118 of 945 modules damaged; 827 carry no hull element and are
+treated as undamaged"* — because that treatment **is** the number. If the
+category-2 reading is ever wrong, a bare percentage gives a reader no way to
+notice, while a stated denominator does.
+
+The same applies to a sector's resources (areas whose `yield` is absent are at
+capacity, and the count of them is part of the answer) and to any fleet figure
+computed over ships whose state was not readable.
+
+This is the counterpart to the `∅ unknown` rule in the design docs: an unknown
+value must not render as a number, and an aggregate must not launder unknowns
+into one.
+
+*(Owed to the fs25mcp session, which arrived at the same rule aggregating fields
+into a farm.)*
+
 This is the 117-blueprints rule — an unread blueprint list must not render as
 "you own none" — generalised. It is the same failure in every direction: a
 default, or an absence of the concept entirely, silently becoming a fact.
