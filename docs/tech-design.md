@@ -64,7 +64,7 @@ internal/api/        F1 target: Service (the renamed app), 32 handlers as
 internal/wire/       every JSON shape the browser sees: VitalsView, IdleShipRow,
                      StationHealthRow, AlertView, ReentryDigest, SSE payloads,
                      chat DTOs — presentation-free; the tygo generation root
-internal/x4save/     parser + F3 schema bump (24→25, ONE increment, §5)
+internal/x4save/     parser + F3 schema bump (27→28, ONE increment, §5)
 internal/x4data/     unchanged decoding; maps grouped into GameData
 internal/plan/       unchanged API + flock (D12)
 internal/watch/      poller, settle gate, parse worker, atomic Published pointer,
@@ -243,7 +243,7 @@ Graceful shutdown: signal → root cancel → poller/probers stop → agent turn
 
 ## 5. Parser work (F3) and the two probes
 
-**One schemaVersion bump, 24→25**, containing: logbook entries (raw `{page,id}` refs kept alongside resolved text; `\033#RRGGBBAA#` stripping), stats block, mission offers + war `group` attrs, faction licences + boosters, player inventory (scoped to the player component), Kha'ak/Xenon attrs-only capture (ClaimableShips pattern: attrs + `Skip()`), plus probe-informed fields (build-storage deficits, hull attrs) *iff* the probes land first — no second bump.
+**One schemaVersion bump, 27→28**, containing: logbook entries (raw `{page,id}` refs kept alongside resolved text; `\033#RRGGBBAA#` stripping), stats block, mission offers + war `group` attrs, faction licences + boosters, player inventory (scoped to the player component), Kha'ak/Xenon attrs-only capture (ClaimableShips pattern: attrs + `Skip()`), plus probe-informed fields (build-storage deficits, hull attrs) *iff* the probes land first — no second bump.
 
 **Probe A — build-storage shape** (gates rich build-stalled + F15): stream player station subtrees; capture complete node trees matching `buildstorage|construction|buildmodule` + the station `<economylog>` summary attrs; then a two-save controlled experiment (queue a build, withhold one ware, save twice ≥15 min apart) to confirm the stall signature = unchanged progress + persistent deficit set. Confirmed ⇒ "waiting on 312 hull parts"; not ⇒ degraded "build not progressing 30+ min" — honest either way.
 
@@ -311,7 +311,7 @@ Graceful shutdown: signal → root cancel → poller/probers stop → agent turn
 | S3 | **Watcher + snapshot store + SSE core (F2)** — settle gate, GUID-switch handling, `Kick()`; **plus the named parser-adjacent work**: `LoadSnapshotCtx` (ctx + OnRetry) wrapping the retry loop, a ctx-checking reader for cancelable parses, `X4MCP_SAVE_DIR` root override, and gob-cache GC (newest-N per path + stale-schema purge); minimal status JSON | settle/GUID/rotation table tests; quicksave reflected <60 s wall-clock; retry state visible with count; cache dir bounded after 20 synthetic saves | 3.5 |
 | S4b | **Vitals strip + freshness/honesty chrome (F7/F11)** — the chrome kit (FreshnessStamp, LegChips, ProvenanceChip, UnknownValue, SeverityDot) built to spec, credits sparkline (renders its dotted empty state until S8 history exists), first-run arming flow (chime enable + test, notification permission) with MUTED/blocked always visible | **end of week 2: live screen on the second monitor**; chrome kit reviewed against design spec | 2.5 |
 | S5 | **Probes A + B + C** (§5) | findings docs; decision rules applied to S6 field list | 2.5 |
-| S6 | **F3 schema bump 24→25** — one increment, probe-informed, incl. `knownto` filtering for threat data | the §5 verification checklist, pasted into the PR | 3 |
+| S6 | **F3 schema bump 27→28** — one increment, probe-informed, incl. `knownto` filtering for threat data | the §5 verification checklist, pasted into the PR | 3 |
 | S7 | **Rule-mining spike + replay harness** (§6) | rule table (trigger, signature, severity, dedupe, confidence) + measured precision on the archive | 2 |
 | S8 | **History store + plan flock** | store table tests; two-process plan race test | 2 |
 | S9 | **Alert engine + lane (F4)** — chime + Notification with explicit "enable + test" gesture; corroboration policy live; ack/unack/ack-all/group-ack routes + multi-tab sync; per-station budget-suppress control; system rows from `save.error` | rule tests from recorded snapshot pairs; replay precision report attached; D11 CI check; kill a cheap ship → red within one save cycle | 3.5 |

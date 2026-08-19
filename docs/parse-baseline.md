@@ -1,9 +1,9 @@
-# Parser baseline — schema v26
+# Parser baseline — schema v27
 
 **Status:** timings measured 2026-08-10 against schema v24 (S2) · hitch check added 2026-08-12 · re-measure on every parser change and every game patch
 **Why it exists:** S6 bumps the parse schema and adds four whole sections (logbook, stats, missions, inventory). Its gate is *"ParseMS ≤ +10% and peak RSS ≤ +5 MB of the S2 baseline"*. These are the numbers that sentence refers to. Without them the gate is a feeling.
 
-**About the version in that heading:** it is `x4save.SchemaVersion`, and it is the schema THIS DOCUMENT DESCRIBES, not the one the numbers were taken on. It said v24 while the constant had moved to 26 — two post-S2 bumps that changed no parser cost (25 was the cache's gob header, 26 added `Snapshot.MoneySeen`), so §3's timings still stand. Any bump that does move them re-blesses §3 in the same commit; a heading that drifts from the constant is how a stale number gets treated as a gate.
+**About the version in that heading:** it is `x4save.SchemaVersion`, and it is the schema THIS DOCUMENT DESCRIBES, not the one the numbers were taken on. It said v24 while the constant had moved to 27 — three post-S2 bumps that changed no parser cost (25 was the cache's gob header, 26 added `Snapshot.MoneySeen`, 27 added the remaining presence flags `PlayerAssetsSeen`/`GameTimeSeen`), so §3's timings still stand. Any bump that does move them re-blesses §3 in the same commit; a heading that drifts from the constant is how a stale number gets treated as a gate.
 
 ---
 

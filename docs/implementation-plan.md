@@ -70,16 +70,17 @@ Every un-archived play session is lost rule-mining corpus for S7.
 ## Phase 3 — capture and probes (W3, ~5.5 ev)
 
 ### S5 · Probes A + B + C (+D note) (2.5 ev) — findings to `docs/probes/`
-- [ ] **A — build storage** (gates rich build-stall + F15): element paths for required-vs-present wares; two-save starved-build experiment (queue a build, withhold one ware, save twice ≥15 min apart)
-- [ ] **B — hull/damage attrs** (gates under-attack): attr union over player subtrees; controlled damage experiment; answer "is absent attr = 100%?" (the 117-blueprints bug, inverted)
-- [ ] **C — 9.x resource-region state** (gates F5 depletion clause): does the save expose region yield/depletion + probe coverage?
-- [ ] (D — guild-offer persistence — v1.1 scope, do only if trivial while in there)
-- [ ] Decision rules from each probe applied to the S6 field list, recorded in the findings docs
+- [x] **A — build storage** (gates rich build-stall + F15): CONFIRMED — required (`build/resources`), delivered (build-storage `cargo`) and budget (`account`) all readable. The staged starved-build experiment was **not needed**: 844 stalled player builds across the 200-save archive answered it from real play. See `docs/probes/a-build-storage.md`
+- [x] **B — hull/damage attrs** (gates under-attack): CONFIRMED — `<hull value>` is absolute and per component, absent on a LIVE player ship means 100%, and `state="wreck"` breaks that rule. The better trigger is `intentionalattacktime`, not hull delta (94.1% of attacks never reach the hull). The controlled damage experiment was **not needed**. See `docs/probes/b-hull-damage.md`
+- [x] **C — 9.x resource-region state** (gates F5 depletion clause): depletion **yes** (demonstrated over 214 in-game hours, miner→area join verified 219/219), probe coverage a clear **no** (player owns zero resource probes in all 200 saves, and resource data is not gated on probes anyway). See `docs/probes/c-resource-regions.md`
+- [x] (D — guild-offer persistence — v1.1 scope): presence-gated. F14 must say "seen", never "available"; the empty state is the PRIMARY state at 96.5% of saves. See `docs/probes/d-guild-offers.md`
+- [x] Decision rules from each probe applied to the S6 field list, recorded in the findings docs
 
-### S6 · F3 parser bump, 24→25 — ONE increment (3 ev)
+### S6 · F3 parser bump, 27→28 — ONE increment (3 ev)
 - [ ] Capture: logbook (raw `{page,id}` + resolved text, `\033#…#` stripped) · stats · mission offers + war `group` attrs · licences + boosters · player inventory · Kha'ak/Xenon attrs-only (`knownto` kept — threat surfaces filter to `knownto=player`) · probe-informed fields (A/B/C outcomes)
 - [ ] Synthetic fixture per new section; goldens blessed
-- [ ] Gate — real-save verification checklist pasted into the PR: logbook ≥ 6,503 matching fresh scanner run · 103 stats · missions/licences/inventory non-empty + spot-checked in game · khaak/xenon vs scanner baselines (601/5,345) · ParseMS ≤ +10% of S2 baseline (3-run median) · RSS ≤ +5 MB · **hitch check #2**
+- [ ] Gate — real-save verification checklist pasted into the PR: logbook ≥ 6,503 matching fresh scanner run · stats/khaak/xenon counts matching a fresh scanner run **on the same save** (the frozen 103/601/5,345 were one save from 2026-08-10; the corpus already reads 105 stats, because these grow with play — compare against a re-run, never against the number written here) · missions/licences/inventory non-empty + spot-checked in game · ParseMS ≤ +10% of S2 baseline (3-run median) · RSS ≤ +5 MB · **hitch check #2**
+- [ ] Gate — **per-section marginal cost**: parse once with each new section individually disabled, and record what that section costs on its own. The aggregate +10%/+5 MB gate says a regression happened; it does not say which of five sections owns it, and a red that starts a bisect is a red that gets waived. (Owed to the fs25mcp session, which hit the same gate-shape problem from the other side.) **This is not free**: the parser dispatches sections from one element-name switch with no options struct, so it needs a test-only section mask (~20 lines) consulted at the new `case` arms. Budget it inside S6 rather than discovering it at the gate.
 
 ---
 

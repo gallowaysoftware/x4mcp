@@ -61,9 +61,16 @@ func TestListSavesLayouts(t *testing.T) {
 	base := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 
 	profileRoot := t.TempDir()
-	touchSave(t, filepath.Join(profileRoot, "71052239", "save", "quicksave.xml.gz"), base)
-	touchSave(t, filepath.Join(profileRoot, "71052239", "save", "autosave_01.xml.gz"), base.Add(time.Minute))
-	touchSave(t, filepath.Join(profileRoot, "71052239", "save", "notes.txt"), base)
+	touchSave(t, filepath.Join(profileRoot, "12345678", "save", "quicksave.xml.gz"), base)
+	touchSave(t, filepath.Join(profileRoot, "12345678", "save", "autosave_01.xml.gz"), base.Add(time.Minute))
+	touchSave(t, filepath.Join(profileRoot, "12345678", "save", "notes.txt"), base)
+	// A real save directory has more than one writer. Steam Cloud drops this
+	// file into the profile on its own schedule — in the live directory right
+	// now it is hours newer than the newest savegame — so anything that took the
+	// DIRECTORY's mtime, or globbed without filtering, would date the save from
+	// Steam's clock instead of the game's. Enumeration is per-file and
+	// extension-filtered, and this pins it that way.
+	touchSave(t, filepath.Join(profileRoot, "12345678", "save", "steam_autocloud.vdf"), base.Add(time.Hour))
 
 	saveDir := t.TempDir()
 	touchSave(t, filepath.Join(saveDir, "save_001.xml.gz"), base.Add(2*time.Minute))
@@ -134,7 +141,7 @@ func TestLatestSaveUsesTheOverride(t *testing.T) {
 
 func TestSaveDirs(t *testing.T) {
 	root := t.TempDir()
-	saveDir := filepath.Join(root, "71052239", "save")
+	saveDir := filepath.Join(root, "12345678", "save")
 	touchSave(t, filepath.Join(saveDir, "quicksave.xml.gz"), time.Now())
 	// A profile dir with no save subdir yet: the root is still watched, which
 	// is how the subdir being created later is noticed at all.

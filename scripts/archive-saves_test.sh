@@ -177,6 +177,65 @@ test_prunes_by_count() {
 	rm -rf "$t"
 }
 
+# --- a save the window can never hold is not re-copied every run --------------
+#
+# The regression this pins cost 471 MiB of writes every five minutes on the
+# author's machine, indefinitely: old saves sitting in the live save directory
+# were copied, pruned as "over keep" on the same run, and seen as new again on
+# the next one, because "already archived?" was a file-existence test and the
+# file had just been deleted.
+test_does_not_recopy_saves_older_than_the_window() {
+	local t saves archive out1 out2 out3
+	t=$(new_tmp)
+	saves="$t/saves/12345678/save"
+	archive="$t/archive"
+	mkdir -p "$saves"
+	# Two recent saves, and one from years ago — exactly the shape of a real
+	# save directory that still holds a 2018 campaign.
+	mk_save "$saves/quicksave.xml.gz" 1754001200 "new"
+	mk_save "$saves/autosave_01.xml.gz" 1754000600 "mid"
+	mk_save "$saves/save_005.xml.gz" 1543000000 "ancient"
+
+	# Window of 2: the first run archives all three and prunes the ancient one.
+	out1=$(run "$saves" "$archive" 2)
+	assert_contains "$out1" "3 new" "window: first run copies everything"
+	assert_contains "$out1" "1 pruned" "window: first run prunes the one that does not fit"
+
+	# The second run must NOT copy it again. That is the whole bug.
+	out2=$(run "$saves" "$archive" 2)
+	assert_contains "$out2" "0 new" "window: the pruned save is not re-copied"
+	assert_contains "$out2" "1 older than the window" "window: and the skip is reported, not silent"
+	assert_contains "$out2" "0 pruned" "window: nothing to prune, because nothing was copied"
+
+	# A NEW save still gets in — the rule must not wedge the archive shut.
+	mk_save "$saves/autosave_02.xml.gz" 1754002000 "newer"
+	out3=$(run "$saves" "$archive" 2)
+	assert_contains "$out3" "1 new" "window: a newer save is still archived"
+	assert_contains "$(ls_archive "$archive" | tr ' ' '\n' | tail -1)" "autosave_02" \
+		"window: and it is the newest entry"
+	rm -rf "$t"
+}
+
+# --- an unfilled window archives old saves normally ---------------------------
+#
+# The control for the test above: the skip must be conditional on the window
+# being FULL, or the archiver would refuse to build a backlog from a save
+# directory full of old saves — which is the first thing it ever does.
+test_archives_old_saves_while_the_window_has_room() {
+	local t saves archive out
+	t=$(new_tmp)
+	saves="$t/saves/12345678/save"
+	archive="$t/archive"
+	mkdir -p "$saves"
+	mk_save "$saves/save_005.xml.gz" 1543000000 "ancient"
+	mk_save "$saves/quicksave.xml.gz" 1754001200 "new"
+
+	out=$(run "$saves" "$archive" 200)
+	assert_contains "$out" "2 new" "room: both saves archived when the window has room"
+	assert_contains "$out" "0 older than the window" "room: nothing skipped"
+	rm -rf "$t"
+}
+
 # --- pruning by total size ----------------------------------------------------
 test_prunes_by_size() {
 	local t saves archive total after cap
@@ -661,6 +720,8 @@ for t in \
 	test_dedups_on_rerun \
 	test_detects_changed_save \
 	test_prunes_by_count \
+	test_does_not_recopy_saves_older_than_the_window \
+	test_archives_old_saves_while_the_window_has_room \
 	test_prunes_by_size \
 	test_never_touches_source \
 	test_skips_settling_saves \

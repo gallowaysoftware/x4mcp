@@ -61,7 +61,7 @@ type OverviewOut struct {
 	Credits            int64                      `json:"credits"`
 	GameHours          float64                    `json:"game_hours"`
 	Version            string                     `json:"version"`
-	DLCs               []string                   `json:"dlcs,omitempty"`
+	DLCs               []string                   `json:"dlcs"`
 	ShipCount          int                        `json:"ship_count"`
 	StationCount       int                        `json:"station_count"`
 	KnownSectors       int                        `json:"known_sectors"`
