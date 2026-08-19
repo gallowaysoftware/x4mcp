@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -195,6 +196,31 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 	sections := sectionMask(enabledSections.Load())
 
 	dec := xml.NewDecoder(gz)
+	// depth is the loop's nesting level, and it exists to scope the three
+	// document-root sections — <log>, <stats>, <missions> — to the root.
+	//
+	// Element names are NOT unique in a savegame, and both of the ones this
+	// parser reads have a namesake somewhere else in the tree:
+	//
+	//	/savegame/log/entry                3,602,050 -> /savegame/economylog/entries/log
+	//	/savegame/stats/stat                       2 -> .../terraforming/stats/stat
+	//
+	// The economylog one is the frightening number: without a scope test, three
+	// and a half MILLION <log> elements each arm the logbook capture. It read
+	// correctly only because those <log>s happen to contain <trade> children and
+	// not <entry> children — which is luck, not a rule, and one patch away from
+	// being a snapshot with 3.6M rows in it.
+	//
+	// Maintaining depth means accounting for the two ways this parser stops
+	// seeing tokens: dec.Skip() and dec.DecodeElement() both swallow the
+	// element's EndElement, which the loop would otherwise have counted. Every
+	// such site calls consumed() first, and TestParseDepthIsBalanced fails if
+	// one ever forgets.
+	depth := 0
+	consumed := func() { depth-- }
+	// rootDepth is the depth of a direct child of <savegame>: the document
+	// element itself is 1.
+	const rootDepth = 2
 	// descendStack holds the classes of structural components we are currently
 	// inside, so we can resolve the current sector macro for any asset.
 	var descendStack []openComp
@@ -244,6 +270,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 
 		switch t := tok.(type) {
 		case xml.StartElement:
+			depth++
 			switch t.Name.Local {
 			case "script":
 				// An MD story script. Stream into the ones we track (so their cues
@@ -252,8 +279,11 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 				name := attr(t, "name")
 				if title := knownPlots[name]; title != "" {
 					curScript, curPlot = name, title
-				} else if err := dec.Skip(); err != nil {
-					return nil, err
+				} else {
+					consumed()
+					if err := dec.Skip(); err != nil {
+						return nil, err
+					}
 				}
 			case "cue":
 				// A checkpoint within a tracked story script.
@@ -283,32 +313,50 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 					}
 				}
 			case "info":
+				consumed()
 				if err := decodeInfo(dec, &t, snap); err != nil {
 					return nil, err
 				}
 			case "faction":
+				consumed()
 				if err := decodeFaction(dec, &t, snap, sections); err != nil {
 					return nil, err
 				}
 			case "stats":
-				// The whole <stats> block in one decode: ~105 rows, one place in
-				// the file, and scoping it this way means no <stat>-shaped
-				// element elsewhere can ever leak in.
-				if sections.has(secStats) {
+				// The player's statistics, in one decode: 103 rows.
+				//
+				// depth == rootDepth is the whole scope test. A savegame has
+				// THREE <stats> elements: this one, and one inside each
+				// <terraforming> project, holding a single
+				// <stat id="population" value="0"/>. Without the test the last
+				// one in the file wins — which today happens to be the right
+				// one, by file order, and would silently become the wrong one
+				// the day a patch moves it.
+				if depth == rootDepth && sections.has(secStats) {
+					consumed()
 					if err := decodeStats(dec, &t, snap); err != nil {
 						return nil, err
 					}
 				}
 			case "missions":
-				// The mission board: un-accepted <offer>s and active <mission>s.
-				// ~30 + ~36 in a real save, one place in the file.
-				if sections.has(secMissions) {
+				// The mission board: un-accepted <offer>s and active
+				// <mission>s, 30 and 33 in one real save. Root-scoped for the
+				// same reason <stats> is; only DIRECT children count, so a
+				// mission nested inside another mission's thread stays part of
+				// its parent rather than becoming a second board entry.
+				if depth == rootDepth && sections.has(secMissions) {
+					consumed()
 					if err := decodeMissions(dec, &t, snap); err != nil {
 						return nil, err
 					}
 				}
 			case "log":
-				if sections.has(secLogbook) {
+				// THE ONE THAT MATTERS. /savegame/economylog/entries/log occurs
+				// 3,602,050 times in one real save — three and a half million
+				// elements with the same name as the player's event log. They
+				// carry <trade> children rather than <entry> children, so an
+				// unscoped capture reads correctly today by luck alone.
+				if depth == rootDepth && sections.has(secLogbook) {
 					inLog = true
 					snap.LogbookSeen = true
 				}
@@ -327,6 +375,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 					descendStack[len(descendStack)-1].class == "player" &&
 					currentOwner(descendStack) == "player" {
 					var inv rawInventory
+					consumed()
 					if err := dec.DecodeElement(&inv, &t); err != nil {
 						return nil, fmt.Errorf("decode inventory: %w", err)
 					}
@@ -359,6 +408,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 						Ware string `xml:"ware,attr"`
 					} `xml:"blueprint"`
 				}
+				consumed()
 				if err := dec.DecodeElement(&bp, &t); err != nil {
 					return nil, fmt.Errorf("decode blueprints: %w", err)
 				}
@@ -378,6 +428,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 							Ware string `xml:"ware,attr"`
 						} `xml:"research"`
 					}
+					consumed()
 					if err := dec.DecodeElement(&r, &t); err != nil {
 						return nil, fmt.Errorf("decode research: %w", err)
 					}
@@ -460,6 +511,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 					// descend: do not consume the subtree
 				case owner == "player" && (strings.HasPrefix(cls, "ship_") || cls == "station"):
 					var rc rawComp
+					consumed()
 					if err := dec.DecodeElement(&rc, &t); err != nil {
 						return nil, fmt.Errorf("decode %s: %w", cls, err)
 					}
@@ -470,6 +522,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 					// offers, and also harvest any player assets docked inside it
 					// (player ships, and the player character's blueprint list).
 					var rc rawComp
+					consumed()
 					if err := dec.DecodeElement(&rc, &t); err != nil {
 						return nil, fmt.Errorf("decode npc station: %w", err)
 					}
@@ -483,6 +536,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 					// A gate with none is inactive in this playthrough and must not
 					// become an edge — see Snapshot.GateGraph.
 					var g rawGate
+					consumed()
 					if err := dec.DecodeElement(&g, &t); err != nil {
 						return nil, fmt.Errorf("decode gate: %w", err)
 					}
@@ -512,6 +566,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 					// retention.
 					snap.OtherCounts[cls]++ // unchanged: this class was already counted
 					var bs rawBuildStorage
+					consumed()
 					if err := dec.DecodeElement(&bs, &t); err != nil {
 						return nil, fmt.Errorf("decode buildstorage: %w", err)
 					}
@@ -528,6 +583,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 							probesBySector[secm]++
 						}
 					}
+					consumed()
 					if err := dec.Skip(); err != nil {
 						return nil, err
 					}
@@ -547,6 +603,7 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 						Knownto: attr(t, "knownto"),
 						Sector:  currentSector(descendStack),
 					})
+					consumed()
 					if err := dec.Skip(); err != nil {
 						return nil, err
 					}
@@ -566,17 +623,20 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 						Engine:  attr(t, "thruster"),
 						Hops:    -1, // filled post-load relative to the player's sector
 					})
+					consumed()
 					if err := dec.Skip(); err != nil {
 						return nil, err
 					}
 				default:
 					// non-player or boring: skip the whole subtree cheaply.
+					consumed()
 					if err := dec.Skip(); err != nil {
 						return nil, err
 					}
 				}
 			}
 		case xml.EndElement:
+			depth--
 			switch t.Name.Local {
 			case "component":
 				if len(descendStack) > 0 {
@@ -679,10 +739,23 @@ func parseFileCtx(ctx context.Context, path string) (*Snapshot, error) {
 		}
 	}
 
+	// Diagnostics only, and it is not on the Snapshot on purpose: it is a fact
+	// about the WALK, not about the save. A non-zero value means some branch
+	// swallowed a subtree without calling consumed(), which silently breaks the
+	// root-scoping of <log>, <stats> and <missions> — and the failure mode is a
+	// section that reads plausibly wrong rather than an error.
+	// TestParseDepthIsBalanced is what watches it.
+	lastParseDepth.Store(int64(depth))
+
 	snap.ParseMS = time.Since(start).Milliseconds()
 	snap.ParsedAt = time.Now().Unix()
 	return snap, nil
 }
+
+// lastParseDepth is the nesting level the token loop finished on. See the
+// comment at its assignment; an atomic because the suite parses concurrently
+// and this must never be the thing -race finds.
+var lastParseDepth atomic.Int64
 
 // parseTrailingInt finds marker in s and parses the (possibly signed) integer
 // immediately following it, e.g. ("...Current reputation: -13", "Current reputation:") -> -13.

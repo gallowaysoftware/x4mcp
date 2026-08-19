@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Element names are NOT unique in a savegame, and every section this parser
+     reads by NAME has a namesake somewhere else in the tree. Counted in one
+     real 100 MB save:
+
+       /savegame/economylog/entries/log   3,602,050   vs  /savegame/log        1
+       .../terraforming/stats/stat                2   vs  /savegame/stats/stat 103
+       <entry> inside a build task's <sequence>  618 per station
+
+     Each one reads correctly today only because of an accident of content or
+     file order: the economylog's <log> elements carry <trade> children rather
+     than <entry> children, and the player's <stats> happens to be the LAST of
+     the three. Accidents are not decode rules, so the three document-root
+     sections are scoped to the root and <entry> is scoped to the log.
+
+     This fixture is the namesakes and nothing else: the root sections carry one
+     recognisable value each, and every impostor carries a value that would be
+     unmistakable if it leaked. -->
+<savegame>
+<info>
+<save date="1700000000" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<log>
+<entry time="100.5" category="upkeep" title="The real log" text="One entry, and it is this one."/>
+</log>
+<stats>
+<stat id="time_total" value="591711.419"/>
+</stats>
+<missions>
+<mission id="900" name="The real mission" faction="player" type="plot">
+<thread>
+<!-- A mission nested inside a mission's thread is part of its parent, not a
+     second board entry. Only DIRECT children of <missions> count. -->
+<mission id="901" name="IMPOSTOR nested mission" faction="player" type="plot"/>
+</thread>
+</mission>
+</missions>
+<economylog>
+<entries>
+<!-- 3.6 MILLION of these in a real save. They happen to hold <trade> children
+     rather than <entry> children, which is the only reason an unscoped capture
+     survives contact with a real savegame. -->
+<log time="1.0">
+<trade ware="energycells" amount="500"/>
+</log>
+<log time="2.0">
+<entry time="999.0" category="upkeep" title="IMPOSTOR economylog entry" text="This is not the player's event log."/>
+</log>
+</entries>
+</economylog>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="argon" knownto="player" id="[0x3]">
+<terraforming part="part_earthlike" active="">
+<!-- One of the two real ones. It holds a single population counter and has
+     nothing to do with the player's 103 statistics. -->
+<stats>
+<stat id="population" value="0"/>
+</stats>
+</terraforming>
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_01_sector001_macro" connection="sector" id="[0x4]">
+<connections>
+<connection connection="buildstorages">
+<component class="buildstorage" macro="buildstorage_gen_base_01_macro" connection="space" code="UCW-999" owner="player" id="[0x10]">
+<buildtasks>
+<inprogress>
+<build id="[0x11]" type="expand" component="[0x20]" faction="player">
+<sequence>
+<!-- 618 of these per station in a real save. They are <entry> elements and
+     they are not log entries. -->
+<entry id="[0x12]" index="1" macro="dockarea_arg_m_station_01_macro"/>
+<entry id="[0x13]" index="2" macro="module_gen_prod_energycells_01_macro"/>
+</sequence>
+</build>
+</inprogress>
+</buildtasks>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</universe>
+</savegame>

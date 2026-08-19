@@ -1133,3 +1133,66 @@ func TestFixtureHullStates(t *testing.T) {
 		}
 	}
 }
+
+// TestFixtureElementNamesakes is the scoping gate. Every section this parser
+// reads by element NAME has a namesake elsewhere in a real savegame, and the
+// worst of them — /savegame/economylog/entries/log — occurs 3,602,050 times.
+//
+// Each one currently reads correctly by an accident of content or file order
+// rather than by a rule. This test makes the rule the reason.
+func TestFixtureElementNamesakes(t *testing.T) {
+	snap := parseSynthetic(t, "15_element_namesakes")
+
+	if !snap.LogbookSeen || len(snap.Logbook) != 1 {
+		t.Fatalf("logbook = %+v, want exactly the one root <log> entry — the economylog's <log> is a different element that happens to share a name", snap.Logbook)
+	}
+	if got := snap.Logbook[0].Title; got != "The real log" {
+		t.Errorf("logbook entry = %q, want the root log's", got)
+	}
+
+	if len(snap.Stats) != 1 {
+		t.Fatalf("stats = %+v, want the one root <stats> row; a <terraforming> project has a <stats> too", snap.Stats)
+	}
+	if _, ok := snap.Stats["population"]; ok {
+		t.Errorf("a terraforming project's population counter leaked into the player's statistics: %+v", snap.Stats)
+	}
+	if snap.Stats["time_total"] != 591711.419 {
+		t.Errorf("stats = %+v, want the player's time_total", snap.Stats)
+	}
+
+	if len(snap.Missions) != 1 || snap.Missions[0].ID != "900" {
+		t.Fatalf("missions = %+v, want only the DIRECT child of <missions>", snap.Missions)
+	}
+
+	// The build task's <sequence><entry> elements are the third namesake, and
+	// there are 618 of them per station in a real save.
+	for _, e := range snap.Logbook {
+		if e.Title == "" && e.Text == "" {
+			t.Errorf("a build-sequence <entry> reached the logbook: %+v", e)
+		}
+	}
+	if len(snap.BuildStorages) != 1 || snap.BuildStorages[0].TaskModules != 2 {
+		t.Errorf("build storage = %+v, want the sequence counted as 2 modules and not as log entries", snap.BuildStorages)
+	}
+}
+
+// TestParseDepthIsBalanced watches the bookkeeping the scope test above rests
+// on. dec.Skip() and dec.DecodeElement() both swallow an element's EndElement,
+// so every site that calls one has to tell the loop (consumed()). A site that
+// forgets leaves the loop's depth permanently off by one, and the symptom is
+// not an error — it is <log> or <stats> quietly reading from the wrong place.
+//
+// The invariant is exact: a well-formed document ends at depth zero.
+func TestParseDepthIsBalanced(t *testing.T) {
+	for _, f := range fixtures(t) {
+		t.Run(f.name, func(t *testing.T) {
+			res := f.parse(t)
+			if res.ParseError != "" {
+				t.Skipf("fixture parses to an error by design: %s", res.ParseError)
+			}
+			if d := lastParseDepth.Load(); d != 0 {
+				t.Errorf("token loop finished at depth %d, want 0 — some branch consumed a subtree without calling consumed(), and the root-scoping of <log>/<stats>/<missions> is now wrong by that much", d)
+			}
+		})
+	}
+}
