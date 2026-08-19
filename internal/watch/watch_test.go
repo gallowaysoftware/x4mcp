@@ -1202,7 +1202,7 @@ func TestWatchDirsFollowTheFilesystem(t *testing.T) {
 	defer cancel()
 	root := t.TempDir()
 	r := newRig(t, func(o *Options) { o.Roots = []string{root} })
-	profile := filepath.Join(root, "71052239", "save")
+	profile := filepath.Join(root, "12345678", "save")
 	if err := os.MkdirAll(profile, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1212,7 +1212,7 @@ func TestWatchDirsFollowTheFilesystem(t *testing.T) {
 	if got := r.w.Health().Dirs; len(got) != 2 {
 		t.Fatalf("watching %v, want the root and the save dir", got)
 	}
-	if err := os.RemoveAll(filepath.Join(root, "71052239")); err != nil {
+	if err := os.RemoveAll(filepath.Join(root, "12345678")); err != nil {
 		t.Fatal(err)
 	}
 	r.tick()

@@ -25,7 +25,7 @@ type SaveFile struct {
 //
 // Both layouts are accepted for it (see ListSaves): a profile ROOT (the dir
 // holding `<profile>/save/`) and a save dir itself, because pointing it at
-// ~/.config/EgoSoft/X4/71052239/save is the obvious thing to do and silently
+// ~/.config/EgoSoft/X4/12345678/save is the obvious thing to do and silently
 // finding nothing would be a poor answer.
 const SaveRootEnv = "X4MCP_SAVE_DIR"
 

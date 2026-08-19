@@ -126,6 +126,70 @@ var playerNameLiteral = regexp.MustCompile(
 	`<player name="([^"]*)"` + // savegame attribute
 		`|\\?"player(?:_name)?\\?"\s*:\s*\\?"([^"\\]*)`) // JSON, plain or escaped
 
+// profileIDLiteral matches the X4 profile directory — the numeric account id
+// that names ~/.config/EgoSoft/X4/<id>/save — in the two spellings this tree
+// writes it: inside a path string, and as a bare segment handed to
+// filepath.Join before "save".
+var profileIDLiteral = regexp.MustCompile(
+	`X4/(\d{6,})` + // a path written out, including in doc comments
+		`|"(\d{6,})",\s*"save"`) // filepath.Join(root, "<id>", "save")
+
+// The player name was not the only identifier in the tree. The real profile id
+// sat in a doc comment and three test files, and the name guard above could
+// never have caught it: that guard keys on <player name=…> and "player":…, and
+// an account id in a filepath.Join looks like nothing at all.
+//
+// Same shape of rule, same reason it is POSITIVE rather than a grep for the
+// real value: a test that greps for the id has to contain the id.
+func TestEveryCommittedProfileIDIsThePlaceholder(t *testing.T) {
+	const (
+		placeholder = "12345678"
+		selfPath    = "internal/x4save/fixture_privacy_test.go"
+	)
+
+	root := filepath.Join("..", "..")
+	out, err := exec.Command("git", "-C", root, "ls-files", "-z").Output()
+	if err != nil {
+		t.Skipf("git ls-files: %v (this guard only means anything inside a checkout)", err)
+	}
+
+	texts := map[string]bool{
+		".go": true, ".xml": true, ".md": true, ".html": true, ".sh": true, ".json": true,
+		".ts": true, ".tsx": true, ".js": true, ".svelte": true, ".txt": true, ".yml": true,
+		".yaml": true, ".ndjson": true,
+	}
+
+	checked := 0
+	for _, rel := range strings.Split(strings.TrimRight(string(out), "\x00"), "\x00") {
+		if rel == "" || rel == selfPath || !texts[strings.ToLower(filepath.Ext(rel))] {
+			continue
+		}
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		fi, err := os.Stat(path)
+		if err != nil || fi.Size() > 8<<20 {
+			continue
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, m := range profileIDLiteral.FindAllSubmatch(b, -1) {
+			for _, g := range m[1:] {
+				if len(g) == 0 {
+					continue
+				}
+				checked++
+				if string(g) != placeholder {
+					t.Errorf("%s writes a profile id that is not the placeholder; scrub it to %s", rel, placeholder)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("matched no profile id anywhere; the guard has stopped guarding (did the path spelling change?)")
+	}
+}
+
 // The fixture scrub is worth nothing on its own. The real player name spent
 // months in plaintext in a hand-written fixture in this very package while the
 // distiller was going to great lengths to keep it out of the distilled one —
