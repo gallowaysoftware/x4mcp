@@ -708,18 +708,64 @@ func (w *Watcher) readSave(ctx context.Context, path string, opts x4save.LoadOpt
 		err  error
 	}
 	done := make(chan result, 1)
-	go func() {
-		// Deliberately never unlocked: the goroutine returns with the thread
-		// still locked to it, which is how the runtime knows to destroy the
-		// thread rather than hand a niced one back to the scheduler pool.
-		runtime.LockOSThread()
-		prio := applyParsePriority(w.nice)
-		w.bump(func(st *state) { st.priority = prio })
-		snap, err := w.opts.Load(ctx, path, opts)
-		done <- result{snap, err}
-	}()
+	go politely(w.nice,
+		func(p wire.ParsePriority) { w.bump(func(st *state) { st.priority = p }) },
+		func() {
+			snap, err := w.opts.Load(ctx, path, opts)
+			done <- result{snap, err}
+		})
 	r := <-done
 	return r.snap, r.err
+}
+
+// politely runs fn on an OS thread that has been asked to get out of the game's
+// way and that the process can afford to lose, reporting what the kernel
+// actually granted before fn starts.
+//
+// It must be called from a goroutine that exists only for this, because the
+// thread it runs on does not come back.
+//
+// Two cases, and the second is why this is a function rather than four lines
+// inline:
+//
+//   - Ordinary thread: lock it, nice it, work, and return STILL LOCKED. That is
+//     how the runtime knows to destroy the thread instead of handing a niced one
+//     back to the scheduler pool. Restoring the priority afterwards is not an
+//     option — RLIMIT_NICE is 0 for an ordinary user, so lowering is a one-way
+//     door and the restore fails with EACCES every time.
+//
+//   - The process's FIRST thread: do not touch it. `getpriority(PRIO_PROCESS,
+//     pid)` reads that task and so does ps, so nicing it is indistinguishable
+//     from nicing the whole board; and a goroutine that exits locked to it does
+//     not retire it, it WEDGES it (mexit's "this is the main thread, just wedge
+//     it" path) — permanently, at nice 19, one thread poorer. Whether a spawned
+//     goroutine lands there is not a rate but a consequence of who spawned it:
+//     `go f(); <-ch` hands the parent's M to the child, so a worker spawned
+//     from a goroutine sitting on m0 lands on m0 400 times in 400, at every
+//     GOMAXPROCS from 1 to 32 (see onMainOSThread). It is a path the product
+//     takes, not a hypothetical.
+//     Instead, HOLD it: stay locked to it while waiting, which parks it and
+//     makes it unavailable to the scheduler, so the goroutine doing the work is
+//     guaranteed a different thread. Then unlock, leaving it exactly as found.
+func politely(nice int, report func(wire.ParsePriority), fn func()) {
+	work := func() {
+		runtime.LockOSThread() // never unlocked: this thread is spent
+		report(applyParsePriority(nice))
+		fn()
+	}
+
+	runtime.LockOSThread()
+	if !onMainOSThread() {
+		work()
+		return
+	}
+	inner := make(chan struct{})
+	go func() {
+		work()
+		close(inner)
+	}()
+	<-inner
+	runtime.UnlockOSThread()
 }
 
 // settlePending marks the pipeline as done with c and releases anyone who was

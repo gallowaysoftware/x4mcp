@@ -263,6 +263,19 @@ Graceful shutdown: signal → root cancel → poller/probers stop → agent turn
 
 **Rule mining (the S7 spike, before the chime is trusted):** dump all logbook entries as TSV (scanner extension); template-ize (strip color codes, placeholder numbers/ship-codes/names, hash residue — 4,415 uncategorized entries should collapse to dozens of templates); **key rules on `{page,id}` refs first, localized-text regex as fallback** (locale robustness bought now for free); pair every event type with its second signal from the diff. **Corroboration policy: a red fires only on two independent signals agreeing, or a single source explicitly whitelisted after a labeling pass**; disagreements log as gray `rule_conflict` events (the tuning feed); every rule carries a config kill switch; ambers wear a "tuning" badge for the first week. Validation: replay the archived save series (S0 starts archiving on day 1) through the engine; then one labeled week of real play measured against the <1-false-red/week budget.
 
+> **S7 correction (2026-08-20, `docs/s7-rules.md`).** Three instructions in the two
+> paragraphs above were measured and found wrong; the code follows the measurement.
+> (1) *"Diff by entity ID"* — X4 renumbers component ids on load. Across the
+> archive's **22 restarts** (not one: about 2.3 a day over 9.61 days) 0.0–0.5% of
+> component ids survive a restart against 95–100% of registration codes, so the
+> cross-save key is the **registration code**, hardened by `spawntime`. (2) *"the raw
+> refs are already captured"* — a log entry's only `{page,id}` is `faction`; title and
+> text are rendered sentences, and the ref is **recovered** by matching them against
+> the install's own text templates. (3) *AccountUnderBudget's "estimated budget"* —
+> probe A established that `account/@max` is not one; the rule keys on the game's own
+> account alarm, which carries the player's configured threshold in its text.
+> The paragraphs are left as written: they are the spec this step was measured against.
+
 **`internal/history`** (SQLite, WAL, busy_timeout): `vitals(guid, save_mtime PK, game_time_s, credits, ships, stations, idle, threats)`; `events(guid, dedupe_key UNIQUE, kind, severity, game_time_s, save_ref, entity, payload, acked_at)`; `chat_sessions` / `chat_messages`. Watcher-path writes all come from the parse worker; HTTP-path writes (acks, chat) share the pool at trivial rates.
 
 ---
