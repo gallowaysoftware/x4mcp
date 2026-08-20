@@ -18,17 +18,21 @@ is the tech design's "O(dozens)" confirmed on a corpus far larger than the one
 that produced the estimate. The differ works, and it found a design bug worth
 more than the rule table: **X4 renumbers component ids on load**, so §6's "diff
 by entity ID" reports the entire fleet as lost the first morning the player
-comes back. Keyed on the registration code instead, the lane produces **396 red
-alerts over 9.6 real days — 288 per week under a dedupe policy no product can
+comes back. Keyed on the registration code instead, the lane produces **367 red
+alerts over 9.6 real days — 267 per week under a dedupe policy no product can
 ship (§3) — and 0 of them can be shown to be wrong by anything in the
 corpus.** (Those figures are the pinned run below; §9 records what the
 adversarial review then found in the code underneath them, and what changed.)
 That last clause is doing a lot of work — the falsification pass only
-examines `ship_lost` and `ship_gone`, so 34 of the 396 reds were never tested at
-all — and
-§2 is about how much: falsification is one-sided, most of those reds are one
-rule, and 288 reds a week is a number about a 1,042-ship empire at war, not
-about the alarm budget. **Five of fifteen rules ship disabled** because nothing
+examines `ship_lost` and `ship_gone`, so the 5 `capital_taking_damage` reds were
+never tested at all — and §2 is about how much: falsification is one-sided,
+**362 of the 367 are one rule**, and 267 reds a week is a number about a
+1,042-ship empire at war, not about the alarm budget.
+
+*(The pinned run measured **396** reds. `station_under_attack` and
+`capital_under_attack` were demoted to amber after it, on the review's evidence
+— 29 of those 396 move to amber and none disappear. The per-rule table below is
+the pinned run with the corrected severity column.)* **Five of fifteen rules ship disabled** because nothing
 in 200 saves can tell whether they are right.
 
 ---
@@ -152,7 +156,10 @@ and whichever it picks is the number the budget is actually measured against.
 | 14 | `playthrough_changed` | GREY | ✔ | 0 | 0 | — | — | **never observed** |
 | 15 | `timeline_reset` | GREY | ✔ | 0 | 0 | — | — | **never observed** |
 
-**Total: 396 red alerts in 9.61 days = 288 per real week, 0 falsified.**
+**Total: 367 red alerts in 9.61 days = 267 per real week, 0 falsified**
+(396 and 288 before `station_under_attack` and `capital_under_attack` were
+demoted to amber; the fires did not change, only what they are allowed to
+interrupt you for).
 
 *Pinned run: the 200 saves in the window on 2026-08-20 at 12:34 UTC. The archive
 is a rolling 200 and the player was mid-session while this was measured, so a
