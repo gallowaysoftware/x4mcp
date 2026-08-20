@@ -1,6 +1,7 @@
 package logbook
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -146,8 +147,32 @@ func TestOrderedRuleRefsBeatTheAmbiguityThatScoringLosesTo(t *testing.T) {
 	if !ok {
 		t.Fatal("scored match failed")
 	}
-	if m.Ref == (Ref{1016, 34}) {
-		t.Skip("scoring now prefers {1016,34}; the ordered table is still what the rules use")
+	// This used to t.Skip when the score stopped preferring {1016,30}, which is
+	// backwards: the score preferring the WRONG template is the premise of the
+	// whole test, and skipping when the premise goes away means a mutation to
+	// Catalog.Match's scoring makes this guard evaporate and the run stay green.
+	// A guard that cannot fail is not a guard. So the premise is asserted.
+	//
+	// If this fires, the scoring genuinely changed and the right response is to
+	// find the sentence that still splits — not to delete the test, because
+	// what it pins is that RULES DO NOT USE THE SCORE.
+	if m.Ref != (Ref{1016, 30}) {
+		t.Fatalf("the scored match picked %s, not {1016,30}: the ambiguity this test exists to "+
+			"demonstrate is gone, so it is no longer testing anything. Re-derive it from the census's "+
+			"ambiguous-match column before changing this line", m.Ref)
+	}
+	// And it is not even flagged: Match.Ambiguous marks an exact TIE, and this
+	// is not one — {1016,30} explains one more literal character than
+	// {1016,34}, so it wins outright and the caller is told nothing. That is the
+	// sharper form of the finding, and it is why RuleRefs is an ordered table
+	// rather than "use the score and check Ambiguous".
+	if m.Ambiguous {
+		t.Errorf("Match(%q) reported this as a tie; it is not one — it is a template winning "+
+			"the score with the wrong split, which is the case a rival check does NOT cover", title)
+	}
+	if loc, ok := m.Value("LOCATION"); !ok || !strings.Contains(loc, "YHA-137") {
+		t.Errorf("the scored match put %q in LOCATION; the point of this test is that scoring "+
+			"splits the subject and strands the registration code", loc)
 	}
 
 	ev, ok := c.Classify(title)
@@ -279,6 +304,164 @@ func TestRuleRefsAreOnBaseGamePagesOnly(t *testing.T) {
 		// mod pages are 102104117 and 38392782.
 		if rr.Ref.Page > 100000 {
 			t.Errorf("%s keys on page %d, which is a MOD page — not a stable key on anyone else's install", rr.Kind, rr.Ref.Page)
+		}
+	}
+}
+
+// preFixPattern is the matcher Compile built BEFORE the edge-slot class: \A,
+// an unconstrained `(.*?)` per placeholder, the literals in between, \z.
+//
+// It exists as the positive control for the two tests below. A guard nobody has
+// watched fail is not a guard, so the fixed matcher's refusals are only
+// meaningful next to something that still accepts them — and if a later change
+// makes the pre-fix form stop reproducing the bug, this control fails first and
+// says the test has gone vacuous.
+func preFixPattern(text string) *regexp.Regexp {
+	var pat strings.Builder
+	pat.WriteString(`\A`)
+	last := 0
+	for _, m := range placeholderRe.FindAllStringIndex(text, -1) {
+		pat.WriteString(regexp.QuoteMeta(text[last:m[0]]))
+		pat.WriteString(`(.*?)`)
+		last = m[1]
+	}
+	pat.WriteString(regexp.QuoteMeta(text[last:]))
+	pat.WriteString(`\z`)
+	return regexp.MustCompile(`(?s)` + pat.String())
+}
+
+// \A does not anchor a template that BEGINS with a placeholder.
+//
+// `\A(.*?) was destroyed\.\z` is satisfied by any prose ending in " was
+// destroyed." — the leading wildcard reaches the anchor by absorbing the
+// prefix — so the rule fires on a sentence that was about something else and
+// digs a registration code out of the middle of it. Rules go through MatchRef,
+// which tests ONE template with no score and no ambiguity flag, so nothing
+// downstream notices.
+//
+// The fix constrains a placeholder that reaches an edge of its template to a
+// class that excludes sentence structure. The measurement behind the class is
+// on edgeSlotClass; the cases here are the ones it has to catch.
+func TestAProseSentenceCannotClaimARuleRefByEndingLikeOne(t *testing.T) {
+	db := testDB()
+	c := NewCatalog(db, RulePages()...)
+
+	for _, tc := range []struct {
+		name  string
+		title string
+		ref   Ref // the template the prose ends like
+	}{
+		{
+			name:  "a reputation prefix in front of a destroy sentence",
+			title: "Reputation gained: Odysseus E (YHA-137) was destroyed.",
+			ref:   Ref{1016, 34},
+		},
+		{
+			name:  "a news prefix in front of an attack sentence",
+			title: "News: Some Station (ABC-123) is under attack.",
+			ref:   Ref{1016, 37},
+		},
+		{
+			name:  "two sentences, the second of which is the template",
+			title: "Foo is under attack. Bar is under attack.",
+			ref:   Ref{1016, 37},
+		},
+		{
+			name:  "a mod's decorated title in front of a destroy sentence",
+			title: "..: Sector Explorer :.. Odysseus E (YHA-137) was destroyed.",
+			ref:   Ref{1016, 34},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Positive control: the pre-fix matcher accepts it. If this stops
+			// being true the test below proves nothing.
+			text, ok := db.Expand(tc.ref.Page, tc.ref.ID)
+			if !ok {
+				t.Fatalf("%s missing from the test db", tc.ref)
+			}
+			if !preFixPattern(text).MatchString(tc.title) {
+				t.Fatalf("control: the pre-fix matcher for %s no longer accepts %q, "+
+					"so this case cannot demonstrate the bug any more", tc.ref, tc.title)
+			}
+
+			if m, ok := c.MatchRef(tc.ref, tc.title); ok {
+				t.Errorf("MatchRef(%s) accepted %q with slots %v — the leading wildcard "+
+					"absorbed the prose in front of the template", tc.ref, tc.title, m.Slots)
+			}
+			if ev, ok := c.Classify(tc.title); ok {
+				t.Errorf("Classify accepted %q as %s/%s with subject %q and code %q",
+					tc.title, ev.Ref, ev.Kind, ev.Subject, ev.Code)
+			}
+		})
+	}
+}
+
+// The other half of the same guard: the constraint must not cost a real
+// sentence. Every one of these is a verbatim title out of the 200-save archive.
+//
+// Measured across that archive, the class costs nothing: 14,428 of 14,635
+// distinct titles classify through RuleRefs both before and after, and 14,617
+// match the full catalog both before and after.
+func TestTheEdgeSlotClassKeepsEveryRealSentence(t *testing.T) {
+	c := NewCatalog(testDB(), RulePages()...)
+	for _, tc := range []struct {
+		title   string
+		ref     Ref
+		subject string
+	}{
+		{"Odysseus E (YHA-137) was destroyed.", Ref{1016, 34}, "Odysseus E (YHA-137)"},
+		{"Open Market Defence Platform I (BNK-694) was destroyed.", Ref{1016, 34}, "Open Market Defence Platform I (BNK-694)"},
+		{"Hatikvah's Choice I Defence Platform II (UWK-732) is under attack.", Ref{1016, 37}, "Hatikvah's Choice I Defence Platform II (UWK-732)"},
+		{"Windfall III The Hoard Defence Platform II (YWU-198) is under attack.", Ref{1016, 37}, "Windfall III The Hoard Defence Platform II (YWU-198)"},
+		// A player-chosen name with '>' in it, and the empty attacker slot the
+		// game really does write.
+		{
+			"SW XII->Av Scrap Metal 1 was forced to flee after being attacked by  in Avarice IV. Your ship is at Empty Space in Windfall III The Hoard.",
+			Ref{1016, 33}, "SW XII->Av Scrap Metal 1",
+		},
+		{"Jian (MUG-920) in sector Open Market was destroyed by XEN Raiding Party PE (DVE-017).", Ref{1016, 31}, "Jian (MUG-920) in sector Open Market"},
+	} {
+		t.Run(tc.title, func(t *testing.T) {
+			ev, ok := c.Classify(tc.title)
+			if !ok {
+				t.Fatalf("the edge-slot class rejected a real sentence: %q", tc.title)
+			}
+			if ev.Ref != tc.ref {
+				t.Errorf("ref = %s, want %s", ev.Ref, tc.ref)
+			}
+			if ev.Subject != tc.subject {
+				t.Errorf("subject = %q, want %q", ev.Subject, tc.subject)
+			}
+		})
+	}
+}
+
+// Constraining only the FIRST slot of a leading run constrains nothing: two
+// placeholders separated by whitespace are one ambiguous region, so the
+// template parks the offending punctuation in the second one and Match.Span
+// puts the pair back together. Measured directly during the fix — with the
+// class on slot 0 alone, "Reputation gained: Odysseus E (YHA-137) was
+// destroyed." still classified, as {1016,30} instead of {1016,34}.
+func TestTheEdgeRunIsConstrainedNotJustTheFirstSlot(t *testing.T) {
+	tpl, ok := Compile(Ref{1016, 30}, "$KILLED$ $LOCATION$ was destroyed.")
+	if !ok {
+		t.Fatal("Compile refused a real template")
+	}
+	if !tpl.EdgeSlot(0) || !tpl.EdgeSlot(1) {
+		t.Errorf("edge slots = [%v %v]; both halves of a fused leading run must be constrained, "+
+			"or the second one absorbs what the first was stopped from taking",
+			tpl.EdgeSlot(0), tpl.EdgeSlot(1))
+	}
+
+	// An interior slot is NOT constrained: it has literal text on both sides
+	// doing the job, and narrowing it would drop real sentences.
+	tpl, ok = Compile(Ref{1016, 41}, "The account for $STATION$ in $ZONE$ has dropped to $MONEY$ Credits.")
+	if !ok {
+		t.Fatal("Compile refused a real template")
+	}
+	for i := 0; i < 3; i++ {
+		if tpl.EdgeSlot(i) {
+			t.Errorf("slot %d of a template with literal text at both ends was constrained", i)
 		}
 	}
 }

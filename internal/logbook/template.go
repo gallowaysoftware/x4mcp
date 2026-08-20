@@ -103,7 +103,12 @@ type Template struct {
 	// as one span. What must NOT happen is the alternative: searching the whole
 	// title for a code, which on the flee template would hand the ship the
 	// ATTACKER's registration.
-	fused    []bool
+	fused []bool
+	// edges[i] is true when slot i sits at the START or the END of the
+	// template, with no literal text on that side to stop it. Those slots are
+	// compiled with a constrained character class rather than `.*?`; see
+	// edgeSlotClass.
+	edges    []bool
 	re       *regexp.Regexp
 	literals int      // literal (non-placeholder) characters in the template
 	words    []string // literal words of >= minIndexWord runes, for the index
@@ -113,6 +118,11 @@ type Template struct {
 // them, so the split between their values is an artefact of the regexp rather
 // than a fact about the sentence.
 func (t *Template) Fused(i int) bool { return i >= 0 && i < len(t.fused) && t.fused[i] }
+
+// EdgeSlot reports whether slot i sits at an unanchored edge of the template
+// and is therefore compiled with the restricted class. It exists so the guard
+// tests can assert WHICH slots got the treatment rather than inferring it.
+func (t *Template) EdgeSlot(i int) bool { return i >= 0 && i < len(t.edges) && t.edges[i] }
 
 // Slots returns the placeholder names in template order.
 func (t *Template) Slots() []string { return append([]string(nil), t.slots...) }
@@ -151,6 +161,102 @@ const minLiterals = 6
 // wordRe finds literal words usable as index keys.
 var wordRe = regexp.MustCompile(`[\p{L}\p{N}]{` + fmt.Sprint(minIndexWord) + `,}`)
 
+// edgeSlotClass is what a placeholder sitting at the START or the END of a
+// template may capture, and it is the only thing standing between a template
+// and the sentence in front of it.
+//
+// # The hole it closes
+//
+// Compile anchors every pattern \A…\z, which reads like a guarantee that the
+// whole sentence is accounted for. For a template that BEGINS with a
+// placeholder it guarantees nothing: `\A(.*?) was destroyed\.\z` matched
+// against
+//
+//	"Reputation gained: Odysseus E (YHA-137) was destroyed."
+//
+// succeeds with the leading capture holding "Reputation gained: Odysseus E
+// (YHA-137)". The anchor is satisfied because the wildcard reaches it. So an
+// arbitrary line of prose that happens to END in a template's tail is
+// classified as that template, the registration code is dredged out of the
+// middle of it, and the rules layer fires on a sentence that was about
+// something else. Nothing downstream catches it: rules go through MatchRef,
+// which tests ONE template with no scoring and no ambiguity flag.
+//
+// # Why a character class, and this one
+//
+// Measured over the 200-save archive, 14,635 distinct log titles:
+//
+//   - 14,617 matched a template; in NOT ONE of them did a slot at either edge
+//     of its template hold any of `. : ; ! ?` or a newline.
+//   - 2,416 of those titles classified through the ordered RuleRefs table on a
+//     template that leads with a placeholder ({1016,32}/33/34/37); the
+//     recovered subjects are entity names and hold letters, digits, spaces and
+//     `( ) - > '` and nothing else.
+//   - applying the class costs **0** of the 14,428 titles the rules table
+//     classifies today.
+//
+// So the class excludes sentence structure — the punctuation that separates one
+// clause from the next — and nothing else. It is deliberately NOT a whitelist
+// of the characters this corpus happened to contain: `>` and `'` are in real
+// entity names here, and a name in another language will contain something this
+// corpus never saw.
+//
+// # What it costs, stated honestly
+//
+// A ship the player renames to "S.S. Anne" stops being matchable by name, and
+// a missed red is worse than a wrong one. The corpus says the exchange rate is
+// favourable — 0 of 39 distinct player-chosen ship and station names carry any
+// of these characters, and 0 of 14,617 matched titles do — but that is one
+// player, and a second corpus could move it. It is a measured trade, not a free
+// one.
+//
+// Go's regexp is RE2, so there is no lookahead: "not preceded by prose" cannot
+// be spelled directly and a negated character class is the tool available.
+const edgeSlotClass = `[^.:;!?\n\r]`
+
+// edgeSlots marks the placeholders that reach an END of the template with no
+// literal text in the way.
+//
+// It is a RUN and not a single slot, and that is the whole subtlety. Two
+// adjacent placeholders separated by nothing but whitespace are one ambiguous
+// region (see Template.fused) — the regexp splits them wherever the non-greedy
+// preference lands, and Match.Span puts them back together because the split is
+// an artefact. So constraining only the first of them constrains nothing:
+// against "Reputation gained: Odysseus E (YHA-137) was destroyed.", the
+// template "$KILLED$ $LOCATION$ was destroyed." simply parks the colon in
+// $LOCATION$ — KILLED="Reputation", LOCATION="gained: Odysseus E (YHA-137)" —
+// and Span hands the rule the same wrong subject as before. Measured directly:
+// with the class on slot 0 alone that sentence still classified, on {1016,30}
+// instead of {1016,34}.
+//
+// The run therefore extends from each end for as long as the slots are fused.
+func edgeSlots(text string, places [][]int) []bool {
+	edges := make([]bool, len(places))
+	if len(places) == 0 {
+		return edges
+	}
+	fusedTo := func(i, j int) bool { // slots i and j adjacent: only whitespace between
+		return strings.TrimSpace(text[places[i][1]:places[j][0]]) == ""
+	}
+	if places[0][0] == 0 {
+		for i := 0; i < len(places); i++ {
+			edges[i] = true
+			if i+1 >= len(places) || !fusedTo(i, i+1) {
+				break
+			}
+		}
+	}
+	if last := len(places) - 1; places[last][1] == len(text) {
+		for i := last; i >= 0; i-- {
+			edges[i] = true
+			if i-1 < 0 || !fusedTo(i-1, i) {
+				break
+			}
+		}
+	}
+	return edges
+}
+
 // Compile turns one expanded template string into a matcher. ok is false when
 // the string cannot serve as one: empty, or below minLiterals, or with no
 // literal word to index it by.
@@ -164,11 +270,14 @@ func Compile(ref Ref, text string) (*Template, bool) {
 		pat   strings.Builder
 		slots []string
 		fused []bool
+		edges []bool
 		lit   strings.Builder
 		last  int
 	)
+	places := placeholderRe.FindAllStringIndex(text, -1)
+	edges = edgeSlots(text, places)
 	pat.WriteString(`\A`)
-	for i, m := range placeholderRe.FindAllStringIndex(text, -1) {
+	for i, m := range places {
 		chunk := text[last:m[0]]
 		if i > 0 {
 			fused = append(fused, strings.TrimSpace(chunk) == "")
@@ -180,7 +289,11 @@ func Compile(ref Ref, text string) (*Template, bool) {
 		// Non-greedy so that the LEFTMOST placeholder takes as little as it
 		// can; Go's regexp keeps the greedy/non-greedy preference, so the
 		// capture split is deterministic rather than "whatever matched".
-		pat.WriteString(`(.*?)`)
+		if edges[i] {
+			pat.WriteString(`(` + edgeSlotClass + `*?)`)
+		} else {
+			pat.WriteString(`(.*?)`)
+		}
 		last = m[1]
 	}
 	tail := text[last:]
@@ -206,7 +319,7 @@ func Compile(ref Ref, text string) (*Template, bool) {
 	if len(slots) > 0 {
 		fused = append(fused, false) // the last slot fuses with nothing
 	}
-	return &Template{Ref: ref, Text: text, slots: slots, fused: fused, re: re, literals: literals, words: words}, true
+	return &Template{Ref: ref, Text: text, slots: slots, fused: fused, edges: edges, re: re, literals: literals, words: words}, true
 }
 
 // Match is one recovered template application.
