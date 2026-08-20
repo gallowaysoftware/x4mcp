@@ -33,8 +33,26 @@ const (
 //     hits mexit's "this is the main thread, just wedge it" path, parking it
 //     forever — at nice 19, permanently, one thread poorer.
 //
-// Measured on this machine at GOMAXPROCS=4: a freshly spawned LockOSThread'd
-// goroutine landed here 11 times in 200.
+// How often does a freshly spawned LockOSThread'd goroutine land here? The
+// honest answer is that it is not a rate, and this comment used to quote one.
+//
+// `go f(); <-ch` parks the parent goroutine and hands its M straight to the
+// child, so the child inherits whatever thread the PARENT was on. Measured at
+// GOMAXPROCS 1, 2, 3, 4, 8 and 32, on all of them:
+//
+//	spawned from a goroutine that is on m0      -> 400 of 400 land here
+//	spawned from a goroutine that is not        -> 0 of 400
+//
+// Every "31–230 in 400" and "11 in 200" ever written in this tree was measuring
+// which goroutine happened to be running the sampler. And the parse worker IS
+// spawned from a goroutine the runtime is free to place on m0, so this is a
+// path the product takes rather than a hypothetical.
+//
+// The damage is bounded and that is not a comfort: the FIRST landing wedges m0
+// (mexit's "this is the main thread, just wedge it"), after which the scheduler
+// never offers it again — measured, with the fix removed, at exactly 1 in 200
+// at every GOMAXPROCS above. One thread, once per process, permanently, at
+// nice 19.
 func onMainOSThread() bool { return unix.Gettid() == unix.Getpid() }
 
 // ioClassNames indexes IOPRIO_CLASS_*. NONE is not "no class": it means the

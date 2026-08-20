@@ -117,6 +117,108 @@ func TestProcessNiceCheckStillCatchesTheBugItGuards(t *testing.T) {
 	}
 }
 
+// ---- the main-thread guard, and a control that actually arms ----
+
+// m0 is the deterministic positive control for the test below, measured ONCE
+// per test binary from the main goroutine.
+//
+// # Why it has to be measured from there
+//
+// The old control sampled the unguarded shape — spawn a goroutine, lock it,
+// read its tid — from inside the test function, and reported a "rate". There is
+// no rate. Measured on this machine at GOMAXPROCS 1, 2, 3, 4, 8 and 32, the
+// answer is the same at every one of them and depends on exactly one thing:
+//
+//	the sampling goroutine is itself on m0   -> 400 of 400 land on m0
+//	the sampling goroutine is anywhere else  -> 0 of 400
+//
+// because `go f(); <-ch` parks the parent and hands its M straight to the
+// child. So the old control was measuring which thread the TEST goroutine
+// happened to be sitting on, which depends on what ran before it — and when it
+// came up 0 it called t.Skip, and a skip is a pass. Measured: at GOMAXPROCS=2
+// it skipped 30 runs out of 30, and 4 of 6 of those runs were fully green WITH
+// THE BUG REINTRODUCED. A two-core CI runner ships this bug.
+//
+// TestMain runs on the MAIN goroutine, which is on m0 — verified, not assumed,
+// and recorded in onMainThread. Sampling from there arms 200 of 200 times at
+// every GOMAXPROCS tried, so the control cannot fail to arm and the test never
+// has to decide whether a zero means "safe" or "did not look".
+//
+// # And why it is measured once
+//
+// The pre-fix shape WEDGES m0 the first time it lands there (mexit: "this is
+// the main thread, just wedge it"), after which the scheduler never offers it
+// again — measured: with the bug reintroduced, politely lands on m0 exactly
+// 1 time in 200, at every GOMAXPROCS. That is why `-count=N` used to guard only
+// the first iteration: the bug destroys the conditions for its own detection.
+// Recording the verdict from a single deterministic probe and asserting it on
+// every iteration is what makes -count honest here.
+//
+// The control's own loop unlocks the thread again, so it demonstrates that the
+// runtime OFFERS m0 without accepting it.
+var m0 m0Control
+
+type m0Control struct {
+	onMainThread bool // TestMain really was on the process's first thread
+	tries        int
+	naive        int // landings on m0 by the unguarded shape: the control
+	polite       int // landings on m0 by politely: must be 0
+	niceBefore   int
+	niceAfter    int
+	haveNice     bool
+}
+
+func TestMain(m *testing.M) {
+	m0 = probeMainThread(200)
+	os.Exit(m.Run())
+}
+
+// probeMainThread must be called from the main goroutine.
+func probeMainThread(tries int) m0Control {
+	pid := unix.Getpid()
+	c := m0Control{onMainThread: unix.Gettid() == pid, tries: tries}
+	if before, err := unix.Getpriority(unix.PRIO_PROCESS, pid); err == nil {
+		c.niceBefore, c.haveNice = 20-before, true
+	}
+
+	// The control: the pre-fix shape, minus the part that would wedge the
+	// thread for the rest of the process.
+	for i := 0; i < tries; i++ {
+		got := make(chan int, 1)
+		go func() {
+			runtime.LockOSThread()
+			got <- unix.Gettid()
+			runtime.UnlockOSThread()
+		}()
+		if <-got == pid {
+			c.naive++
+		}
+	}
+
+	// The guarded form, called exactly as readSave calls it.
+	for i := 0; i < tries; i++ {
+		var tid int
+		done := make(chan struct{})
+		go func() {
+			politely(defaultParseNice, func(wire.ParsePriority) {}, func() { tid = unix.Gettid() })
+			close(done)
+		}()
+		<-done
+		if tid == pid {
+			c.polite++
+		}
+	}
+
+	if c.haveNice {
+		if after, err := unix.Getpriority(unix.PRIO_PROCESS, pid); err == nil {
+			c.niceAfter = 20 - after
+		} else {
+			c.haveNice = false
+		}
+	}
+	return c
+}
+
 // The parse must never run on the process's FIRST thread.
 //
 // Two things go wrong there and only one of them is visible. `getpriority`,
@@ -126,36 +228,53 @@ func TestProcessNiceCheckStillCatchesTheBugItGuards(t *testing.T) {
 // wedges it (mexit: "this is the main thread, just wedge it"), permanently, at
 // nice 19, one thread poorer every time it happens.
 //
-// It happens. This test's own positive control measures how often on this
-// machine before asserting the fix, and skips rather than passing vacuously
-// when the runtime never offers the main thread at all — a control that cannot
-// arm is a control that proves nothing, and saying so is better than a green
-// tick that means "the bug did not occur today".
+// Both halves are asserted, and both fire when the fix is removed: measured
+// with the pre-fix politely restored, at GOMAXPROCS 1, 2, 4 and 32, the probe
+// reports 1 landing in 200 AND the main thread's nice moving 15 -> 19, at every
+// one of them.
 func TestThePoliteThreadIsNeverTheProcessFirstThread(t *testing.T) {
-	const tries = 400
+	if !m0.onMainThread {
+		t.Fatalf("the control could not arm: TestMain was not running on the process's first thread, " +
+			"so nothing here has been demonstrated. This is a FAILURE and not a skip — a guard that " +
+			"cannot arm must say so loudly, because the alternative is a green tick meaning " +
+			"\"the bug did not occur today\"")
+	}
+	if m0.naive == 0 {
+		t.Fatalf("the control stopped reproducing the condition it guards: the unguarded shape took "+
+			"the main thread 0 of %d times from the main goroutine, where it has always taken it "+
+			"every time. Either the runtime's handoff changed or this probe is no longer measuring "+
+			"what it thinks it is", m0.tries)
+	}
+	t.Logf("control: the unguarded form took the main thread %d of %d times", m0.naive, m0.tries)
+
+	if m0.polite > 0 {
+		t.Errorf("the parse ran on the process's first thread %d of %d times (the unguarded form "+
+			"does it %d of %d). The first landing wedges m0 forever, at nice %d, and every ps and "+
+			"top on the machine then reports the whole board as niced",
+			m0.polite, m0.tries, m0.naive, m0.tries, defaultParseNice)
+	}
+	// The main thread's priority is exactly where it started. This pair used to
+	// be read twice AFTER the run, in the wrong order, which compares a number
+	// with itself and can never fail.
+	if m0.haveNice && m0.niceAfter != m0.niceBefore {
+		t.Errorf("the main thread's nice moved from %d to %d across %d parses; politeness is the "+
+			"parse's to pay, not the board's", m0.niceBefore, m0.niceAfter, m0.tries)
+	}
+}
+
+// The same assertion again, live, from wherever the suite happens to have put
+// this goroutine. It is the opportunistic half: when the test goroutine is on
+// m0 the runtime hands the main thread to every spawned worker and this is a
+// real test of the guard under the conditions the rest of the suite created;
+// when it is not, the loop cannot arm and says so rather than pretending.
+//
+// It never skips. The deterministic probe above has already decided the verdict
+// for this binary.
+func TestThePoliteThreadHoldsUnderTheSuitesOwnConditions(t *testing.T) {
+	const tries = 200
 	pid := os.Getpid()
+	armed := unix.Gettid() == pid
 
-	// Positive control: the pre-fix shape — lock whatever thread the runtime
-	// hands you and nice it — does land on the main thread.
-	naive := 0
-	for i := 0; i < tries; i++ {
-		got := make(chan int, 1)
-		go func() {
-			runtime.LockOSThread()
-			got <- unix.Gettid()
-			runtime.UnlockOSThread()
-		}()
-		if <-got == pid {
-			naive++
-		}
-	}
-	if naive == 0 {
-		t.Skipf("the runtime never handed out the main thread in %d tries here, "+
-			"so the control cannot arm and this run proves nothing about the fix", tries)
-	}
-	t.Logf("control: the unguarded form landed on the main thread %d of %d times", naive, tries)
-
-	// The fix: never, at any count.
 	bad := 0
 	for i := 0; i < tries; i++ {
 		var tid int
@@ -170,14 +289,11 @@ func TestThePoliteThreadIsNeverTheProcessFirstThread(t *testing.T) {
 		}
 	}
 	if bad > 0 {
-		t.Errorf("the parse ran on the process's first thread %d of %d times "+
-			"(the unguarded form does it %d of %d)", bad, tries, naive, tries)
+		t.Errorf("the parse ran on the process's first thread %d of %d times", bad, tries)
 	}
-
-	// …and the main thread's priority is exactly where it started.
-	if after, ok := processNice(t); ok {
-		if before, ok2 := processNice(t); ok2 && after != before {
-			t.Errorf("main-thread nice moved during the run: %d -> %d", before, after)
-		}
+	if !armed {
+		t.Logf("this goroutine is not on the main thread (tid %d, pid %d), so the runtime never "+
+			"offers m0 to the workers it spawns and this loop is a formality; the arming guarantee "+
+			"is TestThePoliteThreadIsNeverTheProcessFirstThread's", unix.Gettid(), pid)
 	}
 }

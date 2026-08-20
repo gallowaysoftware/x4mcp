@@ -738,9 +738,12 @@ func (w *Watcher) readSave(ctx context.Context, path string, opts x4save.LoadOpt
 //     pid)` reads that task and so does ps, so nicing it is indistinguishable
 //     from nicing the whole board; and a goroutine that exits locked to it does
 //     not retire it, it WEDGES it (mexit's "this is the main thread, just wedge
-//     it" path) — permanently, at nice 19, one thread poorer each time. Measured
-//     at GOMAXPROCS=4, a freshly spawned LockOSThread'd goroutine lands there
-//     11 times in 200, so this is a path the product takes, not a hypothetical.
+//     it" path) — permanently, at nice 19, one thread poorer. Whether a spawned
+//     goroutine lands there is not a rate but a consequence of who spawned it:
+//     `go f(); <-ch` hands the parent's M to the child, so a worker spawned
+//     from a goroutine sitting on m0 lands on m0 400 times in 400, at every
+//     GOMAXPROCS from 1 to 32 (see onMainOSThread). It is a path the product
+//     takes, not a hypothetical.
 //     Instead, HOLD it: stay locked to it while waiting, which parks it and
 //     makes it unavailable to the scheduler, so the goroutine doing the work is
 //     guaranteed a different thread. Then unlock, leaving it exactly as found.
