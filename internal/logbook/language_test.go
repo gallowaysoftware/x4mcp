@@ -185,9 +185,31 @@ func TestTheLaneReportsItselfUnavailableRatherThanGoingQuiet(t *testing.T) {
 		}
 	}
 
-	// No install at all is the same verdict with a different reason.
-	if _, a := SelectFrom(Install{}, sample); a.State != StateUnavailable {
-		t.Errorf("state = %s with no install, want unavailable", a.State)
+	// When nothing worked, the language reported is the one that WOULD have
+	// been used — the first candidate tried — so that "we tried and failed" and
+	// "we would have used this" are the same sentence. Reporting the last
+	// candidate instead would name whichever localisation happened to sort
+	// last.
+	if a.Language != "l044" {
+		t.Errorf("language = %q with nothing readable; want the first candidate, l044", a.Language)
+	}
+
+	// No install at all is the same verdict with a different reason, and the
+	// reason has to be the right one: "there is no game here" and "the game is
+	// here and speaks a language none of its own files describe" send a reader
+	// to completely different places.
+	for _, empty := range []Install{
+		{},
+		{Load: func(string) *Catalog { return NewCatalog(nil) }}, // a loader, no localisations
+	} {
+		_, a := SelectFrom(empty, sample)
+		if a.State != StateUnavailable {
+			t.Errorf("state = %s with no install, want unavailable", a.State)
+		}
+		if !strings.Contains(a.Detail, "no X4 installation") {
+			t.Errorf("an install that could not be read reported %q, which sends the reader "+
+				"looking for a translation problem they do not have", a.Detail)
+		}
 	}
 }
 

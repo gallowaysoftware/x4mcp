@@ -1188,3 +1188,91 @@ func TestDuplicateHandlingIsDeterministic(t *testing.T) {
 		t.Fatalf("want one change, got %d: %v", n, kinds(first))
 	}
 }
+
+// A ship the pair cannot identify must not collect per-ship alerts.
+//
+// ships() reports the LOSS of an unidentifiable hull, because a count is still
+// true and a missing red is the worst thing this lane can do. Everything else
+// is the opposite: an idle escalation, or a "your ship stopped being attacked",
+// is a statement ABOUT ONE SHIP, and there is no one ship to make it about. So
+// the lookup refuses rather than handing back the first of two candidates.
+func TestAnUnidentifiableShipCollectsNoPerShipAlerts(t *testing.T) {
+	twin := func(id, name string) x4save.Ship {
+		s := ship(id, "UDN-009", name, "ship_xl")
+		s.SpawnTime = 0 // nothing left to tell them apart
+		s.Order = ""
+		s.LastOrderError = "SingleBuy: no seller"
+		return s
+	}
+	a, b := twin("[0x1]", "Twin A"), twin("[0x2]", "Twin B")
+
+	// Both idle across both saves with the same standing failure. For one ship
+	// that is an escalation; for two ships wearing one identity it is a
+	// sentence with no subject.
+	got := Diff(snap(1000, a, b), snap(2000, a, b), opts())
+	none(t, got, KindIdleWithFailedOrder)
+	none(t, got, KindShipNewlyIdle)
+
+	// And the same lookup, on a ship the pair CAN identify, still works.
+	lone := ship("[0x9]", "ZBD-609", "Ordinary", "ship_m")
+	lone.Order = ""
+	lone.LastOrderError = "SingleBuy: no seller"
+	only(t, Diff(snap(1000, lone), snap(2000, lone), opts()), KindIdleWithFailedOrder)
+}
+
+// …and the attack path errs the other way, deliberately. With no previous
+// clock to compare against, an attack on an unidentifiable hull is REPORTED
+// rather than dropped: over-reporting an attack costs an amber, and dropping
+// one costs the thing the lane exists for.
+func TestAnAttackOnAnUnidentifiableShipIsStillReported(t *testing.T) {
+	twin := func(id, name string) x4save.Ship {
+		s := ship(id, "UDN-009", name, "ship_xl")
+		s.SpawnTime = 0
+		s.Attack = &x4save.Attack{IntentionalTime: 1500}
+		return s
+	}
+	a, b := twin("[0x1]", "Twin A"), twin("[0x2]", "Twin B")
+	n := 0
+	for _, c := range Diff(snap(1000, a, b), snap(2000, a, b), opts()).Changes {
+		if c.Kind == KindUnderAttack {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("two hulls under attack produced %d under_attack changes", n)
+	}
+}
+
+// The pairing of indistinguishable ships is decided by component id, which is
+// arbitrary but STABLE — it does not depend on the order the parser happened to
+// emit them in. Without that, which of two identical hulls gets named as the
+// loss flips between saves, and a flipping subject is a flipping dedupe key: the
+// player is told twice about one loss.
+func TestTheDuplicatePairingDoesNotDependOnSliceOrder(t *testing.T) {
+	twin := func(id, name string) x4save.Ship {
+		s := ship(id, "UDN-009", name, "ship_xl")
+		s.SpawnTime = 0
+		return s
+	}
+	a, b := twin("[0x1]", "Twin A"), twin("[0x2]", "Twin B")
+	wreck := b
+	wreck.State = "wreck"
+
+	// The SAME two snapshots, with the newer one's ships emitted in the other
+	// order. Nothing about the empire changed; only the order the walk happened
+	// to produce did.
+	forward := Diff(snap(1000, a, b), snap(2000, a, wreck), opts())
+	shuffled := Diff(snap(1000, a, b), snap(2000, wreck, a), opts())
+	if !reflect.DeepEqual(forward, shuffled) {
+		t.Fatalf("the same pair, with the ships listed in the other order, produced a different "+
+			"answer:\n in order = %+v\n shuffled = %+v", forward.Changes, shuffled.Changes)
+	}
+	// …and the same the other way round, on the older snapshot.
+	if got := Diff(snap(1000, b, a), snap(2000, a, wreck), opts()); !reflect.DeepEqual(got, forward) {
+		t.Fatalf("reordering the OLDER snapshot changed the answer:\n %+v", got.Changes)
+	}
+	c := only(t, forward, KindShipLost)
+	if c.Subject.ID != "[0x2]" {
+		t.Errorf("the wreck is [0x2] and the loss was pinned on %q", c.Subject.ID)
+	}
+}

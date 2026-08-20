@@ -34,6 +34,12 @@ func TestTextLanguagesReadsWhatTheInstallActuallyShips(t *testing.T) {
 		"t/0001-l081.xml",
 		"t/0002-l007.xml", // a different page set, not a page-0001 localisation
 		"libraries/galaxy.xml",
+		// Decoys. The match is ANCHORED, so a backup, a build artefact or a
+		// mod's copy under another directory is not a localisation this
+		// install can be told to render in — and offering it as a candidate
+		// costs a six-megabyte catalog build to score zero.
+		"ui/t/0001-l007.xml",
+		"t/0001-l033.xml.bak",
 	)
 	got := strings.Join(TextLanguages(dir), " ")
 	if got != "l044 l049 l081" {

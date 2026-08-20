@@ -1,6 +1,7 @@
 # S7 — the rule table, and what the corpus can actually say about it
 
-**Status:** spike complete · measured 2026-08-20 against the 200-save archive
+**Status:** spike complete · measured 2026-08-20 against the 200-save archive ·
+**adversarially reviewed and its five findings fixed the same day (§9)**
 **Deliverable:** a rule table with trigger, signature, severity, dedupe key and
 confidence — and, for each rule, the number the corpus supports rather than the
 number the design hoped for.
@@ -20,7 +21,9 @@ by entity ID" reports the entire fleet as lost the first morning the player
 comes back. Keyed on the registration code instead, the lane produces **396 red
 alerts over 9.6 real days — 288 per week under a dedupe policy no product can
 ship (§3) — and 0 of them can be shown to be wrong by anything in the
-corpus.** That last clause is doing a lot of work — the falsification pass only
+corpus.** (Those figures are the pinned run below; §9 records what the
+adversarial review then found in the code underneath them, and what changed.)
+That last clause is doing a lot of work — the falsification pass only
 examines `ship_lost` and `ship_gone`, so 34 of the 396 reds were never tested at
 all — and
 §2 is about how much: falsification is one-sided, most of those reds are one
@@ -355,15 +358,20 @@ playthrough, not about X4.
 
 **A caveat with teeth: 14,137 matches (12.8%) were ambiguous** — another
 template scored identically and the ref shown is a tie-break, not a finding.
-The archetype is `"Odysseus E (YHA-137) was destroyed."`, which fits both
-`{1016,34}` (`$KILLED$ was destroyed.`) and `{1016,30}`
-(`$KILLED$ $LOCATION$ was destroyed.`) and which the SCORE gives to `{1016,30}`
-— splitting the subject so the registration code lands in the location slot.
-This is exactly why the rules do not use the score. `logbook.RuleRefs` is an
-ordered, hand-written table checked first-match-wins, so an ambiguity is
-resolved by a decision someone made and can revisit. The
+
+*Correction (2026-08-20).* The archetype this section used to name is not one of
+them, and the real shape is worse. `"Odysseus E (YHA-137) was destroyed."` fits
+both `{1016,34}` (`$KILLED$ was destroyed.`) and `{1016,30}`
+(`$KILLED$ $LOCATION$ was destroyed.`), and the score does **not** tie: measured
+directly, `{1016,30}` accounts for 16 literal characters against `{1016,34}`'s
+15, so it wins **outright**, `Match.Ambiguous` is false and `Rivals` is empty.
+The caller is told nothing at all. A wrong winner with no flag on it is a
+sharper problem than a flagged tie, and it is the reason the rules do not use
+the score: `logbook.RuleRefs` is an ordered, hand-written table checked
+first-match-wins, so the choice is a decision someone made and can revisit. The
 `TestOrderedRuleRefsBeatTheAmbiguityThatScoringLosesTo` case pins that
-difference.
+difference — and now asserts its own premise instead of skipping when the
+premise disappears (§9, F9).
 
 ---
 
@@ -423,6 +431,14 @@ entry and the differ reports NO loss when one of them dies. A missing red is
 worse than a wrong one. The corpus says it has not happened; the format does not
 say it cannot.
 
+*Both are now carried by the code (§9, F10).* Re-measured over all 200 saves on
+2026-08-20: **93,961 ship rows, 0 codeless ships, 0 codes shared by two ships, 0
+ship/station code collisions, 0 duplicate station codes and 0 duplicate
+`BuildKey`s**. The `SpawnTime == 0` ship is the player's XL **UDN-009**, in
+**173 of 200 saves** on the current window — the 167 above was the same ship on
+a smaller one. `sameShip`'s doc comment now states the hole, and the duplicate
+case is detected pair-symmetrically in `Diff` rather than swallowed by a map.
+
 `Ship.SpawnTime`'s own doc comment in `model.go` already said it "hardens Code
 as a cross-save identity". Nothing downstream had acted on it.
 
@@ -446,18 +462,16 @@ recovering the ref and the substituted values. The rule key is then genuinely
 locale-invariant — `{1016,34}` is `{1016,34}` on a German client — and only the
 CATALOG is language-specific, built from whatever install the player is running.
 
-**The key is locale-invariant; the loader is not, and today that is a hole.**
-`x4data.textFiles` is the literal list `{"t/0001.xml", "t/0001-L044.xml",
-"t/0001-l044.xml"}`, and `l044` is English. This install ships twelve
-localisations (l007 Russian, l033 French, l034 Spanish, l039 Italian, l044
-English, l048 Polish, l049 German, l055 Portuguese, l081 Japanese, l082 Korean,
-l086/l088 Chinese) and nothing detects which one the player runs. On a German
-client X4 writes German sentences into `<log>` and the catalog holds English
-templates, so **nothing matches** — verified directly: `Classify("Odysseus E
-(YHA-137) wurde zerstört.")` returns `ok=false`. The failure is silent and it is
-not small. Replaying the same 200 saves with an empty catalog, which is exactly
-what a non-English player (or a player whose install cannot be found) gets
-today:
+**The key is locale-invariant; the loader was not, and that was a hole. It is
+closed — see the end of this subsection.**
+`x4data.textFiles` was the literal list `{"t/0001.xml", "t/0001-L044.xml",
+"t/0001-l044.xml"}`, and `l044` is English. Nothing detected which localisation
+the player runs. On a German client X4 writes German sentences into `<log>` and
+the catalog holds English templates, so **nothing matches** — verified directly:
+`Classify("Odysseus E (YHA-137) wurde zerstört.")` returns `ok=false`. The
+failure is silent and it is not small. Replaying the same 200 saves with an
+empty catalog, which is exactly what a non-English player (or a player whose
+install cannot be found) got:
 
 | rule | English install | non-English / no install |
 |---|---:|---:|
@@ -469,10 +483,42 @@ today:
 97% of real ship losses stop being reported, and two rules cease to exist. The
 lane does degrade rather than fabricate — which is what `TestNilCatalogDegrades`
 asserts and is the right behaviour given an empty catalog — but "degrades
-safely" and "is locale-robust" are different claims, and only the first is
-true. Language detection (read the player's config, or try the catalog against a
-sample of the log and pick the file that matches) belongs in the same increment
-as the parser gaps.
+safely" and "is locale-robust" are different claims, and only the first was
+true.
+
+**Fixed 2026-08-20 (§9, F1), and the count above was wrong too.** The install
+ships **sixteen** page-0001 localisations, not twelve — `l007 l033 l034 l039
+l042 l044 l048 l049 l055 l081 l082 l086 l088 l090 l359 l380`, every one a
+multi-megabyte file in the base game's `09.cat`; the twelve was a hand-count
+that missed `l042`, `l090`, `l359` and `l380`. Building the rule catalog from
+each and running the newest save's 17,008 log rows through it:
+
+| localisation | classified | share |
+|---|---:|---:|
+| `l044` `l090` `l359` `l380` | 4,279 | **25.16%** |
+| the other twelve | 0 | 0.00% |
+
+The four that tie are not an ambiguity: page 1016 is untranslated in
+`l090`/`l359`/`l380`, so all four hold the same English sentences and recover
+the same refs. A 25% / 0% separation is why the mechanism is **detection by
+classification** — `logbook.Select` tries candidates against a spread sample of
+the player's own log and keeps the one that reads it. The configured language is
+consulted first, as a HINT that is then checked: `X4MCP_GAME_LANG`, then Steam's
+`appmanifest_392160.acf` `UserConfig.language`. It has to be a hint — X4's own
+`config.xml` carries display, sound, input and privacy settings and **no
+language at all** (read directly), the savegame's `<info>` block carries none,
+and Steam's manifest records what the store downloaded, which a `-lang` on the
+command line overrides. A correct hint costs one catalog build instead of
+sixteen; a wrong one loses to the text.
+
+And the failure is loud. `logbook.Availability` has three states — `ok`,
+`unverified` (chosen, but no log sample yet: startup, which is neither a pass
+nor a failure) and `unavailable` — carrying a sentence naming what is missing
+and the score of every candidate tried. `scripts/replay` prints a banner for it
+and puts it in the JSON, and `diff.Result.Log` carries `{entries, classified}`
+per pair, which is the same signal and also catches the OTHER silent failure in
+this lane: a patch that renumbers page 1016 builds fine and simply stops
+matching.
 
 Three caveats belong with that, all of them measured:
 
@@ -610,23 +656,49 @@ positive-control table beside it.
 the same test failed again on the four-core repeat run — "the parse moved the
 whole process from nice 1 to nice 19" — and this time it was true. `readSave`
 runs the parse on a goroutine locked to its own OS thread, nices that thread,
-and lets the thread die with the goroutine. Measured: **a freshly spawned
-`LockOSThread`'d goroutine lands on the process's FIRST thread anywhere from
-**0 to 400 times in 400** at `GOMAXPROCS=4` — the distribution is strongly
-bimodal at the two ends, not a 31–230 band, and `priority_linux.go` states a
-third figure ("11 times in 200") that matches neither. The rate is a property
-of the run, not a constant. The leak is also bounded: the FIRST landing wedges
-m0, after which the scheduler never offers it again, so it is one thread once
-per process and not one per occurrence.** When it does, two things go wrong — `getpriority`,
-`ps` and `top` all read that task's nice as the process's, so the board the
-player is looking at reads as niced to 19; and the runtime cannot retire it, so
-`mexit` wedges it forever ("this is the main thread, just wedge it"), one
-thread poorer per occurrence. The fix holds the main thread instead of nicing
-it: stay locked to it while a second goroutine — which is therefore guaranteed
-a different thread — does the parse, then unlock and leave it as found. The
-test's positive control measures the unguarded rate before asserting the guard,
-and skips rather than passing vacuously if the runtime never offers the main
-thread on the machine it is running on.
+and lets the thread die with the goroutine. When that thread is the process's
+first one, two things go wrong: `getpriority`, `ps` and `top` all read that
+task's nice as the process's, so the board the player is looking at reads as
+niced to 19; and the runtime cannot retire it, so `mexit` wedges it forever
+("this is the main thread, just wedge it"), one thread poorer. The fix holds the
+main thread instead of nicing it: stay locked to it while a second goroutine —
+which is therefore guaranteed a different thread — does the parse, then unlock
+and leave it as found.
+
+**How often does it happen? It is not a rate, and three different numbers in
+this tree said it was.** `priority_linux.go` said "11 times in 200", an earlier
+draft of this section said "31–230 in 400", and a later one said "0 to 400 in
+400, strongly bimodal — a property of the run". All three were measuring the
+same artefact from the outside. Measured properly (2026-08-20), the quantity is
+not stochastic at all: `go f(); <-ch` parks the parent goroutine and hands its M
+straight to the child, so the child lands on m0 exactly when **the goroutine
+that spawned it** is on m0. At `GOMAXPROCS` 1, 2, 3, 4, 8 and 32, on every one
+of them:
+
+| the sampling goroutine | landings on m0 |
+|---|---:|
+| is on m0 | **400 of 400** |
+| is not | **0 of 400** |
+
+The bimodality was the two branches of that, and which branch a test run fell
+into depended on what had run before it. The leak is separately bounded: the
+FIRST landing wedges m0 and the scheduler never offers it again — measured, with
+the fix removed, at exactly **1 in 200** at every `GOMAXPROCS` above.
+
+**The control could not arm, and that shipped the bug green.** The old positive
+control sampled the unguarded shape from inside the test function and called
+`t.Skip` when it came up zero — and a skip is a pass. Measured: at
+`GOMAXPROCS=2` it skipped **30 runs of 30**, and **4 of 6** of those runs were
+fully green *with the bug reintroduced*. A two-core CI runner shipped it. The
+probe now runs from `TestMain`, which is on the main goroutine and therefore on
+m0 (verified in the probe, not assumed), arms **200 of 200 at every
+`GOMAXPROCS` tried**, records its verdict once and asserts it on every `-count`
+iteration — the bug used to destroy the conditions for its own detection, which
+is why `-count=N` only ever guarded iteration 1. When it cannot arm it FAILS.
+Verified against the disease: with the pre-fix `politely` restored the test
+fails at `GOMAXPROCS` 1, 2, 4 and 32, on both assertions. The second of those
+assertions is new — the old one read `before` and `after` both *after* the run,
+`before` second, which compares a number with itself and can never fail.
 
 This is the probes doc's instrument warning in a new costume, twice over. The
 first version of the S7 census also measured its own instrument: 77.7% template
@@ -679,7 +751,90 @@ two runs an hour apart during this session already differed by one save.
 
 ---
 
-## 9. What S9 should take from this
+## 9. The adversarial review, and what it found in this lane
+
+Everything above was reviewed adversarially on 2026-08-20 and five findings
+survived triage. All five are fixed; this section is what they were, because a
+review that only leaves a green tick behind teaches nobody anything.
+
+**F6 — `\A` anchors nothing when a template begins with a placeholder.**
+`Compile` builds `\A` + `(.*?)` + literals + `\z`, which reads like a promise
+that the whole sentence is accounted for. For a template that leads with a
+placeholder it is not: `\A(.*?) was destroyed\.\z` is satisfied by any prose
+ending in " was destroyed.", because the wildcard reaches the anchor by
+absorbing the prefix. `"Reputation gained: Odysseus E (YHA-137) was destroyed."`
+classified as `{1016,34}` with the code dug out of the middle of it, and nothing
+downstream caught it — rules go through `MatchRef`, which tests ONE template
+with no score and no ambiguity flag.
+
+Measured before choosing a fix, over 14,635 distinct log titles from the 200-save
+archive: **14,617 matched a template and not one of them held any of `. : ; ! ?`
+or a newline in a slot at either EDGE of its template**; the 2,416 titles that
+classify on a leading-placeholder template carry entity names made of letters,
+digits, spaces and `( ) - > '`; and 0 of 39 distinct player-chosen ship and
+station names carry one either. So an edge placeholder compiles to
+`([^.:;!?\n\r]*?)`. Go's regexp is RE2 — there is no lookahead, so "not
+preceded by prose" cannot be spelled and a negated class is the tool available.
+The class excludes sentence structure and nothing else rather than whitelisting
+the characters this one corpus happened to contain.
+
+The RUN, not the slot: two placeholders separated by whitespace are one
+ambiguous region, so constraining slot 0 alone just parks the colon in slot 1
+and `Span` puts them back together — measured, with the class on slot 0 only,
+that same sentence still classified, as `{1016,30}`. **Cost on the corpus:
+zero.** 14,428 of 14,635 titles classify through `RuleRefs` before and after,
+and 14,617 match the full catalog before and after.
+
+**F9 — a mutation pass, and what it found.** 113 single-edit mutations across
+`internal/diff`, `internal/rules`, `internal/logbook` and `internal/x4data`, each
+run against the deterministic lane's suite.
+
+| | caught | survived |
+|---|---:|---:|
+| before | 42 | 46 (of 88) |
+| after | **110** | **3** (of 113) |
+
+The three survivors are one deliberate no-op control that MUST survive — it is
+what proves the harness can tell the two verdicts apart — and two provably
+equivalent mutants: `now.Attack.IntentionalTime <= 0` is subsumed by
+`<= prevT` for any non-negative clock, and `byCodeFirst`'s empty-code guard
+duplicates the indexing guard that already refuses to index a codeless event.
+
+`internal/diff/logwindow.go` had **zero direct tests**, so all three of the log
+window's bounds could be dropped in silence — including the lower one, which is
+the only thing between one save's worth of news and a cumulative 17,000-entry
+log re-firing every historical destruction on every save. Also newly guarded:
+the attack clock must ADVANCE (a frozen clock is the normal state of a ship
+still under fire), an unchanged hull is not a fall, every rule's dedupe key is
+checked against two subjects rather than one (six capitals taking hull damage
+must be six rows), `splitCode` takes the FIRST code in a fused span, and the
+account hysteresis band, the stall's two-observation rule, the hostile hop
+bound and an unparsed stats block all have their boundaries pinned.
+
+One of them was a code fix rather than a test. `rules.subjectKey` preferred
+`Code` but fell back to the raw component id — the differ's restart bug one
+layer up, and worse there: a dedupe key is what says "the player has already
+been told about this", so an id-keyed one re-tells them everything after every
+one of the 22 restarts. The fallback now declares itself (`unstable-id:`)
+instead of promising a stability this layer cannot keep.
+
+**F10 — two ships with one code swallowed the loss of either.** `indexShips`
+keyed a map by code and map assignment keeps the last writer, so two ships
+sharing one became a single entry and the differ reported NO loss when one died.
+Latent — 0 duplicates in 93,961 ship rows — but a MISSING red is the worst
+failure this product has. The naive fix is worse than the bug and is now a test:
+disambiguating by `SpawnTime` *inside* `indexShips` is asymmetric, so one missed
+loss becomes two spurious `ship_gone` fires plus an invented arrival. The
+duplicate set is now computed once, in `Diff`, over both snapshots, and the
+index holds a slice per key so nothing can be swallowed. Where `SpawnTime`
+cannot separate them either — the `UDN-009` case above — the count still reports
+the right number of losses and the change says the hull is a guess.
+
+**F8 and F1** are §7 and §5.2 above.
+
+---
+
+## 10. What S9 should take from this
 
 1. **Ship the five disabled rules disabled.** Nothing here validates them.
 2. **Mass-casualty grouping is not a nice-to-have.** 362 true reds in 9.6 days
@@ -693,3 +848,11 @@ two runs an hour apart during this session already differed by one save.
    and as nothing else.
 6. **The two parser gaps (§6)** belong in the next parser increment with a
    cost gate.
+7. **Wire the lane's own health to the board.** `logbook.Availability` and
+   `diff.Result.Log` exist and only the replay harness reads them. On the board
+   they are the difference between "a quiet week" and "this build cannot read
+   your logbook", and §9's F1 is the whole argument for why that distinction has
+   to be visible rather than inferable.
+8. **Keep the mutation pass.** 42 of 88 mutations lived before it was run and 3
+   of 113 live now, and two of those three are equivalent mutants. Every number
+   in §3 rests on code that a test suite was not, until this week, watching.
