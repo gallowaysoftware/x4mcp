@@ -109,12 +109,18 @@
         "sector": "cluster_01_sector001_macro",
         "workforce": 0,
         "subordinates": 0,
+        "under_construction": true,
+        "building_modules": [
+          "module_gen_prod_graphene_01_macro"
+        ],
         "dock_sizes": [
           "m"
         ],
         "module_health": {
           "modules": 4,
           "damaged": 2,
+          "building": 1,
+          "wrecked": 1,
           "details": [
             {
               "macro": "module_gen_defence_claim_01_macro",

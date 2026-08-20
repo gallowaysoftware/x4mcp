@@ -59,7 +59,13 @@
      because a station is a container and its structure is its modules.
      One of the damaged modules is a class the exclusion list calls
      hull-less (a dockingbay); it is counted anyway, in BOTH halves of the
-     fraction, because the list is "not observed" and not "cannot happen". -->
+     fraction, because the list is "not observed" and not "cannot happen".
+
+     Rules 1 and 2 apply to MODULES too, and the station carries one of each:
+     a wrecked defence module and a production module still being built. Both
+     drop out of the damaged/total fraction and are counted on their own,
+     because neither carries a <hull> and folding either into the denominator
+     reads it as "at maximum". -->
 <component class="station" macro="station_gen_default_macro" connection="space" code="PLS-700" owner="player" name="Bastion" id="[0x710]">
 <connections>
 <connection connection="modules">
@@ -76,6 +82,24 @@
 <connection connection="modules">
 <component class="dockingbay" macro="dockingbay_gen_m_01_macro" connection="station" id="[0x714]">
 <hull value="4200"/>
+</component>
+</connection>
+<connection connection="modules">
+<!-- Rule 1, on a MODULE. A destroyed module drops its <hull> exactly as a
+     destroyed ship does, so folding it into the denominator reads it as "at
+     maximum" and reports a hole in the station as intact structure. -->
+<component class="defencemodule" macro="module_gen_defence_claim_01_macro" connection="station" state="wreck" id="[0x716]"/>
+</connection>
+<connection connection="modules">
+<!-- Rule 2, on a MODULE, and it moves BOTH halves of the fraction. Scaffolding
+     is not structure: this module does not exist yet, so counting it as
+     undamaged is how a station that is 17-of-18 damaged reports "17 of 498".
+     And it carries a <hull value> — real, but measured against the FINISHED
+     module's maximum, so it understates by design — which is how 38 of one
+     real save's 220 "damaged" modules turned out to be building sites. It
+     belongs in neither half. -->
+<component class="production" macro="module_gen_prod_graphene_01_macro" connection="station" state="construction" id="[0x717]">
+<hull value="12000"/>
 </component>
 </connection>
 <connection connection="docked">

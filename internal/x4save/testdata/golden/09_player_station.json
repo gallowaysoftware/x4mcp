@@ -111,8 +111,10 @@
           "l"
         ],
         "module_health": {
-          "modules": 6,
+          "modules": 5,
           "damaged": 1,
+          "building": 1,
+          "wrecked": 0,
           "details": [
             {
               "macro": "module_gen_prod_refinedmetals_01_macro",

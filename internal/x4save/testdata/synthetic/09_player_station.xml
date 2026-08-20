@@ -63,8 +63,10 @@
 <connection connection="modules">
 <component class="production" macro="module_gen_prod_refinedmetals_01_macro" connection="station" id="[0x411]">
 <!-- A module <hull> is present only when the module is DAMAGED; the other
-     five modules here carry none and are at maximum. The station component
-     itself never carries one — its structure is its modules. -->
+     four BUILT modules here carry none and are at maximum. The graphene
+     module below carries none either and is NOT at maximum — it has not been
+     built — which is why state is read before the absence rule. The station
+     component itself never carries one; its structure is its modules. -->
 <hull value="86400"/>
 <production state="running">
 <queue ware="refinedmetals" amount="1"/>

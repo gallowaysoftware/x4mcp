@@ -465,14 +465,31 @@ func (b BuildStorage) StalledFor(gameTimeS float64) (float64, bool) {
 // 963 carry no hull element and are treated as undamaged" — because that
 // TREATMENT is the number.
 //
+// Modules counts only modules that EXIST and are INTACT enough for the absence
+// rule to mean anything. Probe B §8 rules 1 and 2 run first and they are not
+// optional here: a module with state="construction" has not been built, and a
+// module with state="wreck" has been destroyed. Neither carries a <hull>, so
+// folding them into the denominator reads them as "at maximum" — which is the
+// absence-is-zero bug wearing its opposite coat. On one real save that put
+// 14,112 unbuilt modules and 22 destroyed ones into a 36,046 denominator, and
+// turned one station that was 17-of-18 damaged into "17 of 498".
+//
+// So the three populations travel together and never merge:
+//
+//	Modules  — built, not destroyed, of a class that can carry <hull>
+//	Building — state="construction": scaffolding, not structure
+//	Wrecked  — state="wreck": destroyed, not damaged
+//
 // There is deliberately no "worst module" and no percentage here. Hull is
 // ABSOLUTE and each module type has a different maximum, so ranking two
 // modules by their raw numbers compares nothing, and dividing needs a maximum
 // that lives in the game install rather than in the save.
 type ModuleHealth struct {
-	Modules int          `json:"modules"`           // modules of a class that can carry <hull>
-	Damaged int          `json:"damaged"`           // …of which this many carry a <hull value>
-	Details []ModuleHull `json:"details,omitempty"` // the damaged ones, in walk order
+	Modules  int          `json:"modules"`           // built, intact, of a class that can carry <hull>
+	Damaged  int          `json:"damaged"`           // …of which this many carry a <hull value>
+	Building int          `json:"building"`          // state="construction": not built yet, never "undamaged"
+	Wrecked  int          `json:"wrecked"`           // state="wreck": destroyed, never "undamaged"
+	Details  []ModuleHull `json:"details,omitempty"` // the damaged ones, in walk order
 }
 
 // ModuleHull is one damaged station module. Hull is ABSOLUTE; a percentage

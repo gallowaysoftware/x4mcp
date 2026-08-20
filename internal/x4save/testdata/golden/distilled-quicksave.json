@@ -4316,7 +4316,9 @@
         ],
         "module_health": {
           "modules": 42,
-          "damaged": 0
+          "damaged": 0,
+          "building": 0,
+          "wrecked": 0
         }
       },
       {
@@ -4696,7 +4698,9 @@
         ],
         "module_health": {
           "modules": 383,
-          "damaged": 0
+          "damaged": 0,
+          "building": 0,
+          "wrecked": 0
         }
       },
       {
@@ -4721,8 +4725,10 @@
           "xl"
         ],
         "module_health": {
-          "modules": 1424,
+          "modules": 304,
           "damaged": 5,
+          "building": 1120,
+          "wrecked": 0,
           "details": [
             {
               "macro": "dockarea_bor_m_station_01_standard_macro",
@@ -4774,8 +4780,10 @@
           "xl"
         ],
         "module_health": {
-          "modules": 1424,
-          "damaged": 0
+          "modules": 356,
+          "damaged": 0,
+          "building": 1068,
+          "wrecked": 0
         }
       },
       {
@@ -4866,7 +4874,9 @@
         ],
         "module_health": {
           "modules": 26,
-          "damaged": 0
+          "damaged": 0,
+          "building": 0,
+          "wrecked": 0
         }
       },
       {
@@ -4938,6 +4948,8 @@
         "module_health": {
           "modules": 67,
           "damaged": 1,
+          "building": 0,
+          "wrecked": 0,
           "details": [
             {
               "macro": "signalleak_s_standard_01_macro",
@@ -5201,7 +5213,9 @@
         ],
         "module_health": {
           "modules": 134,
-          "damaged": 0
+          "damaged": 0,
+          "building": 0,
+          "wrecked": 0
         }
       },
       {
@@ -5225,15 +5239,10 @@
           "xl"
         ],
         "module_health": {
-          "modules": 4,
-          "damaged": 1,
-          "details": [
-            {
-              "macro": "pier_arg_harbor_03_macro",
-              "class": "pier",
-              "hull": 886666.687
-            }
-          ]
+          "modules": 3,
+          "damaged": 0,
+          "building": 1,
+          "wrecked": 0
         }
       },
       {
@@ -5258,8 +5267,10 @@
           "xl"
         ],
         "module_health": {
-          "modules": 797,
-          "damaged": 3,
+          "modules": 172,
+          "damaged": 2,
+          "building": 625,
+          "wrecked": 0,
           "details": [
             {
               "macro": "defence_arg_disc_01_macro",
@@ -5270,11 +5281,6 @@
               "macro": "defence_arg_disc_01_macro",
               "class": "defencemodule",
               "hull": 116061.183
-            },
-            {
-              "macro": "defence_arg_disc_01_macro",
-              "class": "defencemodule",
-              "hull": 101520.002
             }
           ]
         }
@@ -5507,7 +5513,9 @@
         ],
         "module_health": {
           "modules": 88,
-          "damaged": 0
+          "damaged": 0,
+          "building": 0,
+          "wrecked": 0
         }
       },
       {
@@ -5879,7 +5887,9 @@
         ],
         "module_health": {
           "modules": 152,
-          "damaged": 0
+          "damaged": 0,
+          "building": 0,
+          "wrecked": 0
         }
       },
       {
@@ -6249,7 +6259,9 @@
         ],
         "module_health": {
           "modules": 152,
-          "damaged": 0
+          "damaged": 0,
+          "building": 0,
+          "wrecked": 0
         }
       }
     ],

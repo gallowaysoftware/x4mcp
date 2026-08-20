@@ -98,6 +98,11 @@ func sectionCounts(s *Snapshot) map[string]int {
 		if st.ModuleHealth != nil {
 			c["station_modules_health"] += st.ModuleHealth.Modules
 			c["station_modules_damaged"] += st.ModuleHealth.Damaged
+			// Tracked because the ratio between them is what a patch would
+			// move: the day <state> stops being written on modules, building
+			// goes to zero and the denominator silently swallows it again.
+			c["station_modules_building"] += st.ModuleHealth.Building
+			c["station_modules_wrecked"] += st.ModuleHealth.Wrecked
 		}
 	}
 	for _, sh := range s.Ships {

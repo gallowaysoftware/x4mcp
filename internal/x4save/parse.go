@@ -1485,7 +1485,10 @@ func buildStation(rc *rawComp, sector string, sections sectionMask) Station {
 		// asking the wrong node.
 		mh := ModuleHealth{}
 		collectModuleHealth(rc, &mh, false)
-		if mh.Modules > 0 || mh.Damaged > 0 {
+		// A station that is ENTIRELY scaffolding still has a health record —
+		// "0 built, 480 building" is an answer, and nil here would render as
+		// "no idea" on a station the player is watching go up.
+		if mh.Modules > 0 || mh.Damaged > 0 || mh.Building > 0 || mh.Wrecked > 0 {
 			st.ModuleHealth = &mh
 		}
 	}
@@ -1645,6 +1648,21 @@ var noHullClasses = map[string]bool{
 // it; "128 of 1,091 modules damaged, 963 treated as undamaged" states the
 // treatment that IS the number.
 //
+// Which is exactly why probe B §8's ORDER is not optional here. Rules 1 and 2
+// run before rule 3, on modules as much as on ships: a module carrying
+// state="construction" has not been built and a module carrying state="wreck"
+// has been destroyed, and NEITHER of them carries a <hull>. Fold them into the
+// denominator and the absence rule reads them as "at maximum" — the same
+// absence-is-a-number bug the rest of this parser exists to avoid, arriving
+// from the opposite direction, and it is not small: on one real save 14,112
+// unbuilt modules and 22 destroyed ones sat inside a 36,046 denominator, and
+// one station whose 18 built modules included 17 damaged ones reported
+// "17 of 498".
+//
+// So they are counted, separately, and never merged. An aggregate carries its
+// own denominator (docs/probes/README.md) and "how much of this station is
+// scaffolding" is part of that denominator, not a rounding error in it.
+//
 // Docked ships are skipped: a damaged freighter parked at a station is not the
 // station's structure, and ownership does not flow to it either way.
 func collectModuleHealth(rc *rawComp, mh *ModuleHealth, inStation bool) {
@@ -1659,14 +1677,24 @@ func collectModuleHealth(rc *rawComp, mh *ModuleHealth, inStation bool) {
 		// dockarea counts as station structure.
 		if inStation {
 			damaged := m.HullEl != nil && m.HullEl.Value != nil
-			if damaged || !noHullClasses[m.Class] {
+			// Rule 6 first, because a class with no hull model belongs to none
+			// of the three populations. A surprise (one <hull> on a class that
+			// has never carried one) is counted into both halves rather than
+			// dropped — the exclusion list is "not observed", not "cannot be".
+			switch counted := damaged || !noHullClasses[m.Class]; {
+			case !counted:
+			case m.State == "wreck":
+				mh.Wrecked++
+			case m.State == "construction":
+				mh.Building++
+			default:
 				mh.Modules++
-			}
-			if damaged {
-				mh.Damaged++
-				mh.Details = append(mh.Details, ModuleHull{
-					Macro: m.Macro, Class: m.Class, Hull: *m.HullEl.Value,
-				})
+				if damaged {
+					mh.Damaged++
+					mh.Details = append(mh.Details, ModuleHull{
+						Macro: m.Macro, Class: m.Class, Hull: *m.HullEl.Value,
+					})
+				}
 			}
 		}
 		collectModuleHealth(m, mh, inStation)

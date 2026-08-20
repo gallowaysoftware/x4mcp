@@ -1856,6 +1856,12 @@
                 "damaged": {
                   "type": "integer"
                 },
+                "building": {
+                  "type": "integer"
+                },
+                "wrecked": {
+                  "type": "integer"
+                },
                 "details": {
                   "type": [
                     "null",
@@ -1885,7 +1891,9 @@
               },
               "required": [
                 "modules",
-                "damaged"
+                "damaged",
+                "building",
+                "wrecked"
               ],
               "additionalProperties": false
             }
@@ -2800,6 +2808,12 @@
                       "damaged": {
                         "type": "integer"
                       },
+                      "building": {
+                        "type": "integer"
+                      },
+                      "wrecked": {
+                        "type": "integer"
+                      },
                       "details": {
                         "type": [
                           "null",
@@ -2829,7 +2843,9 @@
                     },
                     "required": [
                       "modules",
-                      "damaged"
+                      "damaged",
+                      "building",
+                      "wrecked"
                     ],
                     "additionalProperties": false
                   }

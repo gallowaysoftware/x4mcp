@@ -751,14 +751,19 @@ func TestFixturePlayerStation(t *testing.T) {
 		}
 
 		// Station health lives on the MODULES. The station component carries no
-		// <hull> at all, and the denominator travels with the number: five of
-		// the six modules carry no hull element and are treated as undamaged,
-		// which IS the reading.
+		// <hull> at all, and the denominator travels with the number: four of
+		// the five BUILT modules carry no hull element and are treated as
+		// undamaged, which IS the reading. The sixth is still under
+		// construction and is not in the fraction at all — it has no hull to
+		// be missing.
 		if st.ModuleHealth == nil {
 			t.Fatal("station module health is nil; a station's health is its modules'")
 		}
-		if st.ModuleHealth.Modules != 6 || st.ModuleHealth.Damaged != 1 {
-			t.Errorf("module health = %+v, want 1 damaged of 6 (docking bays excluded: no hull model)", st.ModuleHealth)
+		if st.ModuleHealth.Modules != 5 || st.ModuleHealth.Damaged != 1 {
+			t.Errorf("module health = %+v, want 1 damaged of 5 (docking bays excluded: no hull model; the graphene module is still being BUILT and is not part of the fraction)", st.ModuleHealth)
+		}
+		if st.ModuleHealth.Building != 1 {
+			t.Errorf("module health = %+v, want the graphene module counted as building; a module that does not exist yet must not read as an undamaged one", st.ModuleHealth)
 		}
 		if len(st.ModuleHealth.Details) != 1 || st.ModuleHealth.Details[0].Hull != 86400 {
 			t.Errorf("module health details = %+v, want the damaged refinery module", st.ModuleHealth.Details)
@@ -1123,6 +1128,28 @@ func TestFixtureHullStates(t *testing.T) {
 	}
 	if mh.Modules != 4 || mh.Damaged != 2 {
 		t.Errorf("module health = %+v, want 2 damaged of 4 (2 defence + 1 connection + the surprising dockingbay)", mh)
+	}
+	// Rules 1 and 2 are not a ship-only concern. A wrecked module and a module
+	// still being built carry no <hull> either, so leaving them in the
+	// denominator reads them as "at maximum" — the absence rule pointed the
+	// wrong way. They are counted, separately, and never as undamaged.
+	if mh.Wrecked != 1 {
+		t.Errorf("module health = %+v, want 1 WRECKED module counted apart from the fraction; a destroyed module is not an undamaged one", mh)
+	}
+	if mh.Building != 1 {
+		t.Errorf("module health = %+v, want 1 module under construction counted apart from the fraction; scaffolding is not structure", mh)
+	}
+	// The module under construction carries a <hull value>, and it must move
+	// NEITHER half: its denominator is the finished module's maximum, so the
+	// number understates by design. 38 of one real save's 220 "damaged"
+	// modules were exactly this.
+	if mh.Damaged != 2 {
+		t.Errorf("module health = %+v, want the half-built module's partial hull kept OUT of Damaged", mh)
+	}
+	for _, d := range mh.Details {
+		if d.Macro == "module_gen_prod_graphene_01_macro" {
+			t.Errorf("a module under construction was reported as damaged: %+v", d)
+		}
 	}
 	// A docked ship is not station structure. Counting its hull into the
 	// station's fraction is how a station reads as damaged because a fighter
