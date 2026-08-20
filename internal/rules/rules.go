@@ -304,12 +304,40 @@ func isBig(size, class string) bool {
 	return false
 }
 
+// subjectKey is the identity every dedupe key is built on, and it has to be the
+// CROSS-SAVE one.
+//
+// This is the restart bug of internal/diff, one layer up. X4 renumbers
+// component handles every time it loads a save — measured 22 times in the
+// archive's 9.61 days, with 0.0–0.5% of ids surviving a break against 95–100%
+// of registration codes. The differ was fixed to key on the code; a dedupe key
+// that fell back to the id would undo that in the alert store, where it is
+// worse: the differ's keys live for one pair, but a dedupe key is what says
+// "the player has already been told about this", so a key that changes on
+// reload re-tells them everything the next time they come back to the game.
+//
+// So: the code, always, when there is one. Measured across all 200 saves, no
+// player ship, station or build storage lacked one — the fallback below is a
+// path the corpus never takes.
+//
+// And when it is taken, it says so. The id is not a cross-save identity and a
+// key built on one is not a promise this layer can keep, so the key carries the
+// word: an "unstable-id:" row in the alert store is a row that may repeat after
+// a restart, and a reader can see that from the key itself rather than
+// discovering it from a duplicate chime.
 func subjectKey(c diff.Change) string {
 	if c.Subject.Code != "" {
 		return c.Subject.Code
 	}
-	return c.Subject.ID
+	if c.Subject.ID == "" {
+		return ""
+	}
+	return unstableKeyPrefix + c.Subject.ID
 }
+
+// unstableKeyPrefix marks a dedupe key built on a save-local component id. See
+// subjectKey.
+const unstableKeyPrefix = "unstable-id:"
 
 // Config is the kill-switch state.
 type Config struct {

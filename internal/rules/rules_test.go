@@ -250,3 +250,202 @@ func TestEvaluateIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// ---- the dedupe key is the alert's identity ----
+
+// Every rule's dedupe key has to NAME ITS SUBJECT, and the reason is arithmetic:
+// the key is what collapses fires into rows, so a key that does not vary with
+// the subject collapses the whole fleet into one row. Six ships die, the player
+// sees one.
+//
+// The three attack rules are the ones the mutation pass caught — a sustained
+// engagement is deliberately one row per ship, and a test written only against
+// one ship cannot tell "one row per ship" from "one row".
+func TestEveryDedupeKeyNamesItsSubject(t *testing.T) {
+	// A change shaped so that it reaches each rule in turn, with two distinct
+	// subjects that differ ONLY in identity.
+	for _, r := range All() {
+		if r.ID == "money_delta" || r.ID == "playthrough_changed" || r.ID == "timeline_reset" {
+			// These three are not about an entity: their subject is the whole
+			// empire, the playthrough, or the clock. Their keys are covered by
+			// TestTheNonEntityRulesKeyOnTheirOwnFacts.
+			continue
+		}
+		t.Run(r.ID, func(t *testing.T) {
+			a := change(r.Kind, "AAA-001", "ship_xl", "XL", diff.SrcAttack, diff.SrcLogbook)
+			a.Detail.HullFell = true
+			if r.ID == "station_under_attack" {
+				a.Subject.Class, a.Subject.Size = "station", ""
+			}
+			if r.ID == "ship_under_attack" {
+				a.Subject.Class, a.Subject.Size = "ship_s", "S"
+			}
+			if r.Match != nil && !r.Match(a) {
+				t.Skipf("%s does not match the probe change; nothing to key", r.ID)
+			}
+			b := a
+			b.Subject.Code = "BBB-002"
+			if r.ID == "hostile_sighting" {
+				// Its key is (sector, class, hour) by design — the subject is a
+				// swarm, not a hull — so vary the sector instead.
+				a.Subject.Sector, b.Subject.Sector = "alpha", "beta"
+			}
+			if r.Dedupe == nil {
+				t.Fatalf("%s has no dedupe function", r.ID)
+			}
+			ka, kb := r.Dedupe(a), r.Dedupe(b)
+			if ka == kb {
+				t.Errorf("two different subjects produced the same key %q — every fire of this rule "+
+					"would collapse into one row and every loss after the first would be silent", ka)
+			}
+			if !strings.Contains(ka, "AAA-001") && !strings.Contains(ka, "alpha") {
+				t.Errorf("key %q does not carry the subject it is about", ka)
+			}
+		})
+	}
+}
+
+// The three rules whose subject is not an entity key on the fact they ARE about,
+// and those keys have to vary too.
+func TestTheNonEntityRulesKeyOnTheirOwnFacts(t *testing.T) {
+	byID := map[string]Rule{}
+	for _, r := range All() {
+		byID[r.ID] = r
+	}
+
+	money := diff.Change{Kind: diff.KindMoneyDelta, GameTime: 3600}
+	later := diff.Change{Kind: diff.KindMoneyDelta, GameTime: 7200}
+	if byID["money_delta"].Dedupe(money) == byID["money_delta"].Dedupe(later) {
+		t.Error("money_delta buckets by in-game hour; two different hours are two rows")
+	}
+
+	a := diff.Change{Kind: diff.KindPlaythroughChanged, Detail: diff.Detail{ToGUID: "guid-a"}}
+	b := diff.Change{Kind: diff.KindPlaythroughChanged, Detail: diff.Detail{ToGUID: "guid-b"}}
+	if byID["playthrough_changed"].Dedupe(a) == byID["playthrough_changed"].Dedupe(b) {
+		t.Error("two different playthroughs are two rows")
+	}
+
+	r1 := diff.Change{Kind: diff.KindTimelineReset, Detail: diff.Detail{ToTime: 100}}
+	r2 := diff.Change{Kind: diff.KindTimelineReset, Detail: diff.Detail{ToTime: 200}}
+	if byID["timeline_reset"].Dedupe(r1) == byID["timeline_reset"].Dedupe(r2) {
+		t.Error("two different reloads are two rows")
+	}
+}
+
+// The same fleet-scale statement, end to end: six capitals dying in one pair is
+// six alerts, not one.
+func TestSixShipsLostAreSixAlerts(t *testing.T) {
+	var changes []diff.Change
+	for _, code := range []string{"AAA-001", "BBB-002", "CCC-003", "DDD-004", "EEE-005", "FFF-006"} {
+		c := change(diff.KindUnderAttack, code, "ship_xl", "XL", diff.SrcAttack, diff.SrcLogbook)
+		c.Detail.HullFell = true
+		changes = append(changes, c)
+	}
+	keys := map[string]bool{}
+	for _, a := range Evaluate(changes, DefaultConfig()) {
+		keys[a.DedupeKey] = true
+	}
+	if len(keys) != 6 {
+		t.Errorf("six capitals taking hull damage produced %d dedupe keys; the player would be "+
+			"told about one of them", len(keys))
+	}
+}
+
+// The dedupe key must be the CROSS-SAVE identity, for the same reason the
+// differ's keys are: X4 renumbers component ids on load, 22 times in the
+// archive's 9.61 days. A key built on the id would re-alert everything the
+// player already acknowledged, the first morning they come back.
+func TestSubjectKeyIsTheCrossSaveIdentityAndSaysWhenItIsNot(t *testing.T) {
+	before := diff.Change{Subject: diff.Subject{ID: "[0xb24e]", Code: "YHA-137"}}
+	after := diff.Change{Subject: diff.Subject{ID: "[0x8661]", Code: "YHA-137"}} // reloaded
+	if subjectKey(before) != subjectKey(after) {
+		t.Errorf("the dedupe key moved across a restart: %q -> %q", subjectKey(before), subjectKey(after))
+	}
+	if subjectKey(before) != "YHA-137" {
+		t.Errorf("subjectKey = %q, want the registration code", subjectKey(before))
+	}
+
+	// Positive control: the id-preferring form, which is the bug, reimplemented
+	// beside the fix. The archive says it re-keys every one of the 22 restarts.
+	if idPreferringSubjectKey(before) == idPreferringSubjectKey(after) {
+		t.Fatal("the positive control stopped reproducing the bug it guards: an id-keyed subject " +
+			"no longer changes across a renumbering, so this test proves nothing")
+	}
+
+	// No code at all — a path the corpus never took, and one that cannot make
+	// the promise the code makes. The key says so rather than pretending.
+	codeless := diff.Change{Subject: diff.Subject{ID: "[0x8661]"}}
+	if got := subjectKey(codeless); !strings.HasPrefix(got, unstableKeyPrefix) {
+		t.Errorf("a codeless subject keyed as %q; a key built on a renumbered id must declare itself, "+
+			"because it is a promise this layer cannot keep", got)
+	}
+	// …and no key ever confuses the two.
+	if strings.HasPrefix(subjectKey(before), unstableKeyPrefix) {
+		t.Error("a coded subject was marked unstable")
+	}
+}
+
+// idPreferringSubjectKey is the mutation this test guards against, kept ONLY as
+// the positive control above. Nothing in the package calls it.
+func idPreferringSubjectKey(c diff.Change) string {
+	if c.Subject.ID != "" {
+		return c.Subject.ID
+	}
+	return c.Subject.Code
+}
+
+// ---- the L/XL split ----
+
+// design §7's capital split is L AND XL. Dropping either half moves a whole
+// ship class from the capital rules to the S/M amber, silently.
+func TestBothCapitalClassesCountAsCapital(t *testing.T) {
+	for _, tc := range []struct {
+		size, class string
+		want        bool
+	}{
+		{"L", "", true},
+		{"XL", "", true},
+		{"l", "", true},
+		{"M", "", false},
+		{"S", "", false},
+		{"", "ship_l", true},
+		{"", "ship_xl", true},
+		{"", "ship_m", false},
+		{"", "station", false},
+	} {
+		if got := isBig(tc.size, tc.class); got != tc.want {
+			t.Errorf("isBig(%q, %q) = %v, want %v", tc.size, tc.class, got, tc.want)
+		}
+	}
+
+	// …and it decides which rule claims the change.
+	for _, tc := range []struct{ size, rule string }{
+		{"L", "capital_under_attack"},
+		{"XL", "capital_under_attack"},
+		{"M", "ship_under_attack"},
+		{"S", "ship_under_attack"},
+	} {
+		c := change(diff.KindUnderAttack, "AAA-001", "ship_"+strings.ToLower(tc.size), tc.size, diff.SrcAttack)
+		if got := one(t, []diff.Change{c}, DefaultConfig()); got.RuleID != tc.rule {
+			t.Errorf("a %s ship under attack went to %s, want %s", tc.size, got.RuleID, tc.rule)
+		}
+	}
+}
+
+// The narrow red is narrow BECAUSE of the hull clause. Probe B measured 94.1%
+// of attack-clock advances never reaching the hull, so dropping it turns
+// capital_taking_damage into capital_under_attack wearing a different name —
+// and the whole reason the table has two rules is that the broad one cannot be
+// the red at this fleet's scale.
+func TestCapitalTakingDamageRequiresTheHullToHaveFallen(t *testing.T) {
+	clockOnly := change(diff.KindUnderAttack, "AAA-001", "ship_xl", "XL", diff.SrcAttack, diff.SrcLogbook)
+	if got := one(t, []diff.Change{clockOnly}, DefaultConfig()); got.RuleID != "capital_under_attack" {
+		t.Errorf("rule = %s: without a hull drop this is the BROAD rule", got.RuleID)
+	}
+
+	withHull := clockOnly
+	withHull.Detail.HullFell = true
+	if got := one(t, []diff.Change{withHull}, DefaultConfig()); got.RuleID != "capital_taking_damage" {
+		t.Errorf("rule = %s, want capital_taking_damage", got.RuleID)
+	}
+}

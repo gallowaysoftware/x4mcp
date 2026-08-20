@@ -659,3 +659,353 @@ func TestAStatThatDidNotMoveDoesNotCorroborateAMoneyDrop(t *testing.T) {
 // preFixSameSign is the expression this file shipped with, kept ONLY as the
 // positive control above. It is never called by the differ.
 func preFixSameSign(a, b float64) bool { return (a > 0) == (b > 0) }
+
+// ---- the boundaries the mutation pass found unguarded ----
+
+// The attack clock must ADVANCE. `intentionalattacktime` is a timestamp, not a
+// flag: it holds the moment the current engagement started and it sits there
+// unchanged for as long as the engagement lasts. A frozen clock is therefore
+// the NORMAL state of a ship that is still being shot at from the same source,
+// and a differ that fires on "clock is set" rather than "clock moved" re-raises
+// the same attack on every save the game writes until the fight ends.
+func TestTheAttackClockMustAdvanceNotMerelyBeSet(t *testing.T) {
+	was := ship("[0x1]", "AAA-001", "Asgard", "ship_xl")
+	was.Attack = &x4save.Attack{IntentionalTime: 1500}
+	now := was
+	now.Attack = &x4save.Attack{IntentionalTime: 1500} // the same engagement, still running
+
+	none(t, Diff(snap(1000, was), snap(2000, now), opts()), KindUnderAttack)
+
+	// It moved: a new engagement, and a new alert.
+	moved := was
+	moved.Attack = &x4save.Attack{IntentionalTime: 1900}
+	c := only(t, Diff(snap(1000, was), snap(2000, moved), opts()), KindUnderAttack)
+	if c.Detail.IntentionalTime != 1900 {
+		t.Errorf("intentional time = %v, want 1900", c.Detail.IntentionalTime)
+	}
+}
+
+// hullDropped is the only thing separating the narrow red
+// (capital_taking_damage) from the broad one (capital_under_attack). Probe B
+// measured 94.1% of attack-clock advances never reaching the hull, so a hull
+// value that did not move is the common case and must not read as a fall.
+func TestAnUnchangedHullIsNotAFall(t *testing.T) {
+	withHull := func(v float64) x4save.Ship {
+		s := ship("[0x1]", "AAA-001", "Asgard", "ship_xl")
+		val := v
+		s.Hull = &x4save.Hull{Value: &val}
+		return s
+	}
+	for _, tc := range []struct {
+		name     string
+		was, now x4save.Ship
+		want     bool
+	}{
+		{"unchanged", withHull(4200), withHull(4200), false},
+		{"fell", withHull(4200), withHull(4199), true},
+		{"repaired", withHull(4000), withHull(4200), false},
+		{"was at maximum, now carries a value", ship("[0x1]", "AAA-001", "A", "ship_xl"), withHull(4200), true},
+		{"had a value, now at maximum", withHull(4200), ship("[0x1]", "AAA-001", "A", "ship_xl"), false},
+	} {
+		if got := hullDropped(tc.was, tc.now); got != tc.want {
+			t.Errorf("hullDropped(%s) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+
+	// …and the flag the rules layer reads follows it.
+	steady := withHull(4200)
+	hit := withHull(4200)
+	hit.Attack = &x4save.Attack{IntentionalTime: 1500}
+	if c := only(t, Diff(snap(1000, steady), snap(2000, hit), opts()), KindUnderAttack); c.Detail.HullFell {
+		t.Error("HullFell on a hull that did not move; this is the field the narrow red is built on")
+	}
+}
+
+// A subject carries the registration code, because the code is the cross-save
+// identity and everything downstream — the dedupe key, the alert store, the
+// join back to the logbook — is built on it.
+func TestEveryShipSubjectCarriesItsCode(t *testing.T) {
+	before := snap(1000, ship("[0x1]", "YHA-137", "Odysseus E", "ship_l"))
+	after := snap(2000)
+	after.Stats["ships_owned"] = 0
+	after.Logbook = []x4save.LogEntry{log(1500, "Odysseus E (YHA-137) was destroyed.")}
+	if c := only(t, Diff(before, after, opts()), KindShipLost); c.Subject.Code != "YHA-137" {
+		t.Errorf("subject code = %q, want YHA-137", c.Subject.Code)
+	}
+}
+
+// ---- the cross-save keys ----
+
+// Every key in this differ has to survive a game restart, because X4 renumbers
+// component handles on load — 22 times in the archive's 9.61 days. The
+// registration code survives (95–100% at every one of those breaks); the id
+// does not (0.0–0.5%).
+func TestTheCrossSaveKeysUseTheCodeAndNotTheRenumberedID(t *testing.T) {
+	st := x4save.Station{ID: "[0xb24e]", Code: "UWK-732"}
+	stAfter := x4save.Station{ID: "[0x8661]", Code: "UWK-732"} // renumbered by a reload
+	if StationKey(st) != StationKey(stAfter) {
+		t.Errorf("StationKey moved across a restart: %q -> %q", StationKey(st), StationKey(stAfter))
+	}
+	if StationKey(x4save.Station{ID: "[0x1]"}) != "id:[0x1]" {
+		t.Error("a codeless station must fall back to a NAMESPACED id, so that the key says which it is")
+	}
+
+	// A build storage's code is documented as display-only and NOT unique
+	// across sites, so its key carries the macro and the sector with it.
+	a := x4save.BuildStorage{ID: "[0x1]", Code: "UCW-564", Macro: "buildstorage_macro", Sector: "alpha"}
+	b := x4save.BuildStorage{ID: "[0x2]", Code: "UCW-564", Macro: "buildstorage_macro", Sector: "beta"}
+	if BuildKey(a) == BuildKey(b) {
+		t.Errorf("two sites in different sectors share the key %q; one of them would be invisible", BuildKey(a))
+	}
+	moved := a
+	moved.ID = "[0x99]"
+	if BuildKey(a) != BuildKey(moved) {
+		t.Error("BuildKey moved across a restart")
+	}
+}
+
+// The same thing, through the differ rather than through the key function: two
+// build sites sharing a display code must be tracked apart, or one of them
+// silently becomes the other.
+func TestTwoBuildSitesSharingACodeAreNotOneSite(t *testing.T) {
+	site := func(sector string, job bool) x4save.BuildStorage {
+		return x4save.BuildStorage{
+			ID: "[0x6" + sector[:1] + "]", Code: "UCW-564", Macro: "buildstorage_macro",
+			Sector: sector, JobSeen: job, State: "building",
+		}
+	}
+	before := snap(1000)
+	before.BuildStorages = []x4save.BuildStorage{site("alpha", true), site("beta", true)}
+	after := snap(2000)
+	after.BuildStorages = []x4save.BuildStorage{site("alpha", false), site("beta", true)}
+
+	c := only(t, Diff(before, after, opts()), KindBuildCompleted)
+	if c.Subject.Sector != "alpha" {
+		t.Errorf("the completed site is in %q, want alpha", c.Subject.Sector)
+	}
+}
+
+// A station's module-damage corroboration is looked up across the pair by key,
+// so the key has to be the one that survives the reload the pair may span.
+func TestStationDamageCorroborationSurvivesARenumberedID(t *testing.T) {
+	before := snap(1000)
+	before.Stations = []x4save.Station{{
+		ID: "[0xb24e]", Code: "UWK-732", Name: "Hatikvah's Choice I Defence Platform II",
+		ModuleHealth: &x4save.ModuleHealth{Modules: 40, Damaged: 2},
+	}}
+	after := snap(2000)
+	after.Stations = []x4save.Station{{
+		ID: "[0x8661]", Code: "UWK-732", Name: "Hatikvah's Choice I Defence Platform II",
+		ModuleHealth: &x4save.ModuleHealth{Modules: 40, Damaged: 7},
+	}}
+	after.Logbook = []x4save.LogEntry{log(1500, "Hatikvah's Choice I Defence Platform II (UWK-732) is under attack.")}
+
+	c := only(t, Diff(before, after, opts()), KindUnderAttack)
+	if !c.Corroborated() {
+		t.Errorf("groups = %v: the module count rose from 2 to 7 and the id renumbering hid it", c.Groups())
+	}
+}
+
+// Two hostiles in the same sector wearing the same hull are two hostiles.
+// threatKey over-merges deliberately when there is NO code to key on, and must
+// not over-merge when there is one.
+func TestThreatsWithCodesAreTrackedApart(t *testing.T) {
+	o := opts()
+	o.Hops = func(from, to string) int { return 0 }
+	before := snap(1000)
+	before.Stations = []x4save.Station{{ID: "[0x70]", Code: "STA-001", Sector: "home"}}
+	before.ThreatComponents = []x4save.ThreatComponent{
+		{Class: "ship_m", Code: "XEN-001", Macro: "ship_xen_m", Owner: "xenon", Knownto: "player", Sector: "home"},
+	}
+	after := snap(2000)
+	after.Stations = before.Stations
+	after.ThreatComponents = append(before.ThreatComponents,
+		x4save.ThreatComponent{Class: "ship_m", Code: "XEN-002", Macro: "ship_xen_m", Owner: "xenon", Knownto: "player", Sector: "home"})
+
+	c := only(t, Diff(before, after, o), KindNewHostileSighting)
+	if c.Subject.Code != "XEN-002" {
+		t.Errorf("subject = %q, want the one that is actually new", c.Subject.Code)
+	}
+}
+
+// The hop filter's bound is INCLUSIVE: tech-design §6 says "within 4 gate
+// hops", and a hostile exactly four hops away is within four hops.
+func TestTheHostileHopBoundIsInclusive(t *testing.T) {
+	o := opts()
+	o.MaxHostileHops = 2
+	o.Hops = func(from, to string) int { return 2 }
+	before := snap(1000)
+	before.Stations = []x4save.Station{{ID: "[0x70]", Code: "STA-001", Sector: "home"}}
+	after := snap(2000)
+	after.Stations = before.Stations
+	after.ThreatComponents = []x4save.ThreatComponent{
+		{Class: "ship_m", Code: "XEN-001", Owner: "xenon", Knownto: "player", Sector: "near"},
+	}
+	if c := only(t, Diff(before, after, o), KindNewHostileSighting); c.Detail.Hops != 2 {
+		t.Errorf("hops = %d, want 2", c.Detail.Hops)
+	}
+}
+
+// ---- account hysteresis ----
+
+// The band is [fire, clear] and both ends are exact. The clear end is a
+// DISAGREEMENT test, not a threshold on severity: the log says the balance
+// dropped and the tree says it is already back up, and two sources that
+// contradict each other produce nothing.
+func TestTheAccountHysteresisBandIsExactAtBothEnds(t *testing.T) {
+	station := func(money int64) x4save.Station {
+		return x4save.Station{ID: "[0x50]", Code: "SEG-001", Name: "Segaris High Tech Factory II", Money: money}
+	}
+	alarm := log(1500, "The account for Segaris High Tech Factory II in Segaris has dropped to 10,000,000 Credits.")
+
+	// Exactly AT the clear fraction (0.95): the tree says recovered.
+	before := snap(1000)
+	before.Stations = []x4save.Station{station(50_000_000)}
+	after := snap(2000)
+	after.Stations = []x4save.Station{station(9_500_000)}
+	after.Logbook = []x4save.LogEntry{alarm}
+	none(t, Diff(before, after, opts()), KindAccountUnderBudget)
+
+	// A credit under it: still below, so the two sources agree.
+	after.Stations = []x4save.Station{station(9_499_999)}
+	only(t, Diff(before, after, opts()), KindAccountUnderBudget)
+
+	// Exactly AT the fire fraction (0.80) last time: hysteresis has NOT latched
+	// yet, so this is the first crossing and it fires.
+	before2 := snap(1000)
+	before2.Stations = []x4save.Station{station(8_000_000)}
+	after2 := snap(2000)
+	after2.Stations = []x4save.Station{station(4_000_000)}
+	after2.Logbook = []x4save.LogEntry{alarm}
+	only(t, Diff(before2, after2, opts()), KindAccountUnderBudget)
+
+	// A credit below the fire fraction last time: already latched, no re-fire.
+	before3 := snap(1000)
+	before3.Stations = []x4save.Station{station(7_999_999)}
+	none(t, Diff(before3, after2, opts()), KindAccountUnderBudget)
+}
+
+// A threshold of zero is not a threshold. The fraction it produces is a
+// division by zero, which compares false against every band and would fire a
+// budget alert with a NaN in it.
+func TestAZeroThresholdIsNotABudget(t *testing.T) {
+	before := snap(1000)
+	before.Stations = []x4save.Station{{ID: "[0x50]", Code: "SEG-001", Name: "Segaris High Tech Factory II", Money: 0}}
+	after := snap(2000)
+	after.Stations = before.Stations
+	after.Logbook = []x4save.LogEntry{
+		log(1500, "The account for Segaris High Tech Factory II in Segaris has dropped to 0 Credits."),
+	}
+	none(t, Diff(before, after, opts()), KindAccountUnderBudget)
+}
+
+// Two of the player's stations answering to one name is "cannot attribute", and
+// an unattributable alarm is dropped rather than pinned on whichever of them
+// the map happened to hold.
+func TestAnAccountAlarmNamingTwoStationsIsDropped(t *testing.T) {
+	twin := func(id, code string) x4save.Station {
+		return x4save.Station{ID: id, Code: code, Name: "Segaris High Tech Factory II", Money: 1_000_000}
+	}
+	before := snap(1000)
+	before.Stations = []x4save.Station{twin("[0x50]", "SEG-001"), twin("[0x51]", "SEG-002")}
+	before.Stations[0].Money = 50_000_000
+	before.Stations[1].Money = 50_000_000
+	after := snap(2000)
+	after.Stations = []x4save.Station{twin("[0x50]", "SEG-001"), twin("[0x51]", "SEG-002")}
+	after.Logbook = []x4save.LogEntry{
+		log(1500, "The account for Segaris High Tech Factory II in Segaris has dropped to 10,000,000 Credits."),
+	}
+	none(t, Diff(before, after, opts()), KindAccountUnderBudget)
+}
+
+// ---- money, stalls, idleness ----
+
+// The floor is the smallest move worth a row, so a move exactly ON it is worth
+// one. (Grey either way — but the same expression is what MoneyDeltaFloor means
+// everywhere, and a floor that silently excludes its own value is a floor
+// nobody can reason about.)
+func TestTheMoneyFloorIncludesItsOwnValue(t *testing.T) {
+	before, after := snap(1000), snap(2000)
+	before.Money, after.Money = 50_000_000, 51_000_000 // exactly the 1,000,000 floor
+	if c := only(t, Diff(before, after, opts()), KindMoneyDelta); c.Detail.Delta != 1_000_000 {
+		t.Errorf("delta = %d", c.Detail.Delta)
+	}
+	after.Money = 50_999_999
+	none(t, Diff(before, after, opts()), KindMoneyDelta)
+}
+
+// A stat block that was not parsed is UNKNOWN, and unknown is not zero. A
+// snapshot missing one must not hand out a stats corroboration computed against
+// whatever the struct happens to hold.
+func TestAnUnparsedStatsBlockCorroboratesNothing(t *testing.T) {
+	before := snap(1000, ship("[0x1]", "AAA-001", "One", "ship_s"))
+	before.StatsSeen = false // the section was not read; the map is still populated
+	after := snap(2000)
+	after.Stats["ships_owned"] = 0
+
+	c := only(t, Diff(before, after, opts()), KindShipGone)
+	if hasSource(c.Evidence, SrcStats) {
+		t.Errorf("a snapshot with no stats section corroborated a loss; evidence = %v", c.Evidence)
+	}
+}
+
+// tech-design §6 asks for TWO observations of a stall before it speaks. A site
+// that was building last save and is waiting now has been waiting for one
+// observation, and the elapsed time on its job says nothing about how long the
+// WAIT has lasted.
+func TestAStallNeedsBothObservationsAndEnoughTime(t *testing.T) {
+	site := func(state string) x4save.BuildStorage {
+		return x4save.BuildStorage{
+			ID: "[0x60]", Code: "UCW-564", Macro: "buildstorage_macro", Sector: "sec",
+			JobSeen: true, State: state, Start: 100, Step: 3, Steps: 9,
+		}
+	}
+	// Only the newest observation is stalled.
+	before := snap(1000)
+	before.BuildStorages = []x4save.BuildStorage{site("building")}
+	after := snap(3000)
+	after.BuildStorages = []x4save.BuildStorage{site("waitingforresources")}
+	none(t, Diff(before, after, opts()), KindBuildStalled)
+
+	// Both stalled, and the step has been running for exactly the threshold.
+	both := snap(1000)
+	both.BuildStorages = []x4save.BuildStorage{site("waitingforresources")}
+	at := snap(100 + opts().StallMinSeconds)
+	at.BuildStorages = []x4save.BuildStorage{site("waitingforresources")}
+	if c := only(t, Diff(both, at, opts()), KindBuildStalled); c.Detail.StalledFor != opts().StallMinSeconds {
+		t.Errorf("stalled for %v, want exactly the threshold %v", c.Detail.StalledFor, opts().StallMinSeconds)
+	}
+
+	// One second short of it.
+	under := snap(100 + opts().StallMinSeconds - 1)
+	under.BuildStorages = []x4save.BuildStorage{site("waitingforresources")}
+	none(t, Diff(both, under, opts()), KindBuildStalled)
+
+	// A DIFFERENT step, waiting long enough on its own clock. The previous step
+	// finished, so this is a new wait that has been observed exactly once — and
+	// the elapsed time on its job start says nothing about how long the site has
+	// been stuck, which is the question the alert answers.
+	newStep := site("waitingforresources")
+	newStep.Start = 1500
+	newStep.Step = 4
+	later := snap(newStep.Start + 2*opts().StallMinSeconds)
+	later.BuildStorages = []x4save.BuildStorage{newStep}
+	none(t, Diff(both, later, opts()), KindBuildStalled)
+}
+
+// The escalation is "still idle, and STILL FOR THE SAME REASON". A ship whose
+// failed order changed between the two saves is a ship that tried something
+// else and failed at that instead, which is a different fact and a different
+// (absent) alert.
+func TestTheIdleEscalationNeedsTheSameFailureTwice(t *testing.T) {
+	idle := ship("[0x1]", "AAA-001", "Trader", "ship_m")
+	idle.Order = ""
+
+	same := idle
+	same.LastOrderError = "SingleBuy: no seller"
+	only(t, Diff(snap(1000, same), snap(2000, same), opts()), KindIdleWithFailedOrder)
+
+	changed := idle
+	changed.LastOrderError = "SingleSell: no buyer"
+	none(t, Diff(snap(1000, same), snap(2000, changed), opts()), KindIdleWithFailedOrder)
+}

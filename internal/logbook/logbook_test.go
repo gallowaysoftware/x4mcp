@@ -1,6 +1,7 @@
 package logbook
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -463,5 +464,98 @@ func TestTheEdgeRunIsConstrainedNotJustTheFirstSlot(t *testing.T) {
 		if tpl.EdgeSlot(i) {
 			t.Errorf("slot %d of a template with literal text at both ends was constrained", i)
 		}
+	}
+}
+
+// splitCode takes the FIRST registration code in the subject, and the reason is
+// that the subject is frequently a FUSED SPAN rather than one slot: when the
+// coarser destroy template wins the match, $KILLED$ and $LOCATION$ are one
+// ambiguous region and Span hands both over. The ship's own code leads;
+// anything after it belongs to where it was or to what killed it.
+//
+// Taking the last one instead pins somebody else's registration on the player's
+// hull — which is precisely the failure the package comment says must not
+// happen.
+func TestSplitCodeTakesTheFirstCodeInTheSpan(t *testing.T) {
+	for _, tc := range []struct {
+		subject, code, name string
+	}{
+		{"Odysseus E (YHA-137)", "YHA-137", "Odysseus E"},
+		// The fused span: victim first, location second, and the location has a
+		// code of its own.
+		{"Fighter (ABC-123) docked at Carrier (XYZ-789)", "ABC-123", "Fighter docked at Carrier (XYZ-789)"},
+		{"Jian (MUG-920) in sector Open Market", "MUG-920", "Jian in sector Open Market"},
+		{"Crane E (Mineral)", "", "Crane E (Mineral)"},
+	} {
+		code, name := splitCode(tc.subject)
+		if code != tc.code {
+			t.Errorf("splitCode(%q) code = %q, want %q", tc.subject, code, tc.code)
+		}
+		if name != tc.name {
+			t.Errorf("splitCode(%q) name = %q, want %q", tc.subject, name, tc.name)
+		}
+	}
+
+	// Positive control: the last-code form, which is the bug, beside the fix.
+	if got := lastCode("Fighter (ABC-123) docked at Carrier (XYZ-789)"); got != "XYZ-789" {
+		t.Fatalf("the positive control stopped reproducing the bug it guards: taking the last code "+
+			"returned %q rather than the carrier's", got)
+	}
+
+	// End to end, through the ordered table: the subject that arrives as a
+	// fused span keeps the victim's code.
+	c := NewCatalog(testDB(), RulePages()...)
+	ev, ok := c.Classify("Fighter (ABC-123) docked at Carrier (XYZ-789) was destroyed.")
+	if !ok {
+		t.Fatal("not classified")
+	}
+	if ev.Code != "ABC-123" {
+		t.Errorf("code = %q — the ship that died is the one that leads the sentence", ev.Code)
+	}
+}
+
+// lastCode is the mutation guarded above, kept ONLY as the positive control.
+func lastCode(subject string) string {
+	locs := codeRe.FindAllString(subject, -1)
+	if len(locs) == 0 {
+		return ""
+	}
+	return locs[len(locs)-1]
+}
+
+// minLiterals is a floor on how much of a sentence a template must EXPLAIN
+// before it may claim it. Below it a template is nearly all wildcard, matches
+// almost anything, and does not add coverage — it adds a catalog-wide false
+// floor where every unmatched sentence acquires a meaningless ref and the
+// census reports 100% coverage of nothing.
+func TestATemplateMustExplainEnoughOfTheSentenceToClaimIt(t *testing.T) {
+	// Five literal characters (" was ") and one indexable word: rejected by the
+	// literal floor and by nothing else, which is what makes it the test case.
+	if tpl, ok := Compile(Ref{1, 1}, "$A$ was $B$"); ok {
+		t.Errorf("Compile accepted a template carrying %d literal characters; it matches almost "+
+			"every sentence in the game", tpl.Literals())
+	}
+	// One more literal character, and it earns its place.
+	if _, ok := Compile(Ref{1, 1}, "$A$ was! $B$"); !ok {
+		t.Error("Compile rejected a template just over the floor")
+	}
+}
+
+// A signature is the identity of a masked sentence, and identities that collide
+// merge two findings into one row. The census counts distinct signatures, so a
+// short one under-reports the residue rather than failing.
+func TestSignaturesDoNotCollideAcrossAThousandSentences(t *testing.T) {
+	const want = 24
+	if got := len(Signature("anything")); got != want {
+		t.Errorf("signature length = %d, want %d hex characters", got, want)
+	}
+	seen := map[string]string{}
+	for i := 0; i < 4000; i++ {
+		s := fmt.Sprintf("sentence number %d happened somewhere", i)
+		sig := Signature(s)
+		if prev, dup := seen[sig]; dup {
+			t.Fatalf("signature collision after %d sentences: %q and %q share %q", i, prev, s, sig)
+		}
+		seen[sig] = s
 	}
 }
