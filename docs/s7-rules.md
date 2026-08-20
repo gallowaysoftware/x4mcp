@@ -124,6 +124,12 @@ alerts that actually reached red after the corroboration policy ran.
 
 **Total: 396 red alerts in 9.61 days = 288 per real week, 0 falsified.**
 
+*Pinned run: the 200 saves in the window on 2026-08-20 at 12:34 UTC. The archive
+is a rolling 200 and the player was mid-session while this was measured, so a
+run an hour later reports 363 rather than 362 `ship_destroyed` fires. Every
+figure in this table comes from the one run; re-running will move the last digit
+and not the conclusions.*
+
 ### The triggers and signatures
 
 | rule | trigger | signature (locale-invariant) | dedupe key |

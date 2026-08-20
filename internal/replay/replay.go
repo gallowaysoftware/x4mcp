@@ -80,10 +80,11 @@ type SaveID struct {
 	GameTimeS float64 `json:"game_time_s"`
 	ParseErr  string  `json:"parse_err,omitempty"`
 
-	Ships    map[string]bool `json:"-"` // component ids
-	ShipCode map[string]bool `json:"-"` // registration codes
-	Stations map[string]bool `json:"-"`
-	Builds   map[string]bool `json:"-"`
+	// Ships and ShipCode are what the falsification audit looks a fire up in.
+	// Both are kept because a Fire's subject is a CODE when the entity had one
+	// and the component id when it did not.
+	Ships    map[string]bool `json:"-"`
+	ShipCode map[string]bool `json:"-"`
 
 	LogEntries int `json:"log_entries"`
 	ShipCount  int `json:"ships"`
@@ -250,14 +251,6 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 				id.ShipCode[s.Code] = true
 			}
 		}
-		id.Stations = map[string]bool{}
-		for _, s := range snap.Stations {
-			id.Stations[s.ID] = true
-		}
-		id.Builds = map[string]bool{}
-		for _, b := range snap.BuildStorages {
-			id.Builds[b.ID] = true
-		}
 		rep.Saves = append(rep.Saves, id)
 	}
 
@@ -319,8 +312,8 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	ruleAgg := map[string]*ruleAccum{}
 	for _, r := range rules.All() {
 		ruleAgg[r.ID] = &ruleAccum{
-			rule: r, enabled: opts.Rules.Enabled(r.ID),
-			keys: map[string]bool{}, redKeys: map[string]bool{},
+			enabled: opts.Rules.Enabled(r.ID),
+			keys:    map[string]bool{}, redKeys: map[string]bool{},
 		}
 	}
 
@@ -478,7 +471,6 @@ func auditFalsification(rep *Report, byPlay map[int][]int) map[diff.Kind]int {
 
 // ruleAccum accumulates one rule's behaviour over the whole replay.
 type ruleAccum struct {
-	rule    rules.Rule
 	enabled bool
 
 	fires, red, amber, grey int

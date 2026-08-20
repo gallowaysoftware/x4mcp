@@ -1,7 +1,6 @@
 package diff
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/pequalsnp/x4mcp/internal/logbook"
@@ -74,9 +73,6 @@ func newLogWindow(prev, next *x4save.Snapshot, cat Catalog) *logWindow {
 	return w
 }
 
-// Entries returns every classified event in the window, in file order.
-func (w *logWindow) Entries() []windowEvent { return w.events }
-
 // byCodeFirst returns the earliest event of a kind carrying a given code.
 func (w *logWindow) byCodeFirst(kind logbook.EventKind, code string) (windowEvent, bool) {
 	if code == "" {
@@ -145,19 +141,4 @@ func stationNameCounts(sts []x4save.Station) map[string]int {
 		}
 	}
 	return m
-}
-
-// kindsPresent lists the event kinds the window saw, sorted — used by the
-// replay report, never by a rule.
-func (w *logWindow) kindsPresent() []string {
-	seen := map[string]bool{}
-	for _, e := range w.events {
-		seen[string(e.Kind)] = true
-	}
-	out := make([]string, 0, len(seen))
-	for k := range seen {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

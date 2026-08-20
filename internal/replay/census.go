@@ -40,9 +40,8 @@ type LogRow struct {
 	Entity   string
 	Money    *int64
 
-	Rows    int    // how many archive saves carried it
-	Play    int    // playthrough index
-	FirstIn string // first archive file it appeared in
+	Rows int // how many archive saves carried it
+	Play int // playthrough index
 }
 
 // Census is the measured template population.
@@ -179,7 +178,6 @@ func RunCensus(ctx context.Context, db *x4data.TextDB, opts CensusOptions) (*Cen
 				assetNames[s.Name] = true
 			}
 		}
-		base := filepath.Base(f)
 		// Within ONE save the log holds repeats: 154 of ~9,000 entries in the
 		// committed fixture share a (time, title, text) triple with another —
 		// two reputation ticks landing on the same in-game second are one
@@ -198,7 +196,7 @@ func RunCensus(ctx context.Context, db *x4data.TextDB, opts CensusOptions) (*Cen
 				row = &LogRow{
 					Time: e.Time, Category: e.Category, Title: e.Title, Text: e.Text,
 					Faction: e.Faction, Entity: e.Entity, Money: e.Money,
-					Play: play, FirstIn: base,
+					Play: play,
 				}
 				events[key] = row
 			}
