@@ -204,7 +204,7 @@ That is the 33-vs-36 line in §4.4.
 
 | gate | result |
 | --- | --- |
-| `go test ./... -race` | **PASS** — every package, 12 of 12 |
+| `go test ./... -race` | **PASS** — all 10 packages that have tests |
 | `scripts/wire-parity.sh --check` | **moved, deliberately** — 4 of 27 responses; re-blessed (§5) |
 | `go test ./internal/x4save -run TestFixtureCanStillExercise` | **PASS** — all six S5 decode rules still exercisable by the distilled fixture |
 | `TestEveryCommittedPlayerNameIsThePlaceholder` | **PASS** |
