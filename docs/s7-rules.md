@@ -138,9 +138,9 @@ and whichever it picks is the number the budget is actually measured against.
 |---|---|---|---:|---:|---:|---:|---:|---|
 | 1 | `ship_destroyed` | RED | ✔ | 362 | 362 | 362 | 263.6 | falsifiable — **0 falsified** |
 | 2 | `ship_no_longer_in_fleet` | AMBER | ✘ | — | — | — | — | **unvalidated** |
-| 3 | `station_under_attack` | RED | ✔ | 143 | 8 | 8 | 5.8 | corroborated (66% of fires) |
+| 3 | `station_under_attack` | AMBER | ✔ | 143 | 8 | 8 | 5.8 | corroborated (66% of fires) |
 | 4 | `capital_taking_damage` | RED | ✔ | 31 | 26 | 5 | 3.6 | corroborated (16% of fires) |
-| 5 | `capital_under_attack` | RED | ✔ | 9,089 | 493 | 21 | 15.3 | corroborated (3% of fires) |
+| 5 | `capital_under_attack` | AMBER | ✔ | 9,089 | 493 | 21 | 15.3 | corroborated (3% of fires) |
 | 6 | `ship_under_attack` | AMBER | ✔ | 4,372 | 643 | — | — | corroborated |
 | 7 | `build_stalled` | AMBER | ✔ | 620 | 86 | — | — | corroborated (0% — see below) |
 | 8 | `account_under_budget` | AMBER | ✔ | 882 | 8 | — | — | corroborated (100%) |
@@ -181,6 +181,28 @@ and not the conclusions.*
 | `timeline_reset` | the same GUID's clock ran backwards | tree `/savegame/info/@gametime` | `reload\|<time>` |
 
 ### Rule by rule, honestly
+
+**The attack family was demoted to amber after the review, and the reason is
+the whole point of this document.** `station_under_attack` and
+`capital_under_attack` shipped RED because design §7 declares L/XL under-attack
+red. The review measured what that would cost: neither was ever
+falsification-tested (the audit returns early for anything that is not
+`ShipLost`/`ShipGone`, so "0 falsified" covers 2 of 12 change kinds and none of
+these), they flap worse than a rule *disabled* for flapping —
+`ship_newly_idle` is off at 3.7 fires per subject, `capital_under_attack` fired
+19.1 with a worst subject of 101 — and the red budget that made them look
+affordable assumed a dedupe memory of the entire corpus. Under a per-day re-arm
+the same data yields 330 reds a week, per-hour 427, per-save 495.
+
+`capital_taking_damage` keeps its red: the hull actually fell, which is §7's
+literal criterion rather than a proxy for it, it did not flap, and it is the
+only rule whose red is reached by **corroboration** rather than by whitelist —
+demote it and the two-independent-groups upgrade becomes dead code no test can
+reach. The ceilings are pinned by `TestSeverityCeilingsAreWhatTheReviewLeftThem`
+so a promotion has to be argued for in a diff.
+
+Promotion path, explicitly: a re-arm policy (S9) and one labelled week of real
+play measured against the <1-false-red budget.
 
 **1 · `ship_destroyed` — the one rule with a real number.** 362 losses in 9.6
 days (224 S, 79 M, 53 L, 6 XL). 351 of them (97.0%) carried a logbook destroy

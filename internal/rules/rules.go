@@ -143,10 +143,43 @@ func All() []Rule {
 				"all look identical here. Ships OFF because nothing in the save distinguishes a sale from a bug in the walk.",
 		},
 
+		// ---- the attack family: AMBER until a labelled week says otherwise ----
+		//
+		// design §7 declares L/XL under-attack RED, and these three shipped that
+		// way until the S7 review measured what red would actually cost:
+		//
+		//   - They were never falsification-tested. `auditFalsification` returns
+		//     early for anything that is not ShipLost/ShipGone, so the "0
+		//     falsified" headline covers 2 of 12 change kinds and none of these.
+		//   - They flap worse than a rule DISABLED for flapping.
+		//     `ship_newly_idle` is off at 3.7 fires per subject;
+		//     `capital_under_attack` fired 19.1 per subject, worst subject 101.
+		//   - The red budget that made them look affordable assumed a dedupe
+		//     memory of the entire 9.61-day corpus — "tell the player once about
+		//     this ship, ever". Under a per-day re-arm the same corpus yields 330
+		//     reds a week, per-hour 427, per-save 495. S9 has to choose, and
+		//     whichever it chooses IS the budget.
+		//
+		// A red is a claim that something needs the player NOW, and this project
+		// spends its credibility the first time one is wrong. Amber costs a
+		// glance; a red that cries wolf costs every red after it. So they are
+		// amber, and the promotion path is explicit: a re-arm policy (S9) and one
+		// labelled week of real play measured against the <1-false-red budget.
+		// `ship_destroyed` stays red — it has a real one-sided number, and a ship
+		// dies once so no dedupe policy changes it.
+		//
+		// `capital_taking_damage` ALSO keeps its red ceiling, and deliberately.
+		// It is the narrow rule — the hull actually fell — which is design §7's
+		// literal red criterion rather than a proxy for it, and it is not one of
+		// the two that flapped. It is also the only rule left whose red is
+		// reached by CORROBORATION rather than by whitelist, so demoting it
+		// would leave the two-independent-groups upgrade as dead code that no
+		// test could reach. A policy nothing exercises is a policy that has
+		// stopped being true.
 		{
 			ID: "station_under_attack", Kind: diff.KindUnderAttack,
 			Match:    func(c diff.Change) bool { return c.Subject.Class == "station" },
-			Severity: Red, Confidence: Corroborated,
+			Severity: Amber, Confidence: Corroborated,
 			Dedupe:         func(c diff.Change) string { return "attack|" + subjectKey(c) },
 			DefaultEnabled: true,
 			Trigger:        "a logbook entry names a player station as under attack",
@@ -172,7 +205,7 @@ func All() []Rule {
 		{
 			ID: "capital_under_attack", Kind: diff.KindUnderAttack,
 			Match:    func(c diff.Change) bool { return isBig(c.Subject.Size, c.Subject.Class) },
-			Severity: Red, Confidence: Corroborated,
+			Severity: Amber, Confidence: Corroborated,
 			Dedupe:         func(c diff.Change) string { return "attack|" + subjectKey(c) },
 			DefaultEnabled: true,
 			Trigger:        "an L or XL ship's intentionalattacktime advanced",

@@ -18,6 +18,13 @@ func change(kind diff.Kind, code, class, size string, sources ...diff.Source) di
 	return c
 }
 
+// hullFell marks the hull as having actually dropped, which is what separates
+// the narrow red rule from the broad amber one.
+func hullFell(c diff.Change) diff.Change {
+	c.Detail.HullFell = true
+	return c
+}
+
 func one(t *testing.T, cs []diff.Change, cfg Config) Alert {
 	t.Helper()
 	got := Evaluate(cs, cfg)
@@ -35,8 +42,12 @@ func one(t *testing.T, cs []diff.Change, cfg Config) Alert {
 func TestUncorroboratedRedIsDowngradedNotSilenced(t *testing.T) {
 	cfg := DefaultConfig()
 
+	// HullFell, so this matches `capital_taking_damage` — the narrow rule, and
+	// the only one left whose RED is reached by corroboration rather than by
+	// whitelist. The broad `capital_under_attack` is declared amber, so routing
+	// this through it would test nothing: there would be no downgrade to observe.
 	solo := one(t, []diff.Change{
-		change(diff.KindUnderAttack, "AAA-001", "ship_l", "L", diff.SrcAttack),
+		hullFell(change(diff.KindUnderAttack, "AAA-001", "ship_l", "L", diff.SrcAttack)),
 	}, cfg)
 	if solo.Severity != Amber {
 		t.Errorf("severity = %s, want amber", solo.Severity)
@@ -49,7 +60,7 @@ func TestUncorroboratedRedIsDowngradedNotSilenced(t *testing.T) {
 	}
 
 	both := one(t, []diff.Change{
-		change(diff.KindUnderAttack, "AAA-001", "ship_l", "L", diff.SrcAttack, diff.SrcLogbook),
+		hullFell(change(diff.KindUnderAttack, "AAA-001", "ship_l", "L", diff.SrcAttack, diff.SrcLogbook)),
 	}, cfg)
 	if both.Severity != Red {
 		t.Errorf("severity = %s, want red once two groups agree", both.Severity)
@@ -447,5 +458,66 @@ func TestCapitalTakingDamageRequiresTheHullToHaveFallen(t *testing.T) {
 	withHull.Detail.HullFell = true
 	if got := one(t, []diff.Change{withHull}, DefaultConfig()); got.RuleID != "capital_taking_damage" {
 		t.Errorf("rule = %s, want capital_taking_damage", got.RuleID)
+	}
+}
+
+// The severity CEILINGS, pinned. A rule's declared severity is the highest it
+// can reach when corroborated, so this table is the answer to "what is this
+// product willing to interrupt you for" — and that answer should never move by
+// accident.
+//
+// The attack family sits at amber deliberately (see the block comment above
+// station_under_attack). Promoting one back to red is a real decision that
+// needs a re-arm policy and a labelled week behind it, so it must fail here
+// first and be argued for in the diff, rather than drifting up because a red
+// felt more urgent on the day someone edited the table.
+func TestSeverityCeilingsAreWhatTheReviewLeftThem(t *testing.T) {
+	want := map[string]Severity{
+		"ship_destroyed":          Red,   // real one-sided number; a ship dies once
+		"capital_taking_damage":   Red,   // the hull actually fell — §7's literal criterion
+		"station_under_attack":    Amber, // 18.9 fires/subject; logbook-only trigger
+		"capital_under_attack":    Amber, // 19.1 fires/subject, worst subject 101
+		"ship_under_attack":       Amber,
+		"ship_no_longer_in_fleet": Amber,
+		"build_stalled":           Amber,
+		"account_under_budget":    Amber,
+		"ship_newly_idle":         Amber,
+		"idle_with_failed_order":  Amber,
+		"hostile_sighting":        Amber,
+		"build_completed":         Grey,
+		"money_delta":             Grey,
+		"playthrough_changed":     Grey,
+		"timeline_reset":          Grey,
+	}
+
+	got := map[string]Severity{}
+	for _, r := range All() {
+		got[r.ID] = r.Severity
+	}
+	if len(got) != len(want) {
+		t.Errorf("the table has %d rules, this test knows %d — a new rule needs a declared ceiling here", len(got), len(want))
+	}
+	for id, w := range want {
+		g, ok := got[id]
+		if !ok {
+			t.Errorf("rule %q is gone; if that is deliberate, delete its row here too", id)
+			continue
+		}
+		if g != w {
+			t.Errorf("%s ceiling = %s, want %s\n  a severity change is a product decision, not a refactor — say why in the commit", id, g, w)
+		}
+	}
+
+	// And the property behind the table: exactly one rule reaches red by
+	// CORROBORATION rather than by whitelist. If that ever hits zero, the
+	// two-independent-groups upgrade becomes dead code no test can reach.
+	reds := 0
+	for _, r := range All() {
+		if r.Severity == Red {
+			reds++
+		}
+	}
+	if reds < 2 {
+		t.Errorf("only %d red-ceiling rules; the corroboration upgrade needs one that is not whitelisted", reds)
 	}
 }
