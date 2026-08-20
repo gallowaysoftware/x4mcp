@@ -265,8 +265,9 @@ Graceful shutdown: signal → root cancel → poller/probers stop → agent turn
 
 > **S7 correction (2026-08-20, `docs/s7-rules.md`).** Three instructions in the two
 > paragraphs above were measured and found wrong; the code follows the measurement.
-> (1) *"Diff by entity ID"* — X4 renumbers component ids on load (1,038 of 1,040
-> player ship ids changed across the archive's one restart, against 3 codes), so the
+> (1) *"Diff by entity ID"* — X4 renumbers component ids on load. Across the
+> archive's **22 restarts** (not one: about 2.3 a day over 9.61 days) 0.0–0.5% of
+> component ids survive a restart against 95–100% of registration codes, so the
 > cross-save key is the **registration code**, hardened by `spawntime`. (2) *"the raw
 > refs are already captured"* — a log entry's only `{page,id}` is `faction`; title and
 > text are rendered sentences, and the ref is **recovered** by matching them against

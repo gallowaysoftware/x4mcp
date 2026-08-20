@@ -18,8 +18,11 @@ that produced the estimate. The differ works, and it found a design bug worth
 more than the rule table: **X4 renumbers component ids on load**, so §6's "diff
 by entity ID" reports the entire fleet as lost the first morning the player
 comes back. Keyed on the registration code instead, the lane produces **396 red
-alerts over 9.6 real days — 288 per week — and 0 of them can be shown to be
-wrong by anything in the corpus.** That last clause is doing a lot of work and
+alerts over 9.6 real days — 288 per week under a dedupe policy no product can
+ship (§3) — and 0 of them can be shown to be wrong by anything in the
+corpus.** That last clause is doing a lot of work — the falsification pass only
+examines `ship_lost` and `ship_gone`, so 34 of the 396 reds were never tested at
+all — and
 §2 is about how much: falsification is one-sided, most of those reds are one
 rule, and 288 reds a week is a number about a 1,042-ship empire at war, not
 about the alarm budget. **Five of fifteen rules ship disabled** because nothing
@@ -33,7 +36,7 @@ in 200 saves can tell whether they are right.
 |---|---|
 | corpus | `~/x4-save-archive`, 200 saves, opened read-only |
 | span | 2026-08-10 → 2026-08-20, **9.61 real days**, **213.4 in-game hours** |
-| playthrough | one GameGUID; no playthrough change and no reload in the whole window |
+| playthrough | one GameGUID; no playthrough change, and no TIMELINE RESET (the clock never ran backwards) — but **22 game restarts**, see §5.1 |
 | pairs | 199 consecutive-save pairs, **199 diffed, 0 refused** |
 | fleet | 1,042 ships at the end (506 L, 37 XL), 48 stations, 48 build sites |
 | install | X4 9.x with 7 official DLCs and **17 mods** |
@@ -67,7 +70,12 @@ this document does not print one. What it prints instead:
 - **falsification** — cases the corpus itself contradicts. A ship reported gone
   that is alive in a later save was not gone. This is *one-sided*: it can prove
   a fire wrong and can never prove one right, so a falsification count is a
-  **floor on the error rate and not an estimate of it**.
+  **floor on the error rate and not an estimate of it**. It is also **narrow**:
+  `auditFalsification` examines two of the twelve change kinds — `ship_lost`
+  and `ship_gone` — because those are the only two the corpus can contradict.
+  "0 falsified" is a real result for `ship_destroyed` and says nothing whatever
+  about the 34 reds from the three attack rules, which were never subjected to
+  it. Do not read the total as though it had been.
 - **corroboration** — how often two independent signal groups agreed. This is a
   real, exact number. It is not precision: it says the log and the tree told
   the same story, not that the story was true.
@@ -99,10 +107,29 @@ logbook entries".
 
 Measured over 199 pairs / 9.61 real days / 213.4 in-game hours.
 
-**"Fires"** is what the differ produced. **"Alerts"** is what a player would see
-— one row per dedupe key — and it is the number that matters for the
-fewer-than-one-false-red-per-week budget. **"Red alerts"** counts only the
-alerts that actually reached red after the corroboration policy ran.
+**"Fires"** is what the differ produced. **"Alerts"** is one row per dedupe key.
+**"Red alerts"** counts only the alerts that reached red after the corroboration
+policy ran.
+
+**Read the alert column with this caveat or not at all.** The harness dedupes by
+counting DISTINCT KEYS over the whole 9.61-day run, which is a policy of "tell
+the player once about this ship, ever". That is a lower bound, not a product: no
+shipped alerter can decline to mention a station again because it mentioned it
+on Tuesday. The same run, re-counted under re-arm policies that a chime could
+actually implement:
+
+| dedupe / re-arm policy | red alerts per real week |
+|---|---:|
+| lifetime — never re-arm (what the table below prints) | **290** |
+| re-arm once per real day | 330 |
+| re-arm once per real hour | 427 |
+| re-arm every save | 495 |
+| (raw red fires, no dedupe at all) | 542 |
+
+`ship_destroyed` is unaffected — a ship dies once — so its 362 is the same
+number under every policy. The whole difference is `capital_under_attack`
+(21 → 279) and `station_under_attack` (8 → 31). S9 has to pick a re-arm policy,
+and whichever it picks is the number the budget is actually measured against.
 
 | # | rule | severity | on | fires | alerts | red alerts | red/wk | confidence |
 |---|---|---|---:|---:|---:|---:|---:|---|
@@ -171,12 +198,14 @@ player really does lose 38 ships a day. The mass-casualty grouping design §7
 already calls for (one row per battle rather than per hull) is what makes that
 liveable, and it is S9 work.
 
-**2 · `ship_no_longer_in_fleet` — OFF, and the reason is measurable.** 665 fires
-over the window, **56 of them (8.4%) falsified** — the ship is back in a later
+**2 · `ship_no_longer_in_fleet` — OFF, and the reason is measurable.** 573 fires
+over the window, **58 of them (10.1%) falsified** — the ship is back in a later
 save. 41 of the 56 are L-class. Tracing them (§6) found two real parser gaps,
 not a differ bug: a player ship docked at a player build storage, or docked
 inside an NPC ship, is missed by the asset walk, so it "vanishes" for exactly
-one save. Until those close, an 8.4% floor on the error rate is disqualifying
+one save. The rate is not uniform: across the 22 restart pairs of §5.1 it is
+**16.7%** (9 of 54) against **9.4%** (49 of 519) on an ordinary pair, so a
+restart makes this rule roughly twice as wrong. Until those close, a 10.1% floor on the error rate is disqualifying
 for a rule whose whole job is to say "your ship is not there any more". It
 renders "no longer in fleet" and never "destroyed", which is correct and not
 sufficient.
@@ -345,26 +374,54 @@ difference.
 §6's rule is half right. Names are indeed free to change. But the entity id is
 not an identity either:
 
-| across the one game restart in the archive | ships | changed |
-|---|---:|---:|
-| component id `[0x…]` | 1,040 | **1,038** |
-| registration code | 1,040 | **3** |
-| `spawntime` (for ships present in both) | 1,037 | **0** |
+**There are 22 restarts in the archive, not one.** The first version of this
+section measured the id-vs-code comparison at a single break — the most recent
+one — and reported it as though it were the only one available. Re-measured
+across all 199 consecutive pairs with the real parser, a pair in which more than
+half of the component ids change occurs **22 times in 9.61 real days, about 2.3
+times a day**:
 
-X4 renumbers component handles when it loads a save. An id-keyed differ reports
-1,038 ships lost the first morning the player comes back to the game — which is
-not a subtle failure mode, it is the product's single loudest alarm firing a
-thousand times on a fleet that is fine. Measured on the same twelve-save window with the same
-harness: the id-keyed differ produced **3,132 `ship_gone` fires of which 2,977
-were falsified**; the code-keyed one produced **159, of which 10 were**. Over
-the full 200 saves the code-keyed differ produces 665 with 56 falsified, and
-§6 accounts for those.
+| across all 22 restarts in the archive | min | max |
+|---|---:|---:|
+| component ids that SURVIVED the restart | 0.0% | 0.5% |
+| registration codes that survived | **95.0%** | **100.0%** |
+
+The single break the original table described (1,040 ships, 1,038 ids changed,
+3 codes changed, `spawntime` unchanged on all 1,037 present in both) is the last
+row of that range and is reproduced exactly — it was simply never a
+general claim, and a rule measured at n=1 and stated as a law is the denominator
+error `docs/probes/README.md` warns about.
+
+The correction makes the finding STRONGER. X4 renumbers component handles every
+time it loads a save, so an id-keyed differ does not report the fleet lost once
+— it reports it lost **22 times in nine days**. Code overlap at those same 22
+breaks never falls below 95%, so the replacement key survives every one of them.
+(Probe C independently reported "22 discontinuities in the corpus" for
+*resource-area* ids, a different id space and a different instrument: two
+measurements, one number, one underlying event.)
+
+Measured on a twelve-save window with the same harness: the id-keyed differ
+produced **3,132 `ship_gone` fires of which 2,977 were falsified**; the
+code-keyed one produced **159, of which 10 were**. Over the full 200 saves the
+code-keyed differ produces 573 with 58 falsified, and §6 accounts for those.
 
 So the differ keys on **`Ship.Code`**, hardened by **`SpawnTime`** against code
 reuse, and uses the component id only *within* one snapshot — where it means
 exactly what it says, and where `BuildStorage.Station → Station.ID` legitimately
-resolves. In one save: 1,040 ships, zero without a code, zero sharing one.
-Stations and build storages behave identically (48 of 48 ids changed, 0 codes).
+resolves. Measured across **all 200 saves**, not one: **zero ships without a
+code, zero ships sharing a code within a save, and zero ship/station code
+collisions**. Stations and build storages behave identically (48 of 48 ids
+changed at a restart, 0 codes; 0 codeless, 0 duplicate `BuildKey`s).
+
+Two caveats the code should carry and does not. **`SpawnTime` is absent on one
+ship** — the same player-owned XL in 167 of 200 saves — so `sameShip`'s
+anti-reuse guard is inert for it; that is the honest fallback the function
+documents, but "1,037 of 1,037 agreed" was measured only over the ships that
+have one. And **nothing detects a duplicate code if one ever appears**:
+`indexShips` keys a map by code, so two ships sharing one collapse to a single
+entry and the differ reports NO loss when one of them dies. A missing red is
+worse than a wrong one. The corpus says it has not happened; the format does not
+say it cannot.
 
 `Ship.SpawnTime`'s own doc comment in `model.go` already said it "hardens Code
 as a cross-save identity". Nothing downstream had acted on it.
@@ -388,6 +445,34 @@ those templates into matchers and runs a rendered sentence back through them,
 recovering the ref and the substituted values. The rule key is then genuinely
 locale-invariant — `{1016,34}` is `{1016,34}` on a German client — and only the
 CATALOG is language-specific, built from whatever install the player is running.
+
+**The key is locale-invariant; the loader is not, and today that is a hole.**
+`x4data.textFiles` is the literal list `{"t/0001.xml", "t/0001-L044.xml",
+"t/0001-l044.xml"}`, and `l044` is English. This install ships twelve
+localisations (l007 Russian, l033 French, l034 Spanish, l039 Italian, l044
+English, l048 Polish, l049 German, l055 Portuguese, l081 Japanese, l082 Korean,
+l086/l088 Chinese) and nothing detects which one the player runs. On a German
+client X4 writes German sentences into `<log>` and the catalog holds English
+templates, so **nothing matches** — verified directly: `Classify("Odysseus E
+(YHA-137) wurde zerstört.")` returns `ok=false`. The failure is silent and it is
+not small. Replaying the same 200 saves with an empty catalog, which is exactly
+what a non-English player (or a player whose install cannot be found) gets
+today:
+
+| rule | English install | non-English / no install |
+|---|---:|---:|
+| `ship_destroyed` fires | 365 | **11** |
+| `station_under_attack` fires | 145 | **0** |
+| `account_under_budget` fires | 892 | **0** |
+| total red alerts | 399 | **11** |
+
+97% of real ship losses stop being reported, and two rules cease to exist. The
+lane does degrade rather than fabricate — which is what `TestNilCatalogDegrades`
+asserts and is the right behaviour given an empty catalog — but "degrades
+safely" and "is locale-robust" are different claims, and only the first is
+true. Language detection (read the player's config, or try the catalog against a
+sample of the log and pick the file that matches) belongs in the same increment
+as the parser gaps.
 
 Three caveats belong with that, all of them measured:
 
@@ -453,18 +538,42 @@ stations and `knownto=player` NPC **stations** — not from player build storage
 (decoded into a narrow struct that has no place for a docked ship) and not from
 NPC **ships**.
 
-Measured over one save, by nearest enclosing container:
+Measured over one save, by nearest enclosing container — and note the
+denominator, because the first version of this table got it wrong. A raw count
+of player `ship_*` components in the newest save is **2,231**, but **1,180 of
+those (52.9%) are lasertowers and other deployables**, which `parse.go` routes
+to `Snapshot.OtherCounts` on purpose. They are not fleet and no rule is about
+them. The population a `ship_gone` can be drawn from is `Snapshot.Ships`, which
+is **1,051**:
 
-| host of a player `ship_*` component | count |
+| host of a player fleet ship | count |
 |---|---:|
-| top level (in a zone) | 1,800 |
-| docked on a player `ship_xl` | 283 |
-| on a player station | 42 |
-| on an NPC station `knownto=player` | 8 |
-| **on a player buildstorage** | **1** |
-| **on an NPC ship** | **1** |
+| top level (in a zone) | 1,871 (incl. deployables) |
+| docked on a player `ship_xl` | 268 |
+| on a player station | 79 |
+| on an NPC station `knownto=player` | 13 |
 
-**0.09% of player ship components, and 8.4% of `ship_gone` fires.**
+A single save is also the wrong instrument for a rare, transient condition: in
+the newest save there are **zero** ships on a buildstorage and **zero** inside
+an NPC ship. So instead of counting hosts in one file, every one of the **58
+falsified `ship_gone` fires** was traced to its host in the raw XML of the save
+it vanished from:
+
+| where the falsified ship actually was | count | share |
+|---|---:|---:|
+| on a buildstorage — **player-owned** | 39 | 67.2% |
+| on a buildstorage — **NPC-owned** (boron, holyorder, scaleplate, scavenger, hatikvah, argon, antigone) | 16 | 27.6% |
+| inside an NPC ship | 2 | 3.4% |
+| **not in the file at all** (a genuinely un-serialised ship) | 1 | 1.7% |
+
+**~0.19% of player fleet ships, and 10.1% of `ship_gone` fires.**
+
+That breakdown changes the fix estimate below. 16 of the 55 buildstorage cases
+sit under an NPC-owned build storage, and `parse.go` only decodes
+`buildstorage` when `owner == "player"` — so they are in the same "descend into
+a subtree we do not currently enter" category as the NPC-ship half, not in the
+contained one. The contained fix covers **39 of 58 (67%)**, not 55 of 57. And
+the last row is a third cause the two-gap story does not explain at all.
 
 **Not fixed here, and the reason.** Either fix is a parser change, which is a
 `schemaVersion` bump, a 200-save re-parse and — critically — a pass through
@@ -502,8 +611,13 @@ the same test failed again on the four-core repeat run — "the parse moved the
 whole process from nice 1 to nice 19" — and this time it was true. `readSave`
 runs the parse on a goroutine locked to its own OS thread, nices that thread,
 and lets the thread die with the goroutine. Measured: **a freshly spawned
-`LockOSThread`'d goroutine lands on the process's FIRST thread 31 to 230 times
-in 400 at `GOMAXPROCS=4`.** When it does, two things go wrong — `getpriority`,
+`LockOSThread`'d goroutine lands on the process's FIRST thread anywhere from
+**0 to 400 times in 400** at `GOMAXPROCS=4` — the distribution is strongly
+bimodal at the two ends, not a 31–230 band, and `priority_linux.go` states a
+third figure ("11 times in 200") that matches neither. The rate is a property
+of the run, not a constant. The leak is also bounded: the FIRST landing wedges
+m0, after which the scheduler never offers it again, so it is one thread once
+per process and not one per occurrence.** When it does, two things go wrong — `getpriority`,
 `ps` and `top` all read that task's nice as the process's, so the board the
 player is looking at reads as niced to 19; and the runtime cannot retire it, so
 `mexit` wedges it forever ("this is the main thread, just wedge it"), one
