@@ -8,6 +8,18 @@ reviewer should overrule if they disagree with them.
 
 **Read these three first:**
 
+> **RESOLVED after review — the gate was replaced, not waived.** Peak RSS was
+> found to be measuring the GC pacer rather than the parser: it fails on
+> *unchanged* code (the pre-S6 parser is 19.17 MB against a 20 MB ceiling), its
+> noise is half its own allowance, and it cannot tell retained snapshot from
+> leaked garbage. `TestRealSaveGolden` now gates on **live heap after parse**
+> (+10%, baseline 6.26 MB) for retention and **allocation volume** (+5%) for
+> throughput, with peak RSS demoted to a +64 MB backstop. See
+> `docs/parse-baseline.md` §3.2 — including the control showing that a 21×
+> retention regression moves allocation volume only 4%, which is why the
+> obvious choice of gate would also have been the wrong one. Everything below
+> is the S6 record as written; §4.2's verdict is superseded.
+
 1. **One gate FAILS.** Peak RSS on a real save is **30.33 MB against a ≤ 20 MB
    ceiling**, +11.16 MB against a +5 MB allowance. The logbook owns 8.79 MB of
    it and every other section together owns 2.37 MB. The parse-time gate passes
