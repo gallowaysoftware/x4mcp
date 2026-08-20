@@ -87,11 +87,13 @@ Every un-archived play session is lost rule-mining corpus for S7.
 
 ## Phase 4 — the deterministic lane (W4–W5, ~9 ev)
 
-### S7 · Rule-mining spike + replay harness (2 ev)
-- [ ] Logbook TSV dump (scanner extension); template-ize (strip codes, placeholder numbers/ship-codes/names, hash residue); expect 4,415 uncategorized entries → O(dozens) templates
-- [ ] Key rules on `{page,id}` first, localized text as fallback
-- [ ] Second-signal table per event type (tech-design §6); disambiguation rules (sold ≠ destroyed, rename-safe ID diffing, carrier-docked ships, GUID resets)
-- [ ] Replay harness over the S0 archive; deliverable: rule table (trigger, signature, severity, dedupe key, confidence) + measured precision
+### S7 · Rule-mining spike + replay harness (2 ev) — DONE 2026-08-20, findings in `docs/s7-rules.md`
+- [x] Logbook TSV dump (`scripts/replay -tsv`); template-ize; **measured: 3.18 M rows → 112,098 distinct events → 80 templates + 5 signatures; 98.8% matched**
+- [x] Key rules on `{page,id}` first — **the refs are NOT in the save** (only `faction` is); recovered by matching against the install's own text templates, `internal/logbook`
+- [x] Second-signal table per event type; disambiguation rules — **sold ≠ destroyed and carrier-docked land; "rename-safe ID diffing" does not: X4 renumbers component ids on load, so the key is the registration code (s7-rules §5.1)**
+- [x] Replay harness over the S0 archive (`internal/replay`, `scripts/replay -replay`); rule table with trigger/signature/severity/dedupe/confidence + measured rates in `docs/s7-rules.md`
+- [x] **Precision is not measurable on this corpus** — no ground truth. What is measured: falsification (one-sided), corroboration rate, fire/alert rate. 5 of 15 rules ship disabled as unvalidated.
+- [x] `internal/rules` corroboration policy + per-rule kill switches; D11 lane-purity guard (`internal/rules/lane_test.go`) landed early
 
 ### S8 · History store + plan flock (2 ev)
 - [ ] `internal/history` (modernc SQLite, WAL): `vitals`, `events` (dedupe UNIQUE per guid, `acked_at`, false-red flag), `chat_sessions`/`chat_messages` (schema now, used in v1.1)
