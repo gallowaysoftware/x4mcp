@@ -261,6 +261,12 @@ func (m Match) Span(name string) (string, bool) {
 type Catalog struct {
 	templates []*Template
 	index     map[string][]*Template
+	// byRef is the direct lookup MatchRef needs. Without it every Classify
+	// walks the whole catalog once per RuleRef, which on the corpus is
+	// 25 refs x the page's templates x 100k log entries — the harness felt it,
+	// and so would the live watcher, which classifies a log window on every
+	// save the game writes.
+	byRef map[Ref]*Template
 
 	// Skipped counts templates the install offered that Compile rejected —
 	// reported so "the catalog holds 41,318 of 58,904 strings" is a stated
@@ -273,7 +279,7 @@ type Catalog struct {
 // narrow page list so that an alert can never key on a mission-briefing string
 // that happens to fit.
 func NewCatalog(db *x4data.TextDB, pages ...int) *Catalog {
-	c := &Catalog{index: map[string][]*Template{}}
+	c := &Catalog{index: map[string][]*Template{}, byRef: map[Ref]*Template{}}
 	if db == nil {
 		return c
 	}
@@ -295,6 +301,7 @@ func NewCatalog(db *x4data.TextDB, pages ...int) *Catalog {
 				continue
 			}
 			c.templates = append(c.templates, t)
+			c.byRef[t.Ref] = t
 		}
 	}
 	// Index each template by its RAREST literal word. A template is reachable
@@ -394,12 +401,8 @@ func (c *Catalog) Match(s string) (Match, bool) {
 
 // Template returns the compiled template for a ref, if the catalog holds it.
 func (c *Catalog) Template(r Ref) (*Template, bool) {
-	for _, t := range c.templates {
-		if t.Ref == r {
-			return t, true
-		}
-	}
-	return nil, false
+	t, ok := c.byRef[r]
+	return t, ok
 }
 
 // MatchRef tests one specific template against s. This is what a rule uses:
@@ -429,6 +432,8 @@ func sortedWords(s string) []string {
 	return w
 }
 
+// dedupeStrings collapses adjacent duplicates in a SORTED slice, in place. The
+// two callers both pass a slice they own and have just sorted.
 func dedupeStrings(s []string) []string {
 	out := s[:0]
 	var last string

@@ -20,6 +20,23 @@ const (
 	ioprioClassIdle  = 3
 )
 
+// onMainOSThread reports whether the caller is running on the process's FIRST
+// thread — the task whose tid equals the pid.
+//
+// It matters for two reasons that both bite:
+//
+//  1. `getpriority(PRIO_PROCESS, pid)` reads THAT task, and so does ps, and so
+//     does top. Nicing it is indistinguishable from nicing the whole process,
+//     which is exactly the thing readSave's comment promises never happens.
+//  2. The Go runtime cannot retire it. A goroutine that exits while locked to
+//     an ordinary thread takes the thread with it; the same goroutine on m0
+//     hits mexit's "this is the main thread, just wedge it" path, parking it
+//     forever — at nice 19, permanently, one thread poorer.
+//
+// Measured on this machine at GOMAXPROCS=4: a freshly spawned LockOSThread'd
+// goroutine landed here 11 times in 200.
+func onMainOSThread() bool { return unix.Gettid() == unix.Getpid() }
+
 // ioClassNames indexes IOPRIO_CLASS_*. NONE is not "no class": it means the
 // thread has never asked, and the scheduler derives one from its nice value.
 var ioClassNames = map[int]string{0: "none", 1: "realtime", 2: "best-effort", 3: "idle"}

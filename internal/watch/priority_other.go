@@ -14,3 +14,7 @@ import "github.com/pequalsnp/x4mcp/internal/wire"
 func applyParsePriority(nice int) wire.ParsePriority {
 	return wire.ParsePriority{Detail: "parse priority is only lowered on Linux"}
 }
+
+// onMainOSThread is the Linux-only main-thread guard's no-op twin. Nothing here
+// nices anything, so nothing here can nice the wrong thing.
+func onMainOSThread() bool { return false }

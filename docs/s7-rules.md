@@ -398,7 +398,7 @@ Three caveats belong with that, all of them measured:
 - **A patch that renumbers a page breaks every rule silently.** The catalog
   still builds; the match simply stops happening. The only thing that makes it
   loud is watching the match rate, which is why the replay reports
-  "classified by RuleRefs: 30,734 of 102,949 window entries (29.8%)" as a
+  "classified by RuleRefs: 30,734 of 102,949 window entries (29.9%)" as a
   standing number.
 
 ### 5.3 "Station account vs the game's estimated budget" — that budget is not in the save
@@ -491,9 +491,26 @@ thread's priority by pid before any parse, read it again after, fail if the
 parse MOVED it — correct at every starting priority, 19 included, with a
 positive-control table beside it.
 
-This is the probes doc's instrument warning in a new costume. The first version
-of the S7 census also measured its own instrument: 77.7% template coverage was
-a fact about which t-files `x4data` read, not about the game.
+**And then the fixed gate found a real one.** With the launcher artefact removed,
+the same test failed again on the four-core repeat run — "the parse moved the
+whole process from nice 1 to nice 19" — and this time it was true. `readSave`
+runs the parse on a goroutine locked to its own OS thread, nices that thread,
+and lets the thread die with the goroutine. Measured: **a freshly spawned
+`LockOSThread`'d goroutine lands on the process's FIRST thread 31 to 230 times
+in 400 at `GOMAXPROCS=4`.** When it does, two things go wrong — `getpriority`,
+`ps` and `top` all read that task's nice as the process's, so the board the
+player is looking at reads as niced to 19; and the runtime cannot retire it, so
+`mexit` wedges it forever ("this is the main thread, just wedge it"), one
+thread poorer per occurrence. The fix holds the main thread instead of nicing
+it: stay locked to it while a second goroutine — which is therefore guaranteed
+a different thread — does the parse, then unlock and leave it as found. The
+test's positive control measures the unguarded rate before asserting the guard,
+and skips rather than passing vacuously if the runtime never offers the main
+thread on the machine it is running on.
+
+This is the probes doc's instrument warning in a new costume, twice over. The
+first version of the S7 census also measured its own instrument: 77.7% template
+coverage was a fact about which t-files `x4data` read, not about the game.
 
 **Rows are not events.** Stated in §4 and worth repeating because it is the
 easiest number in this document to quote wrongly. Every "distinct events" figure
@@ -551,7 +568,7 @@ two runs an hour apart during this session already differed by one save.
    493 red alerts a week and rely on the corroboration policy to hold it at 21.
 4. **The history store (S8) unblocks three rules**: the idle debounce, the
    >2 h idle clause, and first-seen state for hostile sightings.
-5. **Watch the classification rate.** 29.8% of window entries classified is the
+5. **Watch the classification rate.** 29.9% of window entries classified is the
    baseline; a patch that renumbers page 1016 shows up as that number falling
    and as nothing else.
 6. **The two parser gaps (§6)** belong in the next parser increment with a

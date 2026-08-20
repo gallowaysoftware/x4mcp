@@ -5,6 +5,7 @@ package watch
 import (
 	"context"
 	"os"
+	"runtime"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -113,5 +114,70 @@ func TestProcessNiceCheckStillCatchesTheBugItGuards(t *testing.T) {
 				t.Errorf("before=%d after=%d: fails=%v, want %v", tc.before, tc.after, got, tc.wantFail)
 			}
 		})
+	}
+}
+
+// The parse must never run on the process's FIRST thread.
+//
+// Two things go wrong there and only one of them is visible. `getpriority`,
+// `ps` and `top` all read that task's nice value as the process's, so nicing it
+// is indistinguishable from nicing the board the player is looking at. And a
+// goroutine that exits while locked to it does not retire it — the runtime
+// wedges it (mexit: "this is the main thread, just wedge it"), permanently, at
+// nice 19, one thread poorer every time it happens.
+//
+// It happens. This test's own positive control measures how often on this
+// machine before asserting the fix, and skips rather than passing vacuously
+// when the runtime never offers the main thread at all — a control that cannot
+// arm is a control that proves nothing, and saying so is better than a green
+// tick that means "the bug did not occur today".
+func TestThePoliteThreadIsNeverTheProcessFirstThread(t *testing.T) {
+	const tries = 400
+	pid := os.Getpid()
+
+	// Positive control: the pre-fix shape — lock whatever thread the runtime
+	// hands you and nice it — does land on the main thread.
+	naive := 0
+	for i := 0; i < tries; i++ {
+		got := make(chan int, 1)
+		go func() {
+			runtime.LockOSThread()
+			got <- unix.Gettid()
+			runtime.UnlockOSThread()
+		}()
+		if <-got == pid {
+			naive++
+		}
+	}
+	if naive == 0 {
+		t.Skipf("the runtime never handed out the main thread in %d tries here, "+
+			"so the control cannot arm and this run proves nothing about the fix", tries)
+	}
+	t.Logf("control: the unguarded form landed on the main thread %d of %d times", naive, tries)
+
+	// The fix: never, at any count.
+	bad := 0
+	for i := 0; i < tries; i++ {
+		var tid int
+		done := make(chan struct{})
+		go func() {
+			politely(0, func(wire.ParsePriority) {}, func() { tid = unix.Gettid() })
+			close(done)
+		}()
+		<-done
+		if tid == pid {
+			bad++
+		}
+	}
+	if bad > 0 {
+		t.Errorf("the parse ran on the process's first thread %d of %d times "+
+			"(the unguarded form does it %d of %d)", bad, tries, naive, tries)
+	}
+
+	// …and the main thread's priority is exactly where it started.
+	if after, ok := processNice(t); ok {
+		if before, ok2 := processNice(t); ok2 && after != before {
+			t.Errorf("main-thread nice moved during the run: %d -> %d", before, after)
+		}
 	}
 }
