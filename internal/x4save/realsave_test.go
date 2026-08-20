@@ -47,8 +47,26 @@ type realBaseline struct {
 	Counts        map[string]int `json:"counts"`
 	ParseMS       int64          `json:"parse_ms"`
 	PeakRSSKB     int64          `json:"peak_rss_kb"`
-	BlessedAt     string         `json:"blessed_at"`
-	GoVersion     string         `json:"go_version"`
+	// Allocation VOLUME. This catches a throughput regression — someone dropping
+	// a dec.Skip() and walking a subtree the parser used to stride past — and it
+	// is nearly noise-free.
+	//
+	// It does NOT catch retention, which was measured rather than assumed: a
+	// control that retained one string per element ballooned the live heap 21x
+	// (6.26 -> 131.64 MB) and moved this number only +4.0%, under the tolerance
+	// below. The parse allocates ~196 million times streaming, so anything the
+	// walk keeps is a rounding error in the volume. Retention is LiveHeapKB's
+	// job, and only LiveHeapKB's.
+	TotalAllocBytes uint64 `json:"total_alloc_bytes"`
+	Allocs          uint64 `json:"allocs"`
+	// Live heap after the parse, measured after two forced GCs: what the
+	// snapshot RETAINS. This is the real memory gate. It caught the control
+	// above at +2002% where every other instrument shrugged, it is stable to
+	// ~0.2% between machines and runs, and a reviewer can check it by hand
+	// (17,004 logbook entries at 194 B is 3.3 MB, and the total is 6.26 MB).
+	LiveHeapKB int64  `json:"live_heap_kb"`
+	BlessedAt  string `json:"blessed_at"`
+	GoVersion  string `json:"go_version"`
 }
 
 // sectionCounts is the shape of the snapshot reduced to numbers: the thing that
@@ -154,6 +172,8 @@ func TestRealSaveGolden(t *testing.T) {
 	}
 
 	resetPeakRSS()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
 	start := time.Now()
 	snap, err := ParseFile(path) // never LoadSnapshot: a cache hit measures nothing
 	if err != nil {
@@ -161,23 +181,35 @@ func TestRealSaveGolden(t *testing.T) {
 	}
 	wall := time.Since(start)
 	rss := peakRSSKB()
+	// Two GCs: the first can leave the second's work behind, and the number we
+	// want is what the snapshot RETAINS, not what happens to be uncollected.
+	runtime.GC()
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	runtime.KeepAlive(snap)
 
 	got := realBaseline{
-		Save:          filepath.Base(path),
-		SaveSize:      fi.Size(),
-		SaveMod:       fi.ModTime().Unix(),
-		SchemaVersion: schemaVersion,
-		GameVersion:   snap.GameVersion,
-		GameBuild:     snap.GameBuild,
-		GameGUID:      snap.GameGUID,
-		Counts:        sectionCounts(snap),
-		ParseMS:       snap.ParseMS,
-		PeakRSSKB:     rss,
-		BlessedAt:     time.Now().UTC().Format(time.RFC3339),
-		GoVersion:     runtime.Version(),
+		Save:            filepath.Base(path),
+		SaveSize:        fi.Size(),
+		SaveMod:         fi.ModTime().Unix(),
+		SchemaVersion:   schemaVersion,
+		GameVersion:     snap.GameVersion,
+		GameBuild:       snap.GameBuild,
+		GameGUID:        snap.GameGUID,
+		Counts:          sectionCounts(snap),
+		ParseMS:         snap.ParseMS,
+		PeakRSSKB:       rss,
+		TotalAllocBytes: after.TotalAlloc - before.TotalAlloc,
+		Allocs:          after.Mallocs - before.Mallocs,
+		LiveHeapKB:      int64(after.HeapAlloc / 1024),
+		BlessedAt:       time.Now().UTC().Format(time.RFC3339),
+		GoVersion:       runtime.Version(),
 	}
-	t.Logf("parsed %s (%.1f MB) in %s (ParseMS %d), peak RSS %d MB, schema v%d",
-		got.Save, float64(fi.Size())/(1<<20), wall.Round(time.Millisecond), got.ParseMS, rss/1024, schemaVersion)
+	t.Logf("parsed %s (%.1f MB) in %s (ParseMS %d), schema v%d\n"+
+		"  retention: %d allocs, %.2f GB allocated, %.2f MB live after GC\n"+
+		"  peak RSS %d MB (backstop only)",
+		got.Save, float64(fi.Size())/(1<<20), wall.Round(time.Millisecond), got.ParseMS, schemaVersion,
+		got.Allocs, float64(got.TotalAllocBytes)/(1<<30), float64(got.LiveHeapKB)/1024, rss/1024)
 
 	file := filepath.Join(baselineDir(), strings.TrimSuffix(got.Save, ".xml.gz")+".json")
 	if *update {
@@ -244,9 +276,39 @@ func TestRealSaveGolden(t *testing.T) {
 	if want.ParseMS > 0 && float64(got.ParseMS) > float64(want.ParseMS)*tol {
 		t.Errorf("ParseMS = %d, baseline %d (over the %.2fx ceiling)", got.ParseMS, want.ParseMS, tol)
 	}
+	// Peak RSS is a BACKSTOP, deliberately loose. It was the primary memory gate
+	// until S6, where it failed on code that had not changed: the ceiling was
+	// derived from a 2026-08-10 save and the unchanged parser measured 19 MB
+	// against a 20 MB limit on a bigger save with a newer toolchain. A ceiling
+	// the pre-change code fails is worse than none, because it trains everyone
+	// to waive it. Its noise (±2.5 MB across reps) was also half its allowance.
 	rssHeadroomKB := int64(envFloat("X4MCP_PARSE_RSS_HEADROOM_MB", 64) * 1024)
 	if want.PeakRSSKB > 0 && got.PeakRSSKB > want.PeakRSSKB+rssHeadroomKB {
-		t.Errorf("peak RSS = %d MB, baseline %d MB (over the +%d MB ceiling)", got.PeakRSSKB/1024, want.PeakRSSKB/1024, rssHeadroomKB/1024)
+		t.Errorf("peak RSS = %d MB, baseline %d MB (over the +%d MB backstop)", got.PeakRSSKB/1024, want.PeakRSSKB/1024, rssHeadroomKB/1024)
+	}
+
+	// Allocation volume: a throughput gate, not a retention gate. It goes red if
+	// someone drops a dec.Skip() and the walk starts descending a subtree it
+	// used to stride past. S6 added nine sections and moved it 0.047%.
+	allocTol := envFloat("X4MCP_PARSE_ALLOC_TOLERANCE", 1.05)
+	if want.Allocs > 0 && float64(got.Allocs) > float64(want.Allocs)*allocTol {
+		t.Errorf("allocations = %d, baseline %d (+%.1f%%, over the %.0f%% ceiling) — the walk is descending something it used to skip",
+			got.Allocs, want.Allocs, 100*(float64(got.Allocs)/float64(want.Allocs)-1), 100*(allocTol-1))
+	}
+	if want.TotalAllocBytes > 0 && float64(got.TotalAllocBytes) > float64(want.TotalAllocBytes)*allocTol {
+		t.Errorf("bytes allocated = %d, baseline %d (+%.1f%%, over the %.0f%% ceiling)",
+			got.TotalAllocBytes, want.TotalAllocBytes, 100*(float64(got.TotalAllocBytes)/float64(want.TotalAllocBytes)-1), 100*(allocTol-1))
+	}
+
+	// THE memory gate. A section is supposed to add to this, so the tolerance is
+	// not zero — the point is that an addition is visible and has to be
+	// justified in a re-bless, not that it is forbidden. 10% on a 6.26 MB
+	// baseline is ~640 KB, comfortably above the ~0.2% run-to-run noise and
+	// well below anything a careless capture would cost.
+	liveTol := envFloat("X4MCP_PARSE_LIVE_HEAP_TOLERANCE", 1.10)
+	if want.LiveHeapKB > 0 && float64(got.LiveHeapKB) > float64(want.LiveHeapKB)*liveTol {
+		t.Errorf("live heap after parse = %d KB, baseline %d KB (+%.1f%%, over the %.0f%% ceiling) — a new section is retaining more than it said it would",
+			got.LiveHeapKB, want.LiveHeapKB, 100*(float64(got.LiveHeapKB)/float64(want.LiveHeapKB)-1), 100*(liveTol-1))
 	}
 }
 

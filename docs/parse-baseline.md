@@ -103,6 +103,57 @@ The `none` row is the pre-S6 parse section for section, produced by the test-onl
 
 **Against the §3 ceilings: ParseMS passes on both, peak RSS fails.** 30.33 MB against ≤ 20 MB, +11.16 MB against +5 MB.
 
+### 3.2 The memory gate was replaced, because it was measuring the wrong thing
+
+Peak RSS was the memory gate through S6, and S6 is where it stopped being
+usable. Three faults, all measured:
+
+1. **It fails on unchanged code.** The *pre-S6* parser measures 19.17 MB against
+   a 20 MB ceiling. A ceiling the pre-change code cannot meet is worse than no
+   ceiling: it trains everyone to waive it.
+2. **Its noise is half its allowance.** The `all` arm spans 28.89–31.38 MB
+   across reps. A ±2.5 MB instrument cannot police a +5 MB budget.
+3. **It measures the GC pacer, not the parser.** Peak RSS ≈ live set × pacer
+   multiple, and on a parse pushing 8.9 GB the pacer sits at ~2× live
+   continuously. 3 MB of legitimately retained snapshot and 3 MB of leaked
+   per-element garbage are indistinguishable to it.
+
+`TestRealSaveGolden` now gates on two numbers instead, and demotes peak RSS to a
+loose backstop (+64 MB).
+
+| gate | what it catches | tolerance | baseline (2026-08-19, v29) |
+| --- | --- | --- | --- |
+| **live heap after parse** | **retention** — a section keeping more than it declared | +10% | **6.26 MB** |
+| allocation count / bytes | throughput — a lost `dec.Skip()`, a subtree newly descended | +5% | 196,539,692 / 8.35 GB |
+| peak RSS | backstop only | +64 MB | 30 MB |
+
+**Live heap is the real one, and that is not obvious — the first attempt at this
+gate got it backwards.** The intuition is that a retention regression shows up as
+extra allocation. It does not. A control that retained one interned string per
+element in the token loop was run against both:
+
+| | baseline | with per-element retention | moved |
+| --- | ---: | ---: | ---: |
+| allocations | 196,539,692 | 204,487,876 | **+4.0%** |
+| bytes allocated | 8.35 GB | 8.72 GB | **+4.4%** |
+| **live heap** | **6.26 MB** | **131.64 MB** | **+2002%** |
+| peak RSS | 30 MB | 309 MB | +930% |
+
+**A 21× retention regression moved allocation volume by 4%** — inside a 5%
+tolerance, i.e. invisible. The parse allocates ~196 million times while
+streaming, so anything the walk *keeps* is a rounding error against what it
+*touches*. Allocation volume is a fine throughput gate and a useless retention
+gate, and only measuring it that way makes the difference visible.
+
+Live heap is also the most stable instrument here: 6.26 / 6.26 / 6.27 MB across
+three runs, and 6.27 MB measured independently during S6 — a 0.16% spread, about
+60× smaller than its own tolerance. It is checkable by hand too, which peak RSS
+never was: 17,004 logbook entries at 194 B is 3.3 MB of the 6.26.
+
+Measure it after **two** forced GCs. One can leave the second's work behind, and
+the number wanted is what the snapshot retains, not what happens to be
+uncollected.
+
 **What the numbers say about why.** Time did not move at all — the shipped parse is *faster* than the pre-S6 arm by less than the arm's own run-to-run spread. Allocation count moved 0.05%, so the streaming walk is intact and nothing is retained per `<field>`. The whole of the RSS increase is **retained output**: 3.59 MB more live heap, tripled by the GC pacer, which targets ~2× the live set and is pinned at that target continuously by a parse that pushes 8.9 GB through it.
 
 **Per-section**, one section disabled per arm:
