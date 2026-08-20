@@ -619,3 +619,43 @@ func TestNilCatalogDegradesToOneGroup(t *testing.T) {
 		}
 	}
 }
+
+// A stats counter that did not move is not a second witness. The obvious
+// spelling of sameSign — (a > 0) == (b > 0) — reports that a stat delta of
+// exactly zero "moved the same way" as a ten-million-credit fall, because
+// neither is greater than zero. That handed money_delta a fabricated
+// GroupStats signal and made Corroborated() report two independent groups
+// where the file held one.
+//
+// The corroboration count is the whole basis of the red/amber decision, so an
+// arithmetic accident that inflates it is a defect wherever it appears, even
+// on a grey rule that cannot currently chime.
+func TestAStatThatDidNotMoveDoesNotCorroborateAMoneyDrop(t *testing.T) {
+	before, after := snap(1000), snap(2000)
+	before.Money, after.Money = 50_000_000, 40_000_000 // a real -10M
+	before.Stats["money_player"] = 50_000_000
+	after.Stats["money_player"] = 50_000_000 // ...that the stats block missed
+
+	c := only(t, Diff(before, after, opts()), KindMoneyDelta)
+	if hasSource(c.Evidence, SrcStats) {
+		t.Errorf("a stats delta of zero corroborated a %d Cr move; evidence = %v", c.Detail.Delta, c.Evidence)
+	}
+	if c.Corroborated() {
+		t.Errorf("Corroborated() = true on one real signal; groups = %v", c.Groups())
+	}
+
+	// Positive control: the pre-fix expression, still wrong, still detected.
+	// If this ever stops reproducing the bug, the test above has stopped
+	// guarding anything.
+	if !preFixSameSign(0, -10_000_000) {
+		t.Fatal("the positive control stopped reproducing the bug it guards: " +
+			"(0 > 0) == (-10_000_000 > 0) is the defect, and it no longer evaluates true")
+	}
+	if !sameSign(1, 2) || sameSign(1, -2) {
+		t.Error("sameSign stopped agreeing with itself on two genuinely signed deltas")
+	}
+}
+
+// preFixSameSign is the expression this file shipped with, kept ONLY as the
+// positive control above. It is never called by the differ.
+func preFixSameSign(a, b float64) bool { return (a > 0) == (b > 0) }

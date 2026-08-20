@@ -250,6 +250,10 @@ func printReplay(w *os.File, rep *replay.Report) {
 	fmt.Fprintf(w, "\n== REPLAY ==\n")
 	fmt.Fprintf(w, "archive                  %s\n", rep.Dir)
 	fmt.Fprintf(w, "saves                    %d  (%d failed to parse)\n", len(rep.Saves), rep.ParseErrors)
+	if rep.ReloadErrors > 0 {
+		fmt.Fprintf(w, "  NOT re-read for diffing %d  (indexed, then gone — the archive rolled mid-run; see anomalies)\n",
+			rep.ReloadErrors)
+	}
 	for _, p := range rep.Playthroughs {
 		fmt.Fprintf(w, "playthrough %d            %d saves, %.1f in-game hours, %.1f real days\n",
 			p.Play, p.Saves, (p.LastTime-p.FirstTime)/3600, float64(p.LastDate-p.FirstDate)/86400)

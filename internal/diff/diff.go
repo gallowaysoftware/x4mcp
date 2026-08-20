@@ -924,7 +924,20 @@ func (d *differ) money() {
 	})
 }
 
-func sameSign(a, b float64) bool { return (a > 0) == (b > 0) }
+// sameSign reports whether two deltas moved in the SAME direction.
+//
+// A delta of exactly ZERO moved in no direction and corroborates nothing. The
+// obvious spelling — (a > 0) == (b > 0) — gets that wrong in precisely the case
+// that matters: (0 > 0) == (-10_000_000 > 0) is true, so a money_player stat
+// that did not move at all stood as a second independent witness to a
+// ten-million-credit drop, and Corroborated() reported two groups where there
+// was one. The stats block not moving when the balance did is a DISAGREEMENT.
+func sameSign(a, b float64) bool {
+	if a == 0 || b == 0 {
+		return false
+	}
+	return (a > 0) == (b > 0)
+}
 
 // ---- hostiles ----
 

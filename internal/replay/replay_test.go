@@ -208,3 +208,62 @@ func dumpJSON(t *testing.T, v any) string {
 	}
 	return string(b)
 }
+
+// The archive is a ROLLING window: the archiver prunes the oldest save every
+// time the game writes a new one, and the player is often still playing while
+// a replay runs. So a save can be indexed in pass 1 and be gone before pass 2
+// opens it — which the harness used to swallow, leaving the report claiming
+// "200 saves, 0 failed to parse" above a pair count two short, with nothing to
+// say where the pairs went. Every rate in that report is then divided by a
+// denominator the reader cannot reconstruct.
+//
+// The harness is the instrument. An instrument that quietly measures a
+// different corpus than the one it names is the failure docs/probes/README.md
+// exists to warn about.
+func TestASaveThatVanishesBetweenThePassesIsReportedNotSwallowed(t *testing.T) {
+	dir := fixtureDir(t,
+		"20260810T000000Z_12345678_quicksave_1.xml.gz",
+		"20260810T001000Z_12345678_quicksave_2.xml.gz",
+		"20260810T002000Z_12345678_quicksave_3.xml.gz",
+	)
+	victim := filepath.Join(dir, "20260810T001000Z_12345678_quicksave_2.xml.gz")
+
+	opts := Options{Dir: dir, Diff: diff.DefaultOptions()}
+	// Pass 1 announces each save BEFORE loading it, so removing the middle
+	// save as the last one is announced leaves it indexed and unreadable.
+	opts.Progress = func(stage string, i, n int, _ string) {
+		if stage == "index" && i == n {
+			if err := os.Remove(victim); err != nil {
+				t.Errorf("staging the vanish: %v", err)
+			}
+		}
+	}
+
+	rep, err := Run(context.Background(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.ReloadErrors != 1 {
+		t.Errorf("ReloadErrors = %d, want 1: a save that vanished between the passes must be counted", rep.ReloadErrors)
+	}
+	named := false
+	for _, a := range rep.Anomalies {
+		if strings.Contains(a, "quicksave_2") {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("no anomaly names the save that vanished; anomalies = %v", rep.Anomalies)
+	}
+
+	// Positive control: the pre-fix harness swallowed it, and the ONLY visible
+	// trace was an unexplained shortfall in the pair count. Three saves make
+	// two pairs; losing the middle one leaves zero, and nothing said so.
+	if rep.Pairs != 0 {
+		t.Errorf("pairs = %d: three saves minus a vanished middle one is zero diffable pairs", rep.Pairs)
+	}
+	if rep.ParseErrors != 0 {
+		t.Errorf("ParseErrors = %d: the save parsed fine in pass 1, which is exactly why "+
+			"the shortfall was invisible — it must be counted separately", rep.ParseErrors)
+	}
+}

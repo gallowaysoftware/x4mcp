@@ -156,6 +156,13 @@ type Report struct {
 	Saves       []SaveID `json:"saves"`
 	ParseErrors int      `json:"parse_errors"`
 
+	// ReloadErrors counts saves that were indexed in pass 1 and could NOT be
+	// re-read in pass 2. It exists because the archive is a rolling window and
+	// the player may be mid-session, so a save can be pruned between the two
+	// passes — and a harness that swallows that reports a corpus it did not
+	// measure. Each one also lands in Anomalies, named.
+	ReloadErrors int `json:"reload_errors"`
+
 	Playthroughs []Playthrough `json:"playthroughs"`
 
 	Pairs     int            `json:"pairs"`
@@ -331,6 +338,18 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 			}
 			next, err := x4save.LoadSnapshot(rep.Saves[si].Path, false)
 			if err != nil {
+				// Do NOT swallow this. The archive is a rolling window
+				// (X4_ARCHIVE_KEEP) and the archiver prunes the oldest save
+				// whenever the game writes a new one, so a save indexed in
+				// pass 1 can be gone before pass 2 opens it. Reported
+				// silently, that shows up only as an unexplained shortfall in
+				// the pair count — "200 saves, 0 failed to parse" over 198
+				// pairs — and every rate in the report is then divided by a
+				// denominator the reader cannot reconstruct.
+				rep.ReloadErrors++
+				rep.Anomalies = append(rep.Anomalies, fmt.Sprintf(
+					"playthrough %d: %s was indexed but could not be re-read for the diff pass (%v); "+
+						"the pair on each side of it was not diffed", p, rep.Saves[si].Name, err))
 				prev = nil
 				continue
 			}
