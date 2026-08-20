@@ -237,3 +237,50 @@ func TestByNameUniqueRefusesANameSharedByTwoShips(t *testing.T) {
 		t.Errorf("an empty name reported ok=%v ambiguous=%d, want false/0", ok, n)
 	}
 }
+
+// The classification RATE is the lane's standing health metric, and it is the
+// only thing that makes two different silent failures loud: a game patch that
+// renumbers page 1016 (the catalog still builds, the match simply stops
+// happening) and a catalog in the wrong LANGUAGE, which is the same symptom
+// for a different reason. Both look like Classified falling to zero while
+// Entries does not.
+//
+// It rides out on the Result so that the caller does not have to recompute it,
+// and so that a lane which cannot read the log can say so instead of showing a
+// quiet week.
+func TestTheResultCarriesHowMuchOfTheLogItCouldRead(t *testing.T) {
+	before := snap(1000, ship("[0x1]", "AAA-001", "One", "ship_l"))
+	after := snap(2000, ship("[0x1]", "AAA-001", "One", "ship_l"))
+	after.Logbook = []x4save.LogEntry{
+		log(1500, destroyed("BBB-002")),
+		log(1600, "Some sentence no template describes."),
+		log(1700, underAttack("CCC-003")),
+	}
+
+	got := Diff(before, after, opts())
+	if got.Log.Entries != 3 || got.Log.Classified != 2 {
+		t.Errorf("Log = %+v, want 3 entries and 2 classified", got.Log)
+	}
+	if !got.Log.Readable() {
+		t.Error("two of three sentences classified and the lane called itself unreadable")
+	}
+
+	// The wrong language, or no install: the game wrote sentences and the lane
+	// read none of them. That is the loud state.
+	blind := DefaultOptions() // no catalog at all
+	got = Diff(before, after, blind)
+	if got.Log.Entries != 3 || got.Log.Classified != 0 {
+		t.Errorf("Log = %+v, want 3 entries and 0 classified", got.Log)
+	}
+	if got.Log.Readable() {
+		t.Error("the lane classified nothing at all and did not say so — this is exactly the shape of " +
+			"the German-client failure: no error, no red, just a board with the news missing")
+	}
+
+	// A pair with no log entries in its window is not a failure: there was
+	// nothing to read.
+	quiet := snap(2000, ship("[0x1]", "AAA-001", "One", "ship_l"))
+	if got := Diff(before, quiet, opts()); !got.Log.Readable() {
+		t.Error("an empty window reported as unreadable; absence is not failure")
+	}
+}

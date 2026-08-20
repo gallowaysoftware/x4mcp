@@ -91,12 +91,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	db := x4data.LoadTextDB(*gameDir)
-	if db.Size() == 0 {
-		fmt.Fprintln(os.Stderr,
-			"warning: no X4 install found, so the template catalog is EMPTY —",
-			"every logbook signal will be missing and every corroboration will fall back to one group.")
-	}
+	// Which localisation is this player's client writing the log in? Detect it
+	// rather than assume it: the loader used to hardcode English, and a
+	// non-English player got 11 red alerts where an English one got 399, with
+	// nothing anywhere saying so.
+	cat, avail := logbook.Select(*gameDir, replay.NewestLogbookSample(*dir))
+	db := x4data.LoadTextDBLang(*gameDir, avail.Language)
+	printCatalogHealth(os.Stderr, avail)
 
 	progress := func(stage string, i, n int, name string) {
 		if *quiet {
@@ -142,8 +143,10 @@ func main() {
 
 	if *doReplay {
 		opts := diff.DefaultOptions()
-		opts.Catalog = logbook.NewCatalog(db, logbook.RulePages()...)
-		rep, err := replay.Run(ctx, replay.Options{Dir: *dir, Limit: *limit, Diff: opts, Progress: progress})
+		opts.Catalog = cat
+		rep, err := replay.Run(ctx, replay.Options{
+			Dir: *dir, Limit: *limit, Diff: opts, Progress: progress, CatalogHealth: avail,
+		})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -159,6 +162,36 @@ func main() {
 		} else {
 			printReplay(os.Stdout, rep)
 		}
+	}
+}
+
+// printCatalogHealth says which localisation the lane is reading the log with,
+// and says it LOUDLY when the answer is "none of them".
+//
+// The failure this guards is silent by construction: a catalog in the wrong
+// language builds fine, matches nothing, and produces a lane with 11 alerts in
+// it instead of 399. Nothing goes red, nothing errors, and the numbers look
+// like a quiet week.
+func printCatalogHealth(w *os.File, a logbook.Availability) {
+	switch a.State {
+	case logbook.StateOK:
+		fmt.Fprintf(w, "logbook catalog: %s — %s\n", a.Language, a.Detail)
+	case logbook.StateUnverified:
+		fmt.Fprintf(w, "logbook catalog: %s (UNVERIFIED) — %s\n", a.Language, a.Detail)
+	default:
+		fmt.Fprintln(w, strings.Repeat("!", 78))
+		fmt.Fprintln(w, "!! LOGBOOK LANE UNAVAILABLE")
+		fmt.Fprintln(w, "!!", a.Detail)
+		if len(a.Scores) > 0 {
+			var parts []string
+			for _, s := range a.Scores {
+				parts = append(parts, fmt.Sprintf("%s:%d", s.Language, s.Classified))
+			}
+			fmt.Fprintln(w, "!! candidates tried (language:sentences classified):", strings.Join(parts, " "))
+		}
+		fmt.Fprintln(w, "!! Every number below is missing its logbook half. Set X4MCP_GAME_LANG")
+		fmt.Fprintln(w, "!! or X4MCP_GAME_DIR if the install could not be found.")
+		fmt.Fprintln(w, strings.Repeat("!", 78))
 	}
 }
 
@@ -270,6 +303,8 @@ func printReplay(w *os.File, rep *replay.Report) {
 	}
 
 	fmt.Fprintf(w, "\n-- logbook windows --\n")
+	fmt.Fprintf(w, "  catalog                %s [%s] — %s\n",
+		rep.Logbook.Catalog.Language, rep.Logbook.Catalog.State, rep.Logbook.Catalog.Detail)
 	fmt.Fprintf(w, "  entries in windows     %d\n", rep.Logbook.WindowEntries)
 	fmt.Fprintf(w, "  classified by RuleRefs %d  (%.1f%%)\n",
 		rep.Logbook.WindowClassified, pct(rep.Logbook.WindowClassified, rep.Logbook.WindowEntries))

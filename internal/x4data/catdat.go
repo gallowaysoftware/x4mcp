@@ -166,3 +166,41 @@ func ExtractAll(dir, relpath string) ([][]byte, error) {
 	}
 	return out, nil
 }
+
+// ListFiles returns every path present in the install's archives, deduplicated
+// and sorted.
+//
+// It exists so that "which localisations does this install ship?" can be
+// ANSWERED rather than assumed — the t-file loader used to be a literal list
+// naming exactly one of the twelve this install carries. Reading the index is
+// cheap: the .cat files are plain text tables of name/size/time/hash and no
+// .dat is opened.
+//
+// It sees only what is inside a .cat. A mod that ships loose files under
+// extensions/<mod>/t/ is invisible here, exactly as it is to ExtractAll, and
+// closing that is a separate change to the archive layer rather than to this
+// listing.
+func ListFiles(dir string) []string {
+	if dir == "" {
+		dir = DefaultInstallDir()
+	}
+	if dir == "" {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, cat := range listCats(dir) {
+		arc, err := readCat(cat)
+		if err != nil {
+			continue
+		}
+		for name := range arc.entries {
+			seen[name] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for n := range seen {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
+}

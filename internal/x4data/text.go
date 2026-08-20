@@ -1,7 +1,11 @@
 package x4data
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -26,24 +30,135 @@ type TextDB struct {
 	res  *resolver
 }
 
-// textFiles are the t-file names to merge, in PRECEDENCE ORDER (later wins).
+// NeutralTextFile is the language-NEUTRAL t-file, and it is read for every
+// language.
 //
-// The rest of this package reads only `t/0001-l044.xml`, and for sector and
-// faction names that is correct: those strings are the base game's and the
-// base game ships them there. The logbook is different, and the difference was
-// measured rather than assumed — 3,397 of the corpus's distinct log events say
-// "Finance Hub: Transfers - Summary", which appears in NO base-game page,
-// because it belongs to a mod, and a mod ships its strings in the
-// language-NEUTRAL `t/0001.xml`.
+// The difference was measured rather than assumed: 25,420 of the corpus's
+// distinct log events say "Finance Hub: Transfers - Summary", which appears in
+// NO base-game page, because it belongs to a mod — and a mod ships its strings
+// in `t/0001.xml` rather than in a localised file. Reading only the localised
+// one reported 77.7% template coverage; reading both reports 98.8%.
 //
-// So the neutral file is read first as the fallback and the localised one
-// second, which is X4's own resolution order: a string that exists in both
-// takes its translated form.
+// It is read FIRST as the fallback and the localised file second, which is X4's
+// own resolution order: a string that exists in both takes its translated form.
+const NeutralTextFile = "t/0001.xml"
+
+// DefaultTextLanguage is English, and it is a FALLBACK rather than an
+// assumption — see SelectTextLanguage. The rest of this package still reads it
+// directly for sector and faction names; that is left alone deliberately
+// (tech-design §6) and is a separate hole from the one the logbook had.
+const DefaultTextLanguage = "l044"
+
+// textFilesFor returns the t-file paths to merge for one language, in
+// PRECEDENCE ORDER (later wins).
 //
-// The uppercase spelling is here because mods use it (`t/0001-L007.xml` and
-// friends sit beside `t/0001.xml` in several of this install's extensions) and
-// a .cat index is matched by exact path.
-var textFiles = []string{"t/0001.xml", "t/0001-L044.xml", "t/0001-l044.xml"}
+// Both spellings of the localised name are returned because mods use the
+// uppercase one (`t/0001-L007.xml` and friends sit beside `t/0001.xml` in
+// several of this install's extensions) and a .cat index is matched by exact
+// path.
+func textFilesFor(lang string) []string {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	if lang == "" {
+		lang = DefaultTextLanguage
+	}
+	upper := "t/0001-" + strings.ToUpper(lang[:1]) + lang[1:] + ".xml"
+	lower := "t/0001-" + lang + ".xml"
+	return []string{NeutralTextFile, upper, lower}
+}
+
+// languageFileRe matches a localised t-file path, capturing its language id.
+var languageFileRe = regexp.MustCompile(`^t/0001-[lL]([0-9]{3})\.xml$`)
+
+// TextLanguages lists the localisations the install actually ships, ascending.
+//
+// This install ships twelve (l007 Russian, l033 French, l034 Spanish, l039
+// Italian, l044 English, l048 Polish, l049 German, l055 Portuguese, l081
+// Japanese, l082 Korean, l086/l088 Chinese), and until this function existed
+// nothing in the tree knew that: the loader was a hardcoded list containing
+// exactly one of them.
+func TextLanguages(dir string) []string {
+	if dir == "" {
+		dir = DefaultInstallDir()
+	}
+	if dir == "" {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, p := range ListFiles(dir) {
+		if m := languageFileRe.FindStringSubmatch(p); m != nil {
+			seen["l"+m[1]] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for l := range seen {
+		out = append(out, l)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// steamLanguageIDs maps the names Steam records in its app manifest to X4's
+// numeric language ids. Steam is the only place on this machine that records
+// the choice: X4's own config.xml carries display, sound, input and privacy
+// settings and no language at all (checked directly), and the savegame's
+// <info> block carries none either.
+var steamLanguageIDs = map[string]string{
+	"english":    "l044",
+	"german":     "l049",
+	"french":     "l033",
+	"italian":    "l039",
+	"spanish":    "l034",
+	"russian":    "l007",
+	"polish":     "l048",
+	"portuguese": "l055",
+	"brazilian":  "l055",
+	"japanese":   "l081",
+	"koreana":    "l082",
+	"korean":     "l082",
+	"schinese":   "l086",
+	"tchinese":   "l088",
+}
+
+// steamLanguageRe pulls the language out of a Steam app manifest's UserConfig.
+var steamLanguageRe = regexp.MustCompile(`(?i)"language"\s+"([a-z]+)"`)
+
+// ConfiguredTextLanguage reports the language the player's install is set to,
+// and where that came from. ok is false when nothing on the machine says.
+//
+// Three sources, in order:
+//
+//	X4MCP_GAME_LANG        an explicit override, for the case where the rest is wrong
+//	the Steam app manifest UserConfig.language beside the install
+//	nothing
+//
+// It is deliberately a HINT and not an answer. Steam's manifest records what
+// the store was told to download, which is usually but not always what the game
+// renders — a `-lang` on the command line beats it, and a non-Steam install has
+// no manifest at all. So SelectTextLanguage takes this as the first candidate
+// and then CHECKS it against the player's own text.
+func ConfiguredTextLanguage(dir string) (lang, source string, ok bool) {
+	if v := strings.TrimSpace(os.Getenv("X4MCP_GAME_LANG")); v != "" {
+		return strings.ToLower(v), "X4MCP_GAME_LANG", true
+	}
+	if dir == "" {
+		dir = DefaultInstallDir()
+	}
+	if dir == "" {
+		return "", "", false
+	}
+	// <library>/steamapps/common/X4 Foundations -> <library>/steamapps/appmanifest_392160.acf
+	manifest := filepath.Join(filepath.Dir(filepath.Dir(dir)), "appmanifest_392160.acf")
+	b, err := os.ReadFile(manifest)
+	if err != nil {
+		return "", "", false
+	}
+	for _, m := range steamLanguageRe.FindAllStringSubmatch(string(b), -1) {
+		if id, ok := steamLanguageIDs[strings.ToLower(m[1])]; ok {
+			return id, "steam app manifest", true
+		}
+	}
+	return "", "", false
+}
 
 // LoadTextDB reads every t-file copy the install, its DLCs and its MODS
 // provide. dir empty means DefaultInstallDir.
@@ -57,13 +172,17 @@ var textFiles = []string{"t/0001.xml", "t/0001-L044.xml", "t/0001-l044.xml"}
 // on every install on earth; a mod's page number is whatever its author picked,
 // two mods may pick the same one, and uninstalling the mod removes it. Rules
 // key on base-game pages for that reason (see logbook.RulePages).
-func LoadTextDB(dir string) *TextDB {
+func LoadTextDB(dir string) *TextDB { return LoadTextDBLang(dir, DefaultTextLanguage) }
+
+// LoadTextDBLang is LoadTextDB for one specific localisation. lang is an X4
+// language id ("l049" for German); empty means DefaultTextLanguage.
+func LoadTextDBLang(dir, lang string) *TextDB {
 	if dir == "" {
 		dir = DefaultInstallDir()
 	}
 	strs := map[int]map[int]string{}
 	if dir != "" {
-		for _, name := range textFiles {
+		for _, name := range textFilesFor(lang) {
 			// ExtractAll returns base-game copies first and extension copies
 			// after, so a DLC or mod patching a base string wins — the same
 			// order the game itself applies.

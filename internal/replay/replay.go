@@ -64,6 +64,37 @@ type Options struct {
 
 	// Progress, if set, is called before each save is loaded.
 	Progress func(stage string, i, n int, name string)
+
+	// CatalogHealth is the logbook lane's own report on the catalog in
+	// Diff.Catalog: which localisation it is, how that was decided, and how
+	// much of the player's log it can read. It is carried into the report
+	// rather than recomputed, because the caller is the one that chose.
+	CatalogHealth logbook.Availability
+}
+
+// NewestLogbookSample returns a spread sample of the newest archived save's log
+// titles, for logbook.Select's language check.
+//
+// The newest save and not a merge of all of them: the check needs a few hundred
+// sentences the player's own client wrote, and one late-game save carries
+// ~17,000 of them. Read-only, and it returns nothing rather than an error when
+// the archive cannot be read — a language check that cannot run is the
+// "unverified" state, not a failure of the run.
+func NewestLogbookSample(dir string) []string {
+	files, err := filepath.Glob(filepath.Join(dir, "*.xml.gz"))
+	if err != nil || len(files) == 0 {
+		return nil
+	}
+	sort.Strings(files)
+	snap, err := x4save.LoadSnapshot(files[len(files)-1], false)
+	if err != nil || !snap.LogbookSeen {
+		return nil
+	}
+	titles := make([]string, 0, len(snap.Logbook))
+	for i := range snap.Logbook {
+		titles = append(titles, snap.Logbook[i].Title)
+	}
+	return logbook.Sample(titles)
 }
 
 // SaveID is one archived save's identity and a lightweight index of it.
@@ -192,6 +223,12 @@ type Playthrough struct {
 
 // LogbookStats is what the classifier saw across every window.
 type LogbookStats struct {
+	// Catalog is which localisation the lane is reading the player's log with
+	// and how that was decided. A run whose State is not "ok" is a run whose
+	// logbook signals are missing, and the difference between that and a quiet
+	// week is the whole of F1.
+	Catalog logbook.Availability `json:"catalog"`
+
 	WindowEntries    int            `json:"window_entries"`
 	WindowClassified int            `json:"window_classified"`
 	ByEventKind      map[string]int `json:"by_event_kind"`
@@ -222,6 +259,7 @@ func Run(ctx context.Context, opts Options) (*Report, error) {
 	rep := &Report{Dir: opts.Dir, Refusals: map[string]int{}}
 	rep.Logbook.ByEventKind = map[string]int{}
 	rep.Logbook.ByRef = map[string]int{}
+	rep.Logbook.Catalog = opts.CatalogHealth
 
 	// ---- pass 1: identity and a light index per save ----
 	guidPlay := map[string]int{}

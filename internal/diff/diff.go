@@ -274,7 +274,29 @@ type Result struct {
 	// Elapsed is next.GameTimeS - prev.GameTimeS, the in-game seconds the diff
 	// covers. Rates are per this, never per wall clock: the player uses SETA.
 	Elapsed float64 `json:"elapsed"`
+
+	// Log is how much of this pair's logbook window the catalog could read.
+	//
+	// It is the lane's standing health metric and the only thing that makes two
+	// silent failures loud: a patch that renumbers page 1016 (the catalog still
+	// builds, the match simply stops happening) and a catalog in the wrong
+	// LANGUAGE, which is the same symptom for a different reason. Both show up
+	// here as Classified falling to zero while Entries does not.
+	Log LogHealth `json:"log"`
 }
+
+// LogHealth is the logbook window's read rate for one pair.
+type LogHealth struct {
+	// Entries is every log entry that fell inside the window, classified or
+	// not. Classified is how many the ordered RuleRefs table recognised.
+	Entries    int `json:"entries"`
+	Classified int `json:"classified"`
+}
+
+// Readable reports whether the catalog understood ANY of the window. False with
+// Entries > 0 is the loud failure: the game wrote sentences and the lane could
+// not read one of them.
+func (h LogHealth) Readable() bool { return h.Entries == 0 || h.Classified > 0 }
 
 // Options tunes the thresholds the differ cannot reasonably guess.
 //
@@ -425,7 +447,11 @@ func Diff(prev, next *x4save.Snapshot, opts Options) Result {
 		}
 		return d.out[i].Subject.Code < d.out[j].Subject.Code
 	})
-	return Result{Changes: d.out, Elapsed: next.GameTimeS - prev.GameTimeS}
+	return Result{
+		Changes: d.out,
+		Elapsed: next.GameTimeS - prev.GameTimeS,
+		Log:     LogHealth{Entries: d.log.Total, Classified: d.log.Classified},
+	}
 }
 
 type differ struct {
