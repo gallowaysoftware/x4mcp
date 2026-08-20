@@ -7,6 +7,10 @@
        .../terraforming/stats/stat                2   vs  /savegame/stats/stat 103
        <entry> inside a build task's <sequence>  618 per station
 
+     …plus one impostor no save has produced yet: a nested <missions>. The
+     third scoped section had nothing testing its scope, which is the state a
+     guard is in just before someone removes it.
+
      Each one reads correctly today only because of an accident of content or
      file order: the economylog's <log> elements carry <trade> children rather
      than <entry> children, and the player's <stats> happens to be the LAST of
@@ -64,6 +68,16 @@
 <stats>
 <stat id="population" value="0"/>
 </stats>
+<!-- <missions> is scoped to the document root for the same reason <log> and
+     <stats> are, and unlike them it has no namesake in any save yet observed.
+     That is what makes it worth an impostor HERE: the scope test is the only
+     thing standing between the board and whatever a future patch decides to
+     call a list of missions, and an untested guard is one somebody deletes
+     during a refactor without anything going red. -->
+<missions>
+<mission id="902" name="IMPOSTOR terraforming mission" faction="player" type="plot"/>
+<offer id="903" name="IMPOSTOR terraforming offer" faction="argon" group="argon_war_xenon"/>
+</missions>
 </terraforming>
 <connections>
 <connection connection="zones">

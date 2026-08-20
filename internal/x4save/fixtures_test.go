@@ -1187,8 +1187,18 @@ func TestFixtureElementNamesakes(t *testing.T) {
 		t.Errorf("stats = %+v, want the player's time_total", snap.Stats)
 	}
 
+	// Two separate rules meet here. The nested <missions> under <terraforming>
+	// is excluded by the ROOT SCOPE; the <mission> inside the real board's
+	// <thread> is excluded because decodeMissions reads direct children only.
+	// Both are needed and neither implies the other.
 	if len(snap.Missions) != 1 || snap.Missions[0].ID != "900" {
-		t.Fatalf("missions = %+v, want only the DIRECT child of <missions>", snap.Missions)
+		t.Fatalf("missions = %+v, want only the DIRECT child of the ROOT <missions>", snap.Missions)
+	}
+	if len(snap.MissionOffers) != 0 {
+		t.Errorf("mission offers = %+v, want none: the only <offer> in this fixture is inside a <missions> that is not the root's", snap.MissionOffers)
+	}
+	if p := snap.WarPairings(); len(p) != 0 {
+		t.Errorf("war pairings = %+v, want none: the war group belongs to an impostor board", p)
 	}
 
 	// The build task's <sequence><entry> elements are the third namesake, and

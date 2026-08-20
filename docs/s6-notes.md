@@ -509,6 +509,10 @@ decision rather than silently drifting.
    `Modules`/`Damaged` — the denominator travels with the number, per the
    README's aggregate rule — and the percentage waits for `x4data.Module.Hull`.
 
+   **Superseded in review — the denominator was wrong.** See §10.1: it counted
+   modules that had not been built and modules that had been destroyed. The
+   struct now carries `Building` and `Wrecked` beside them.
+
 6. **Goldens elide long lists.** The distilled fixture's logbook wrote 1.9 MB
    of JSON into `distilled-quicksave.json`. A golden that large stops being
    read, and a golden nobody reads is not a gate — it is a file people
@@ -581,3 +585,113 @@ X4MCP_REAL_SAVE=$S go test ./internal/x4save -run TestRealSaveGolden -count=1 -v
 # what a fresh, independent scan of the same save says (§4.4)
 go run ./scripts/probe-save -in $S -paths -depth 12 | grep -E '/(stats|log|missions)(/|$)'
 ```
+
+---
+
+## 10. Review — what an adversarial pass found
+
+Reviewed on the branch, against the same save and machine, before merge. Every
+gate in §4.1 was re-run and passed, and every number in §4.2/§4.3 reproduced
+(medians of three, one arm per process, game closed):
+
+| | this document | re-measured | |
+| --- | ---: | ---: | --- |
+| ParseMS `all` | 11 893 | 11 786 | ✅ |
+| ParseMS `none` (pre-S6) | 12 021 | 12 043 | ✅ |
+| peak RSS `all` | 30.33 MB | 29.12 MB | ✅ (spread 28.89–31.38) |
+| peak RSS `none` (pre-S6) | **19.17 MB** | **18.99 MB** | ✅ — the ceiling really was already spent |
+| RSS without logbook | 21.54 MB | 21.21 MB | ✅ |
+| total alloc delta | +0.22% | +0.213% | ✅ streaming intact |
+| alloc count delta | +0.05% | +0.047% | ✅ |
+
+§3.2's fix was checked the general way rather than the remembered way: a real
+100 MB save parsed, written through the real cache file, read back, and
+compared with `reflect.DeepEqual`. Nothing moved
+(`TestCacheRoundTripChangesNothingAtAll`, and reverting `snapshotEnvelope` to
+plain gob makes it name `Stations` and `BuildStorages` by hand).
+
+### 10.1 One real bug: the module-health denominator
+
+**`collectModuleHealth` implemented probe B §8 rules 3, 4 and 6 and skipped
+rules 1 and 2.** State was read before the hull for a SHIP (`hullState`) and
+not read at all for a MODULE — so a module carrying `state="construction"` or
+`state="wreck"`, neither of which carries a `<hull>`, went into the denominator
+and came out as "at maximum".
+
+Measured on the newest archived save, through the parser:
+
+```
+player station modules: denominator=36046 damaged=220 WRECKED=22 UNDER-CONSTRUCTION=14112
+```
+
+**39% of the population the aggregate quotes had not been built** — and the
+NUMERATOR was wrong too: re-blessing `baselines/parse/…json` moves
+`station_modules_damaged` from **220 to 182**. Thirty-eight modules counted as
+damaged were construction sites carrying a partial hull, which probe B rule 2
+says is a real value against the FINISHED module's maximum and must be reported
+as building rather than as damage. An "under attack" alert keyed on that count
+would have been scaffolding one time in six.
+
+Per station it is worse than the total suggests, because the scaffolding is
+concentrated:
+
+| station | reported | actually |
+| --- | --- | --- |
+| WIM-796 | 17 damaged of 498 (3.4%) | **17 of 18 (94%)** — 480 not built |
+| EMK-562 | 0 of 498 | 0 of 18 |
+| NNO-811 | 0 of 1 755 | 0 of 483 |
+
+WIM-796 is the case that matters: a station with all but one of its built
+modules damaged, reporting as barely scratched, on the exact surface probe B
+was commissioned to feed.
+
+`ModuleHealth` now carries `Building` and `Wrecked` beside `Modules`/`Damaged`,
+and they are never merged — the aggregate rule again, applied to the
+denominator itself. `14_hull_states.xml` gained a wrecked module and a module
+under construction (it had neither: it exercised rules 1 and 2 on ships only,
+which is why nothing was red), and reverting the fix now fails four assertions.
+`list_stations` moved; the baseline is re-blessed. Schema 28 → **29**, because
+a stale v28 entry decodes with an inflated `modules` and `building: 0`, which
+is indistinguishable from a station with no scaffolding.
+
+### 10.2 Guards that were not guarding
+
+Mutation-tested: 30 deliberate breakages of the decode rules, 25 caught. The
+five survivors are untested guards rather than live bugs, and three of the
+gaps behind them were closed:
+
+- **The `consumed()` protocol was covered at 14 of its 16 sites.** Deleting the
+  call in the token-loop `<inventory>` or `<blueprints>` branch left the whole
+  suite green, because no fixture had the player character as a top-level
+  object — the spacesuit / on-foot case. `16_player_on_foot.xml` is that
+  fixture; all 16 sites are now caught by `TestParseDepthIsBalanced`.
+- **`<missions>` was scoped to the root and nothing tested the scope.**
+  `15_element_namesakes.xml` had impostors for `<log>`, `<stats>` and
+  `<entry>`, and none for the third scoped section. It has one now.
+- **The cache had no whole-snapshot check** (§10 above).
+
+Still open, all measured as not-live and left alone deliberately:
+
+- **The token-loop `<blueprints>` and `<research>` branches make no ownership
+  test**, unlike the `<inventory>` branch beside them. Not live: one real save
+  holds exactly ONE `<blueprints>` element and it is the player's. Adding a
+  test risks the opposite failure (an unread list rendering as "you own none"),
+  so it wants its own decision rather than a drive-by.
+- **`WarPairings`' `faction == "player"` guard is not exercised.** The tutorial
+  offer in `04_missions_war.xml` carries no `group` at all, so it is excluded
+  by the group test whichever way the faction test goes — and the fixture's own
+  comment claims otherwise. No real save carries a `player_*_war_*` group.
+- **`holdsLicence`'s field-vs-substring distinction is untested.** No faction
+  id in a real save contains `player` as a substring.
+- **`collectAssetsOwned`'s "nearest declaration wins" is untested**, and
+  `collectModuleHealth`'s `inStation` flag is unreachable-false (it is only
+  ever called on a station; docked ships are excluded by the `ship_` skip,
+  which IS tested). The probe's rule 0 second half is satisfied, by a different
+  mechanism than the one §1 credits.
+
+### 10.3 Measured non-levers
+
+- **Skipping `<economylog>` wholesale buys nothing.** 3 602 050 `<log>`
+  elements is 40% of the file's elements, and `dec.Skip()` is itself a
+  `Token()` loop — 11 749 / 11 692 / 11 791 ms against an 11 786 ms median, and
+  identical allocation counts. Worth writing down so nobody else tries it.

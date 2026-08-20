@@ -3,7 +3,11 @@ package x4save
 import (
 	"bytes"
 	"encoding/gob"
+	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -113,4 +117,75 @@ func TestPresencePointersSurviveTheCacheFile(t *testing.T) {
 	if got.BuildStorages[0].Account == nil || *got.BuildStorages[0].Account != 0 {
 		t.Errorf("Account = %v; an empty build wallet IS the stalled-because-broke signal", got.BuildStorages[0].Account)
 	}
+}
+
+// The two tests above name the fields somebody remembered. This one does not
+// name anything: it parses a real savegame, puts the snapshot through the real
+// cache file, and asserts that NOTHING came back different.
+//
+// That is the test the presence-pointer bug actually needed. gob dropped a
+// pointer to zero, and the reason nobody noticed for a schema version is that
+// every test asked "is this field still right?" of a field somebody had
+// thought of. A whole-snapshot identity check has no such blind spot, and it
+// costs one parse.
+//
+// It runs against the committed distilled fixture by default, so it is not
+// env-gated; X4MCP_REAL_SAVE points it at a full save, which is worth doing
+// after any change to the cache encoding (a real save carries 17,004 log
+// entries, 103 float stats and 48 build wallets, and the fixture does not
+// exercise every shape in the snapshot).
+func TestCacheRoundTripChangesNothingAtAll(t *testing.T) {
+	path := os.Getenv("X4MCP_REAL_SAVE")
+	if path == "" {
+		path = filepath.Join(realDir, distilledFixture)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no save at %s", path)
+	}
+	in, err := ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "entry.gob")
+	if err := writeCache(file, path, in); err != nil {
+		t.Fatalf("writeCache: %v", err)
+	}
+	out, err := readCache(file)
+	if err != nil {
+		t.Fatalf("readCache: %v", err)
+	}
+	if reflect.DeepEqual(in, out) {
+		return
+	}
+	// Name the field rather than dumping two snapshots: the whole point is to
+	// tell the next person WHICH one stopped surviving.
+	vi, vo := reflect.ValueOf(*in), reflect.ValueOf(*out)
+	ty := vi.Type()
+	for i := 0; i < ty.NumField(); i++ {
+		a, b := vi.Field(i), vo.Field(i)
+		if reflect.DeepEqual(a.Interface(), b.Interface()) {
+			continue
+		}
+		t.Errorf("Snapshot.%s did not survive the cache (nil in=%v out=%v)\n  in : %s\n  out: %s",
+			ty.Field(i).Name, nilish(a), nilish(b), clip(a.Interface()), clip(b.Interface()))
+	}
+}
+
+func nilish(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Slice, reflect.Map, reflect.Ptr, reflect.Interface:
+		return v.IsNil()
+	}
+	return false
+}
+
+func clip(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	if len(b) > 240 {
+		return string(b[:240]) + "…"
+	}
+	return string(b)
 }
