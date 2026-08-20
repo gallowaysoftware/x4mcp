@@ -1,0 +1,80 @@
+{
+  "snapshot": {
+    "source_path": "15_element_namesakes.xml",
+    "source_size": 0,
+    "source_mtime": 0,
+    "parsed_at": 0,
+    "parse_ms": 0,
+    "save_name": "Fixture Save",
+    "save_date": 1700000000,
+    "game_version": "900",
+    "game_build": "611726",
+    "game_time_s": 591711.419,
+    "start_type": "x4ep1_gamestart_pirate2",
+    "game_guid": "00000000-0000-4000-8000-000000000000",
+    "seed": "1234567890",
+    "player_name": "Test Pilot",
+    "money": 5492825,
+    "location_raw": "{20004,5010011}",
+    "dlcs": [],
+    "money_seen": true,
+    "game_time_seen": true,
+    "relations": null,
+    "ships": null,
+    "stations": null,
+    "player_assets_seen": true,
+    "owned_sectors": null,
+    "blueprints_seen": false,
+    "sectors": [
+      {
+        "macro": "cluster_01_sector001_macro",
+        "code": "AAA-001",
+        "owner": "argon",
+        "knownto": "player"
+      }
+    ],
+    "other_counts": {
+      "buildstorage": 1
+    },
+    "logbook": [
+      {
+        "time": 100.5,
+        "category": "upkeep",
+        "title": "The real log",
+        "text": "One entry, and it is this one."
+      }
+    ],
+    "logbook_seen": true,
+    "stats": {
+      "time_total": 591711.419
+    },
+    "stats_seen": true,
+    "missions": [
+      {
+        "id": "900",
+        "name": "The real mission",
+        "faction": "player",
+        "type": "plot"
+      }
+    ],
+    "missions_seen": true,
+    "licences_seen": false,
+    "inventory_seen": false,
+    "build_storages": [
+      {
+        "id": "[0x10]",
+        "code": "UCW-999",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_01_sector001_macro",
+        "station": "[0x20]",
+        "task_type": "expand",
+        "task_modules": 2,
+        "task_seen": true,
+        "job_seen": false,
+        "sequence_index": 0,
+        "next_seen": false
+      }
+    ]
+  }
+}

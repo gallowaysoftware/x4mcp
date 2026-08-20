@@ -17,9 +17,11 @@ import (
 // re-bless that quietly changes behaviour still fails somewhere that names the
 // behaviour.
 //
-// Sub-tests marked with t.Skip("lands in S6: …") are the checklist for the F3
-// schema bump: the fixture already contains the data, the parser does not read
-// it yet. Delete the Skip line and write the assertion when the field lands.
+// The sub-tests were the checklist for the F3 schema bump (27 -> 28): each was
+// a t.Skip naming exactly what the fixture already held and the parser did not
+// yet read. They are assertions now. The pattern is worth keeping — a skipped
+// sub-test that names its own acceptance criterion is a to-do the test runner
+// keeps reminding you about, which a comment is not.
 
 func parseSynthetic(t *testing.T, name string) *Snapshot {
 	t.Helper()
@@ -82,8 +84,58 @@ func TestFixtureInfoFactionsLicences(t *testing.T) {
 		}
 	}
 
+	// A licence list is not a fact about the element existing: <licences> is
+	// written on every faction and says what THAT faction holds, so reading it
+	// without asking whose it is attributes half the galaxy's permissions to
+	// the player.
 	t.Run("licences", func(t *testing.T) {
-		t.Skip("lands in S6: F3 schema bump — the fixture holds 4 player licences across argon/teladi plus one for antigone that must not be attributed to the player, and a trade-subscription booster with an endtime")
+		if !snap.LicencesSeen {
+			t.Fatal("LicencesSeen = false; <factions> was decoded, so an empty licence list has to mean \"holds none\" and not \"never read\"")
+		}
+		got := map[Licence]bool{}
+		for _, l := range snap.Licences {
+			got[l] = true
+		}
+		// Four from the mirror spelling (a faction listing "player" among the
+		// holders), and three from the player's own block, where factions=
+		// names the ISSUER — which is the spelling every real save uses.
+		want := []Licence{
+			{Faction: "argon", Type: "capitalship"},
+			{Faction: "argon", Type: "generaluseship"},
+			{Faction: "argon", Type: "station_gen_advanced"},
+			{Faction: "teladi", Type: "station_gen_basic"},
+			{Faction: "argon", Type: "police"},
+			{Faction: "argon", Type: "station_gen_intermediate"},
+			{Faction: "teladi", Type: "station_gen_intermediate"},
+		}
+		if len(snap.Licences) != len(want) {
+			t.Errorf("licences = %+v, want %d", snap.Licences, len(want))
+		}
+		for _, w := range want {
+			if !got[w] {
+				t.Errorf("missing licence %+v", w)
+			}
+		}
+		// antigone's militaryequipment licence is held by ANTIGONE. Attributing
+		// it to the player is how a board offers to buy a capital ship the
+		// player cannot legally dock.
+		if got[Licence{Faction: "argon", Type: "militaryequipment"}] ||
+			got[Licence{Faction: "antigone", Type: "militaryequipment"}] {
+			t.Errorf("a licence held by antigone was attributed to the player: %+v", snap.Licences)
+		}
+
+		if len(snap.Boosters) != 1 {
+			t.Fatalf("boosters = %+v, want 1 (the trade subscription)", snap.Boosters)
+		}
+		b := snap.Boosters[0]
+		if b.Faction != "argon" || b.Type != "tradesubscription" || b.Group != "boosters" {
+			t.Errorf("booster = %+v, want argon's tradesubscription from <boosters>", b)
+		}
+		// An endtime is a POINTER: a booster with no endtime does not lapse,
+		// which is not the same as one that lapsed at game time zero.
+		if b.EndTime == nil || *b.EndTime != 612000 {
+			t.Errorf("booster endtime = %v, want 612000", b.EndTime)
+		}
 	})
 }
 
@@ -125,7 +177,68 @@ func TestFixtureLogbook(t *testing.T) {
 	}
 
 	t.Run("entries", func(t *testing.T) {
-		t.Skip("lands in S6: F3 schema bump — assert 12 log entries captured with time/category/title, the [\\033]#RRGGBBAA# colour codes stripped from the text, and the {page,id} faction refs kept raw for rule keying")
+		if !snap.LogbookSeen {
+			t.Fatal("LogbookSeen = false; a save with a <log> element was read and the flag has to say so")
+		}
+		if len(snap.Logbook) != 12 {
+			t.Fatalf("logbook = %d entries, want all 12 in file order", len(snap.Logbook))
+		}
+		// File order, NOT time order: the two {20203,301} entries are
+		// deliberately out of order and the log is a record of what the file
+		// says, not a sorted view of it.
+		if snap.Logbook[6].Time != 9000 || snap.Logbook[7].Time != 8000 {
+			t.Errorf("logbook is not in file order: %v then %v", snap.Logbook[6].Time, snap.Logbook[7].Time)
+		}
+
+		first := snap.Logbook[0]
+		if first.Category != "tips" || first.Title != "Tip" {
+			t.Errorf("first entry = %+v, want the tips/Tip row", first)
+		}
+		// The colour codes are markup, not content. They must not reach a
+		// renderer, an LLM, or a rule.
+		for i, e := range snap.Logbook {
+			if strings.Contains(e.Text, `[\033]`) || strings.Contains(e.Title, `[\033]`) {
+				t.Errorf("entry %d still carries colour markup: %q / %q", i, e.Title, e.Text)
+			}
+			if strings.Contains(e.Text, `[\012]`) {
+				t.Errorf("entry %d still carries a raw line separator: %q", i, e.Text)
+			}
+		}
+		if want := "To learn about missions and other activities, open the 'Tutorials and Help' menu with H."; first.Text != want {
+			t.Errorf("first entry text = %q, want %q", first.Text, want)
+		}
+		// A three-colour entry, to prove the stripper handles more than one.
+		if got := snap.Logbook[8].Text; got != "Your ship  Mineral Hauler was destroyed in Hatikvah's Choice I." {
+			t.Errorf("ship-destroyed text = %q; the colour spans around the ship and sector names must be gone and nothing else with them", got)
+		}
+
+		// The RAW {page,id} ref is what S7's rules key on. A rule keyed on
+		// "Antigone Republic" breaks on a German client; one keyed on
+		// {20203,201} does not, and a name that fails to resolve must not
+		// erase the thing the rule matches.
+		if snap.Logbook[1].Faction != "{1021,1202}" {
+			t.Errorf("faction ref = %q, want the raw {page,id}", snap.Logbook[1].Faction)
+		}
+		for _, e := range snap.Logbook {
+			if e.FactionName != "" {
+				t.Errorf("FactionName is filled after load from the game install, not by the parser: %+v", e)
+			}
+		}
+		snap.ApplyLogbookNames(map[string]string{"{20203,201}": "Antigone Republic"})
+		if e := snap.Logbook[8]; e.FactionName != "Antigone Republic" || e.Faction != "{20203,201}" {
+			t.Errorf("after resolution: name %q ref %q — the raw ref must SURVIVE resolution", e.FactionName, e.Faction)
+		}
+
+		// Money is a pointer: no money attribute is not a reward of zero.
+		if e := snap.Logbook[4]; e.Money == nil || *e.Money != 50000 {
+			t.Errorf("station-defence reward = %v, want 50000", e.Money)
+		}
+		if snap.Logbook[0].Money != nil {
+			t.Errorf("a tip carries no money; got %v", *snap.Logbook[0].Money)
+		}
+		if e := snap.Logbook[8]; e.Entity != "Mineral Hauler" {
+			t.Errorf("entity = %q, want the destroyed ship's name", e.Entity)
+		}
 	})
 }
 
@@ -136,7 +249,22 @@ func TestFixtureStats(t *testing.T) {
 		t.Errorf("a stats-only save produced assets: %d ships, %d stations, %d sectors", len(snap.Ships), len(snap.Stations), len(snap.Sectors))
 	}
 	t.Run("counters", func(t *testing.T) {
-		t.Skip("lands in S6: F3 schema bump — assert all 13 <stat> rows are captured as id->value (103 in a real save)")
+		if !snap.StatsSeen {
+			t.Fatal("StatsSeen = false; a save with a <stats> block was read")
+		}
+		if len(snap.Stats) != 13 {
+			t.Fatalf("stats = %d rows, want all 13 (a real save has ~105, and the list GROWS with play — nothing here filters by an allow-list)", len(snap.Stats))
+		}
+		for id, want := range map[string]float64{
+			"time_total":         591711.419,
+			"ships_lost":         17,
+			"money_earned_trade": 1204880000,
+			"distance_travelled": 41822730.5,
+		} {
+			if got := snap.Stats[id]; got != want {
+				t.Errorf("stat %s = %v, want %v", id, got, want)
+			}
+		}
 	})
 }
 
@@ -146,7 +274,51 @@ func TestFixtureMissionsAndWarGroups(t *testing.T) {
 		t.Errorf("mission offers must not be read as MD plot cues, got %v", snap.PlotCues)
 	}
 	t.Run("offers", func(t *testing.T) {
-		t.Skip(`lands in S6: F3 schema bump — assert 5 offers and 3 missions captured, and that exactly 3 offers carry a war group ("argon_war_xenon", "holyorder_war_paranid", "split_war_argon"); the tutorial offer is faction="player" and must never read as a war signal`)
+		// Probe D: the board is PRESENCE-GATED — X4 serialises what was
+		// instantiated near the player, so an empty board is the normal case
+		// and every surface has to say "seen", not "available". The flag is
+		// what lets it.
+		if !snap.MissionsSeen {
+			t.Fatal("MissionsSeen = false; a save with a <missions> block was read")
+		}
+		if len(snap.MissionOffers) != 5 || len(snap.Missions) != 3 {
+			t.Fatalf("offers/missions = %d/%d, want 5/3", len(snap.MissionOffers), len(snap.Missions))
+		}
+		// rewardtext is the axis F14 filters on (seminars, paint mods, ...).
+		if got := snap.Missions[0].RewardText; got != "Intimidating the Vigor Syndicate" {
+			t.Errorf("rewardtext = %q, want the plot mission's", got)
+		}
+		// A pointer: 86% of offers carry no cash reward at all, which is not a
+		// reward of zero credits.
+		if r := snap.MissionOffers[3].Reward; r == nil || *r != 352800 {
+			t.Errorf("reward = %v, want 352800", r)
+		}
+		if snap.MissionOffers[0].Reward != nil {
+			t.Errorf("a war offer with no reward attr must read as no reward, got %v", *snap.MissionOffers[0].Reward)
+		}
+
+		wars := snap.WarPairings()
+		want := []WarPairing{
+			{Faction: "argon", Enemy: "xenon", Group: "argon_war_xenon"},
+			{Faction: "holyorder", Enemy: "paranid", Group: "holyorder_war_paranid"},
+			{Faction: "split", Enemy: "argon", Group: "split_war_argon"},
+		}
+		if len(wars) != len(want) {
+			t.Fatalf("war pairings = %+v, want %d", wars, len(want))
+		}
+		for i, w := range want {
+			if wars[i] != w {
+				t.Errorf("war pairing %d = %+v, want %+v", i, wars[i], w)
+			}
+		}
+		// The tutorial offer is faction="player" and the plot mission's group
+		// is "story_thefan": neither is a war, and reading either as one puts
+		// the player at war with themselves on the board.
+		for _, w := range wars {
+			if w.Faction == "player" || w.Enemy == "" {
+				t.Errorf("bogus war pairing %+v", w)
+			}
+		}
 	})
 }
 
@@ -181,7 +353,29 @@ func TestFixturePlayerInventory(t *testing.T) {
 	}
 
 	t.Run("inventory", func(t *testing.T) {
-		t.Skip("lands in S6: F3 schema bump — assert 10 inventory wares captured, including the one with no amount attr (a single spacesuit repair laser, amount 1, not 0)")
+		if !snap.InventorySeen {
+			t.Fatal("InventorySeen = false; the inventory is nested in the player ship's cockpit, beside the blueprints the parser already finds")
+		}
+		if len(snap.Inventory) != 10 {
+			t.Fatalf("inventory = %+v, want 10 wares", snap.Inventory)
+		}
+		// THE rule. The writer never emits amount="1" anywhere in a save while
+		// emitting <item amount="1"/> 2,537 times in the same file, so 1 is the
+		// value <ware> omits. Reading it as 0 drops the ware entirely, and on a
+		// real build site the ware with no amount was the one blocking it.
+		if got := snap.Inventory[0]; got.Ware != "weapon_gen_spacesuit_repairlaser_01_mk1" || got.Amount != 1 {
+			t.Errorf("first inventory ware = %+v, want a single repair laser (amount 1, not 0)", got)
+		}
+		total := int64(0)
+		for _, w := range snap.Inventory {
+			if w.Amount <= 0 {
+				t.Errorf("ware with a non-positive amount survived the decode: %+v", w)
+			}
+			total += w.Amount
+		}
+		if total != 870 {
+			t.Errorf("inventory total = %d, want 870", total)
+		}
 	})
 }
 
@@ -201,7 +395,42 @@ func TestFixtureKhaakAndXenon(t *testing.T) {
 	}
 
 	t.Run("threat components", func(t *testing.T) {
-		t.Skip(`lands in S6: F3 schema bump — assert the 3 components carrying knownto="player" (2 Kha'ak, 1 Xenon) are captured attrs-only with class/macro/sector, and the 4 without knownto are not: an undiscovered swarm is not something the player can be told about`)
+		if len(snap.ThreatComponents) != 3 {
+			t.Fatalf("threat components = %+v, want 3 (2 Kha'ak + 1 Xenon carrying knownto=player)", snap.ThreatComponents)
+		}
+		byCode := map[string]ThreatComponent{}
+		for _, c := range snap.ThreatComponents {
+			byCode[c.Code] = c
+			// knownto is kept VERBATIM so a surface can filter on it rather
+			// than trusting that the parser already did.
+			if !strings.Contains(c.Knownto, "player") {
+				t.Errorf("captured a component the player has not discovered: %+v", c)
+			}
+			if c.Sector != "cluster_01_sector001_macro" {
+				t.Errorf("threat %s sector = %q, want the enclosing sector", c.Code, c.Sector)
+			}
+		}
+		for _, code := range []string{"KHK-101", "KHK-102", "XEN-201"} {
+			if _, ok := byCode[code]; !ok {
+				t.Errorf("discovered hostile %s was not captured", code)
+			}
+		}
+		// The undiscovered swarm. Surfacing it is spoiling the player's own
+		// game, which is a worse failure than not surfacing anything.
+		for _, code := range []string{"KHK-103", "KHK-104", "XEN-202", "XEN-203"} {
+			if _, ok := byCode[code]; ok {
+				t.Errorf("%s carries no knownto and must stay invisible", code)
+			}
+		}
+		if got := byCode["KHK-101"]; got.Class != "ship_s" || got.Macro != "ship_kha_s_fighter_02_a_macro" || got.Owner != "khaak" {
+			t.Errorf("KHK-101 = %+v, want the attrs-only capture", got)
+		}
+		// The discovered Xenon STATION is already a TradeStation (above) and is
+		// deliberately not also a threat component: counting it in both places
+		// double-counts it on any surface that reads both.
+		if _, ok := byCode["XEN-900"]; ok {
+			t.Errorf("the discovered Xenon station is captured as a trade station, not twice: %+v", snap.ThreatComponents)
+		}
 	})
 }
 
@@ -249,7 +478,69 @@ func TestFixtureGatesAndSectors(t *testing.T) {
 	}
 
 	t.Run("resource area yield", func(t *testing.T) {
-		t.Skip("lands in S6 (gated by Probe C): the fixture's <resourceareas><area yield=… yieldid=…> carries the 9.x per-area depletion state that F5's idle-miner clause needs")
+		// cluster_01: one ore area with a yield, plus two reservations.
+		one := snap.Sectors[0].ResourceAreas
+		if len(one) != 1 || one[0].Resource != "ore" {
+			t.Fatalf("cluster_01 resource areas = %+v, want one ore row", one)
+		}
+		if one[0].Current != 443227 || one[0].Capacity != 1_000_000 {
+			t.Errorf("ore = %d/%d, want 443227 of the `high` density cap 1000000", one[0].Current, one[0].Capacity)
+		}
+		if one[0].Reservations != 2 {
+			t.Errorf("reservations = %d, want 2 (ships already claiming this patch)", one[0].Reservations)
+		}
+		if one[0].LastRelocation != 360455.41 {
+			t.Errorf("last relocation = %v, want the area starttime", one[0].LastRelocation)
+		}
+
+		// cluster_02: the three absence cases.
+		two := map[string]SectorResource{}
+		for _, r := range snap.Sectors[1].ResourceAreas {
+			two[r.Resource] = r
+		}
+		if len(two) != 3 {
+			t.Fatalf("cluster_02 resource areas = %+v, want ore + hydrogen + nividium", snap.Sectors[1].ResourceAreas)
+		}
+		// THE rule: an absent yield means the area is FULL. Reading it as zero
+		// reports 465 of 3,246 areas — 14% of the universe, and precisely the
+		// freshly respawned ones — as exhausted.
+		if got := two["ore"]; got.Current != 1_000_000 || got.AtCapacityAreas != 1 {
+			t.Errorf("yield-less ore area = %+v, want 1000000 (at capacity), counted in AtCapacityAreas", got)
+		}
+		// The gas gap. 776 areas per save have no <fields> child at all and are
+		// exactly the gases, so the <field> walk cannot see them and never
+		// could — a player's gas miners work resources the old snapshot did not
+		// know existed.
+		if got := two["hydrogen"]; got.Current != 150000 || got.Areas != 1 {
+			t.Errorf("hydrogen = %+v, want the gas area the <field> walk cannot see", got)
+		}
+		for _, r := range snap.Sectors[1].Resources {
+			if r.Resource == "hydrogen" {
+				t.Errorf("the <field> walk cannot see a gas; something is inventing one: %+v", r)
+			}
+		}
+		// A cap we cannot read is not a cap of zero and not a guess. The row
+		// carries its own denominator caveat.
+		niv := two["nividium"]
+		if niv.UnknownCapAreas != 1 || niv.Capacity != 0 || niv.Current != 0 {
+			t.Errorf("verylow-density nividium = %+v, want it counted in UnknownCapAreas and excluded from current/capacity", niv)
+		}
+		if niv.Areas != 1 {
+			t.Errorf("nividium areas = %d, want 1 — an area with an unreadable cap is still an area", niv.Areas)
+		}
+
+		// Knownto is CAPTURED and not acted on: the snapshot still carries
+		// resource data for undiscovered sectors, deliberately, and whether the
+		// parser should drop it is a product decision this build does not take.
+		if snap.Sectors[1].Knownto != "player" {
+			t.Errorf("cluster_02 knownto = %q, want \"player\"", snap.Sectors[1].Knownto)
+		}
+		if snap.Sectors[0].Knownto != "" {
+			t.Errorf("cluster_01 declares no knownto; it must not be invented: %q", snap.Sectors[0].Knownto)
+		}
+		if len(snap.Sectors[0].ResourceAreas) == 0 {
+			t.Error("an undiscovered sector's resource data is still captured (and tagged); dropping it is not this build's decision to make")
+		}
 	})
 }
 
@@ -306,7 +597,48 @@ func TestFixturePlayerShip(t *testing.T) {
 	}
 
 	t.Run("hull and shield state", func(t *testing.T) {
-		t.Skip("lands in S6 (gated by Probe B): whatever damage attrs the probe finds on a player ship element — until then an absent attr cannot be read as 100%")
+		// A real reading, and it is ABSOLUTE — the percentage needs the macro's
+		// max hull, which is in the game install and not in the save.
+		if miner.Hull == nil || miner.Hull.Value == nil || *miner.Hull.Value != 72000 {
+			t.Fatalf("miner hull = %+v, want an absolute 72000", miner.Hull)
+		}
+		if miner.HullState() != HullDamaged {
+			t.Errorf("miner hull state = %q, want %q", miner.HullState(), HullDamaged)
+		}
+		// The multiplier. Ignoring it yields percentages over 100%.
+		if miner.MaxHullMod == nil || *miner.MaxHullMod != 1.19745 {
+			t.Errorf("max hull mod = %v, want the equipped mod_ship_maxhull multiplier", miner.MaxHullMod)
+		}
+
+		// The TRIGGER is the timestamp, not the hull delta: over 18,402
+		// consecutive-save ship pairs every hull drop came with a timestamp
+		// advance, while 94.1% of advances produced no hull drop at all,
+		// because hull delta only sees what got through the shields.
+		if miner.Attack == nil {
+			t.Fatal("miner carries attack timestamps and they are the under-attack trigger")
+		}
+		if miner.Attack.IntentionalTime != 590900.25 {
+			t.Errorf("intentional attack time = %v, want 590900.25", miner.Attack.IntentionalTime)
+		}
+		// attacktime moves for collisions too, so the two must stay separable.
+		if miner.Attack.Time != 591000.5 || miner.Attack.Method != "lowattentionattack" {
+			t.Errorf("attack = %+v, want the collision-distinguishable record", miner.Attack)
+		}
+		if miner.Attack.Attacker != "[0x9900]" || miner.Attack.AttackerShip != "[0x9900]" {
+			t.Errorf("attacker = %+v, want the ids (resolvable within this save only)", miner.Attack)
+		}
+		if miner.SpawnTime != 120000.25 {
+			t.Errorf("spawn time = %v, want 120000.25 (it hardens Code as a cross-save identity)", miner.SpawnTime)
+		}
+
+		// The absence rule, on the ship that has never been shot at. nil is not
+		// unknown and it is certainly not zero.
+		if escort.Hull != nil || escort.Attack != nil {
+			t.Errorf("escort hull/attack = %+v/%+v, want both absent", escort.Hull, escort.Attack)
+		}
+		if escort.HullState() != HullFull {
+			t.Errorf("escort hull state = %q, want %q — an absent <hull> on a live ship is MAXIMUM", escort.HullState(), HullFull)
+		}
 	})
 }
 
@@ -368,7 +700,74 @@ func TestFixturePlayerStation(t *testing.T) {
 	}
 
 	t.Run("build storage", func(t *testing.T) {
-		t.Skip("lands in S6 (gated by Probe A): required-vs-present build wares, which is what turns \"under construction\" into \"stalled, waiting on claytronics\"")
+		if len(snap.BuildStorages) != 1 {
+			t.Fatalf("build storages = %+v, want the one beside the station", snap.BuildStorages)
+		}
+		bs := snap.BuildStorages[0]
+		// The only forward link from a build site to what it is building.
+		if bs.Station != st.ID {
+			t.Errorf("build storage station = %q, want the station id %q", bs.Station, st.ID)
+		}
+		if bs.TaskType != "expand" || bs.TaskModules != 3 || !bs.TaskSeen {
+			t.Errorf("task = %+v, want an expand order of 3 modules", bs)
+		}
+		if !bs.JobSeen || !bs.Stalled() {
+			t.Errorf("job seen = %v state = %q, want a stalled job", bs.JobSeen, bs.State)
+		}
+		// Keyed on the JOB's state, never on a document-wide match for
+		// "waitingforresources": 79% of that string's occurrences in a real
+		// save sit on <production>, a factory short of inputs, which is a
+		// different alert entirely.
+		if d, ok := bs.StalledFor(snap.GameTimeS); !ok || d < 700 || d > 712 {
+			t.Errorf("stalled for = %v (%v), want ~711 in-game seconds", d, ok)
+		}
+
+		// The deficit is COMPUTED, required − delivered. The claytronics row is
+		// the whole point: it is in cargo with NO amount attribute, which is 1
+		// and not zero and certainly not "skip this ware" — on a real site the
+		// amount-less ware was precisely the blocking one.
+		if len(bs.Deficit) != 1 || bs.Deficit[0].Ware != "claytronics" || bs.Deficit[0].Amount != 51 {
+			t.Errorf("deficit = %+v, want 51 claytronics (52 required − 1 delivered)", bs.Deficit)
+		}
+		// The game's own opinion, kept as NAMES only: it agrees on the ware
+		// 99.8% of the time but omits a genuinely short one in 29.6% of stalls,
+		// and its @amount is a game-time timestamp, not a quantity.
+		if len(bs.Insufficient) != 1 || bs.Insufficient[0] != "claytronics" {
+			t.Errorf("insufficient = %v, want the ware name and nothing numeric", bs.Insufficient)
+		}
+		// required is the CURRENT STEP, not the whole build: the two differ by
+		// two orders of magnitude in a real save.
+		if len(bs.Required) != 3 {
+			t.Errorf("required = %+v, want the 3 wares of this step", bs.Required)
+		}
+		// Absent <nextresources> means "nothing after this module" — the last
+		// one — and never "unknown".
+		if bs.NextSeen || len(bs.Next) != 0 {
+			t.Errorf("next = %+v seen=%v, want the last-module state", bs.Next, bs.NextSeen)
+		}
+		// Broke, not unsupplied: 1,968 credits against a claytronics shortfall.
+		if bs.Account == nil || *bs.Account != 1968 || bs.AccountMax == nil || *bs.AccountMax != 1968 {
+			t.Errorf("account = %v/%v, want 1968/1968", bs.Account, bs.AccountMax)
+		}
+
+		// Station health lives on the MODULES. The station component carries no
+		// <hull> at all, and the denominator travels with the number: four of
+		// the five BUILT modules carry no hull element and are treated as
+		// undamaged, which IS the reading. The sixth is still under
+		// construction and is not in the fraction at all — it has no hull to
+		// be missing.
+		if st.ModuleHealth == nil {
+			t.Fatal("station module health is nil; a station's health is its modules'")
+		}
+		if st.ModuleHealth.Modules != 5 || st.ModuleHealth.Damaged != 1 {
+			t.Errorf("module health = %+v, want 1 damaged of 5 (docking bays excluded: no hull model; the graphene module is still being BUILT and is not part of the fraction)", st.ModuleHealth)
+		}
+		if st.ModuleHealth.Building != 1 {
+			t.Errorf("module health = %+v, want the graphene module counted as building; a module that does not exist yet must not read as an undamaged one", st.ModuleHealth)
+		}
+		if len(st.ModuleHealth.Details) != 1 || st.ModuleHealth.Details[0].Hull != 86400 {
+			t.Errorf("module health details = %+v, want the damaged refinery module", st.ModuleHealth.Details)
+		}
 	})
 }
 
@@ -669,4 +1068,168 @@ func readFixtureXML(t *testing.T) []byte {
 		t.Fatalf("read fixture: %v", err)
 	}
 	return raw
+}
+
+// TestFixtureHullStates walks probe B §8's decode rule case by case. It is
+// ordered, and the order is the whole rule: two of its six cases are about a
+// hull element that is ABSENT, and they resolve to opposite answers.
+func TestFixtureHullStates(t *testing.T) {
+	snap := parseSynthetic(t, "14_hull_states")
+
+	byCode := map[string]Ship{}
+	for _, s := range snap.Ships {
+		byCode[s.Code] = s
+	}
+	// The paranid freighter has a hull and is not the player's; it must not be
+	// in the fleet at all.
+	if _, ok := byCode["PAR-705"]; ok {
+		t.Errorf("a non-player ship entered the player fleet: %+v", snap.Ships)
+	}
+	if len(snap.Ships) != 5 {
+		t.Fatalf("ships = %d, want 5 player ships", len(snap.Ships))
+	}
+
+	for _, c := range []struct {
+		code  string
+		state HullState
+		why   string
+	}{
+		{"PLY-701", HullDestroyed, `state="wreck" and NO <hull>: 2,437 player wrecks in the corpus carry none, and reading that absence as 100% reports a destroyed destroyer at full health`},
+		{"PLY-702", HullBuilding, `state="construction": the value is real but its denominator is the FINISHED hull, so the percentage understates by design`},
+		{"PLY-703", HullFull, "no <hull> child on a live ship: 92,816 never-attacked observations carry none"},
+		{"PLY-704", HullFull, "<hull min=/> with no value is a script-set FLOOR, not a reading; decoding the missing value as 0 reports an undamaged plot capital at 0%"},
+		{"PLY-706", HullDamaged, "a real absolute reading"},
+	} {
+		s := byCode[c.code]
+		if got := s.HullState(); got != c.state {
+			t.Errorf("%s hull state = %q, want %q\n  because: %s", c.code, got, c.state, c.why)
+		}
+	}
+	// Rule 1 is checked BEFORE the absence rule, so the wreck must not have
+	// acquired a hull value on the way through.
+	if w := byCode["PLY-701"]; w.Hull != nil {
+		t.Errorf("wreck carries a hull: %+v", w.Hull)
+	}
+	// Rule 4: the element is present, the reading is not.
+	if p := byCode["PLY-704"]; p.Hull == nil || p.Hull.Value != nil || p.Hull.Min == nil || *p.Hull.Min != 25000 {
+		t.Errorf("plot capital hull = %+v, want min=25000 and NO value", p.Hull)
+	}
+
+	// The station's health is its modules'. The dockingbay is in the
+	// "no hull model" exclusion list and carries one anyway — that list is
+	// "not observed", not "cannot happen", so the surprise counts in BOTH
+	// halves of the fraction rather than being dropped or panicked on.
+	if len(snap.Stations) != 1 {
+		t.Fatalf("stations = %d, want 1", len(snap.Stations))
+	}
+	mh := snap.Stations[0].ModuleHealth
+	if mh == nil {
+		t.Fatal("station module health is nil")
+	}
+	if mh.Modules != 4 || mh.Damaged != 2 {
+		t.Errorf("module health = %+v, want 2 damaged of 4 (2 defence + 1 connection + the surprising dockingbay)", mh)
+	}
+	// Rules 1 and 2 are not a ship-only concern. A wrecked module and a module
+	// still being built carry no <hull> either, so leaving them in the
+	// denominator reads them as "at maximum" — the absence rule pointed the
+	// wrong way. They are counted, separately, and never as undamaged.
+	if mh.Wrecked != 1 {
+		t.Errorf("module health = %+v, want 1 WRECKED module counted apart from the fraction; a destroyed module is not an undamaged one", mh)
+	}
+	if mh.Building != 1 {
+		t.Errorf("module health = %+v, want 1 module under construction counted apart from the fraction; scaffolding is not structure", mh)
+	}
+	// The module under construction carries a <hull value>, and it must move
+	// NEITHER half: its denominator is the finished module's maximum, so the
+	// number understates by design. 38 of one real save's 220 "damaged"
+	// modules were exactly this.
+	if mh.Damaged != 2 {
+		t.Errorf("module health = %+v, want the half-built module's partial hull kept OUT of Damaged", mh)
+	}
+	for _, d := range mh.Details {
+		if d.Macro == "module_gen_prod_graphene_01_macro" {
+			t.Errorf("a module under construction was reported as damaged: %+v", d)
+		}
+	}
+	// A docked ship is not station structure. Counting its hull into the
+	// station's fraction is how a station reads as damaged because a fighter
+	// parked in it is.
+	for _, d := range mh.Details {
+		if strings.HasPrefix(d.Class, "ship_") {
+			t.Errorf("a docked ship landed in the station's module health: %+v", d)
+		}
+	}
+}
+
+// TestFixtureElementNamesakes is the scoping gate. Every section this parser
+// reads by element NAME has a namesake elsewhere in a real savegame, and the
+// worst of them — /savegame/economylog/entries/log — occurs 3,602,050 times.
+//
+// Each one currently reads correctly by an accident of content or file order
+// rather than by a rule. This test makes the rule the reason.
+func TestFixtureElementNamesakes(t *testing.T) {
+	snap := parseSynthetic(t, "15_element_namesakes")
+
+	if !snap.LogbookSeen || len(snap.Logbook) != 1 {
+		t.Fatalf("logbook = %+v, want exactly the one root <log> entry — the economylog's <log> is a different element that happens to share a name", snap.Logbook)
+	}
+	if got := snap.Logbook[0].Title; got != "The real log" {
+		t.Errorf("logbook entry = %q, want the root log's", got)
+	}
+
+	if len(snap.Stats) != 1 {
+		t.Fatalf("stats = %+v, want the one root <stats> row; a <terraforming> project has a <stats> too", snap.Stats)
+	}
+	if _, ok := snap.Stats["population"]; ok {
+		t.Errorf("a terraforming project's population counter leaked into the player's statistics: %+v", snap.Stats)
+	}
+	if snap.Stats["time_total"] != 591711.419 {
+		t.Errorf("stats = %+v, want the player's time_total", snap.Stats)
+	}
+
+	// Two separate rules meet here. The nested <missions> under <terraforming>
+	// is excluded by the ROOT SCOPE; the <mission> inside the real board's
+	// <thread> is excluded because decodeMissions reads direct children only.
+	// Both are needed and neither implies the other.
+	if len(snap.Missions) != 1 || snap.Missions[0].ID != "900" {
+		t.Fatalf("missions = %+v, want only the DIRECT child of the ROOT <missions>", snap.Missions)
+	}
+	if len(snap.MissionOffers) != 0 {
+		t.Errorf("mission offers = %+v, want none: the only <offer> in this fixture is inside a <missions> that is not the root's", snap.MissionOffers)
+	}
+	if p := snap.WarPairings(); len(p) != 0 {
+		t.Errorf("war pairings = %+v, want none: the war group belongs to an impostor board", p)
+	}
+
+	// The build task's <sequence><entry> elements are the third namesake, and
+	// there are 618 of them per station in a real save.
+	for _, e := range snap.Logbook {
+		if e.Title == "" && e.Text == "" {
+			t.Errorf("a build-sequence <entry> reached the logbook: %+v", e)
+		}
+	}
+	if len(snap.BuildStorages) != 1 || snap.BuildStorages[0].TaskModules != 2 {
+		t.Errorf("build storage = %+v, want the sequence counted as 2 modules and not as log entries", snap.BuildStorages)
+	}
+}
+
+// TestParseDepthIsBalanced watches the bookkeeping the scope test above rests
+// on. dec.Skip() and dec.DecodeElement() both swallow an element's EndElement,
+// so every site that calls one has to tell the loop (consumed()). A site that
+// forgets leaves the loop's depth permanently off by one, and the symptom is
+// not an error — it is <log> or <stats> quietly reading from the wrong place.
+//
+// The invariant is exact: a well-formed document ends at depth zero.
+func TestParseDepthIsBalanced(t *testing.T) {
+	for _, f := range fixtures(t) {
+		t.Run(f.name, func(t *testing.T) {
+			res := f.parse(t)
+			if res.ParseError != "" {
+				t.Skipf("fixture parses to an error by design: %s", res.ParseError)
+			}
+			if d := lastParseDepth.Load(); d != 0 {
+				t.Errorf("token loop finished at depth %d, want 0 — some branch consumed a subtree without calling consumed(), and the root-scoping of <log>/<stats>/<missions> is now wrong by that much", d)
+			}
+		})
+	}
 }

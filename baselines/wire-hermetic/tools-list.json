@@ -1843,6 +1843,59 @@
               "items": {
                 "type": "string"
               }
+            },
+            "module_health": {
+              "type": [
+                "null",
+                "object"
+              ],
+              "properties": {
+                "modules": {
+                  "type": "integer"
+                },
+                "damaged": {
+                  "type": "integer"
+                },
+                "building": {
+                  "type": "integer"
+                },
+                "wrecked": {
+                  "type": "integer"
+                },
+                "details": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "macro": {
+                        "type": "string"
+                      },
+                      "class": {
+                        "type": "string"
+                      },
+                      "hull": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "macro",
+                      "class",
+                      "hull"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "modules",
+                "damaged",
+                "building",
+                "wrecked"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -2111,6 +2164,56 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "knownto": {
+                    "type": "string"
+                  },
+                  "resource_areas": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "resource": {
+                          "type": "string"
+                        },
+                        "areas": {
+                          "type": "integer"
+                        },
+                        "current": {
+                          "type": "integer"
+                        },
+                        "capacity": {
+                          "type": "integer"
+                        },
+                        "at_capacity_areas": {
+                          "type": "integer"
+                        },
+                        "unknown_cap_areas": {
+                          "type": "integer"
+                        },
+                        "reservations": {
+                          "type": "integer"
+                        },
+                        "last_relocation": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "resource",
+                        "areas",
+                        "current",
+                        "capacity",
+                        "at_capacity_areas",
+                        "unknown_cap_areas"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "player_probes": {
+                    "type": "integer"
                   }
                 },
                 "required": [
@@ -2462,6 +2565,66 @@
                   },
                   "docked_at": {
                     "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "hull": {
+                    "type": [
+                      "null",
+                      "object"
+                    ],
+                    "properties": {
+                      "value": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "min": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "attack": {
+                    "type": [
+                      "null",
+                      "object"
+                    ],
+                    "properties": {
+                      "time": {
+                        "type": "number"
+                      },
+                      "intentional_time": {
+                        "type": "number"
+                      },
+                      "ship_time": {
+                        "type": "number"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "attacker": {
+                        "type": "string"
+                      },
+                      "attacker_ship": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "max_hull_mod": {
+                    "type": [
+                      "null",
+                      "number"
+                    ]
+                  },
+                  "spawn_time": {
+                    "type": "number"
                   }
                 },
                 "required": [
@@ -2632,6 +2795,59 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "module_health": {
+                    "type": [
+                      "null",
+                      "object"
+                    ],
+                    "properties": {
+                      "modules": {
+                        "type": "integer"
+                      },
+                      "damaged": {
+                        "type": "integer"
+                      },
+                      "building": {
+                        "type": "integer"
+                      },
+                      "wrecked": {
+                        "type": "integer"
+                      },
+                      "details": {
+                        "type": [
+                          "null",
+                          "array"
+                        ],
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "macro": {
+                              "type": "string"
+                            },
+                            "class": {
+                              "type": "string"
+                            },
+                            "hull": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "macro",
+                            "class",
+                            "hull"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "modules",
+                      "damaged",
+                      "building",
+                      "wrecked"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [

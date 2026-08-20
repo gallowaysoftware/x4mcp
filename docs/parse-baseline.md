@@ -1,9 +1,11 @@
-# Parser baseline — schema v27
+# Parser baseline — schema v29
 
-**Status:** timings measured 2026-08-10 against schema v24 (S2) · hitch check added 2026-08-12 · re-measure on every parser change and every game patch
-**Why it exists:** S6 bumps the parse schema and adds four whole sections (logbook, stats, missions, inventory). Its gate is *"ParseMS ≤ +10% and peak RSS ≤ +5 MB of the S2 baseline"*. These are the numbers that sentence refers to. Without them the gate is a feeling.
+**Status:** S2 timings measured 2026-08-10 against schema v24 · hitch check added 2026-08-12 · **S6 timings measured 2026-08-19 against schema v28** · re-verified against v29 on the same save and machine (`all` arm: 11 904 / 11 816 / 11 892 ms, 30.43 / 30.92 / 28.81 MB — inside the v28 arm's own 28.89–31.38 MB spread, and the same 196 539 5xx allocations) · re-measure on every parser change and every game patch
+**Why it exists:** S6 bumped the parse schema and added nine sections (logbook, stats, missions, licences, inventory, threat components, hull, build storage, resource areas). Its gate was *"ParseMS ≤ +10% and peak RSS ≤ +5 MB of the S2 baseline"*. These are the numbers that sentence refers to. Without them the gate is a feeling.
 
-**About the version in that heading:** it is `x4save.SchemaVersion`, and it is the schema THIS DOCUMENT DESCRIBES, not the one the numbers were taken on. It said v24 while the constant had moved to 27 — three post-S2 bumps that changed no parser cost (25 was the cache's gob header, 26 added `Snapshot.MoneySeen`, 27 added the remaining presence flags `PlayerAssetsSeen`/`GameTimeSeen`), so §3's timings still stand. Any bump that does move them re-blesses §3 in the same commit; a heading that drifts from the constant is how a stale number gets treated as a gate.
+**About the version in that heading:** it is `x4save.SchemaVersion`, and it is the schema THIS DOCUMENT DESCRIBES, not the one the numbers were taken on. It said v24 while the constant had moved to 27 — three post-S2 bumps that changed no parser cost (25 was the cache's gob header, 26 added `Snapshot.MoneySeen`, 27 added the remaining presence flags `PlayerAssetsSeen`/`GameTimeSeen`), so §3's timings still stood. 28 does move them, and §3.1 is the re-blessing; a heading that drifts from the constant is how a stale number gets treated as a gate. 29 splits `Station.ModuleHealth` into built/building/wrecked (`collectModuleHealth`) — a correctness fix that retains three ints instead of one and does not move §3.1's numbers, re-measured rather than assumed.
+
+**And read §3.1 before quoting §3's ceilings at anything.** The S2 numbers do not reproduce on today's machine against today's save: the *unchanged* pre-S6 parser measures 19.17 MB peak RSS against a ceiling of 20 MB that was derived from a 13–15 MB figure on a smaller save and an older toolchain. A baseline that does not reproduce is not a baseline; §3.1 says what it is now, and how it was taken.
 
 ---
 
@@ -27,6 +29,7 @@ X4MCP_REAL_SAVE=… go test ./internal/x4save -run TestRealSaveGolden -count=1 -
 - **ParseMS** is `Snapshot.ParseMS` — wall clock from opening the gzip stream to the end of the walk, which is what a caller waits for.
 - **Peak RSS** is the kernel's `VmHWM` for the test process, reset via `/proc/self/clear_refs` immediately before the parse. Go's `MemStats` measures the heap; the question this project actually has is "can this run while X4 owns the machine", and that is an RSS question.
 - `-count=1` matters: without it `go test` serves a cached result and you will "measure" the same millisecond three times.
+- **One RSS measurement per process.** `resetPeakRSS` writes `/proc/self/clear_refs`, which resets `VmHWM` to the process's *current* RSS — so a second measurement in the same process starts from the first one's footprint and reads high. Comparing two arms means two `go test` invocations, or a compiled test binary run twice (`go test -c`); §3.1 does the latter.
 - The benchmark's `MB/s` column is against the **compressed** size. The real save streams ~775 MB of XML in ~11 s ≈ 70 MB/s of decompressed XML.
 
 ## 2. Machine
@@ -71,9 +74,122 @@ The memory number is the one worth staring at: 775 MB of XML through a 14 MB hig
 
 `TestRealSaveGolden` enforces looser defaults (1.5× time, +64 MB RSS) because it also runs on a machine that may be busy; the numbers above are the S6 review gate, checked by hand from a quiet run.
 
+## 3.1 Numbers (schema v28, measured 2026-08-19)
+
+Same machine (§2), game closed, a different and larger save: `105 473 691` B gz / 100.6 MB, game 900 build 611726.
+
+**Method changed, and it matters.** Every arm runs in **its own process**. `resetPeakRSS` writes `/proc/self/clear_refs`, which resets `VmHWM` to the process's *current* RSS — so a second measurement in the same process inherits the first one's footprint and every later one reads high. Numbers taken from interleaved sub-benchmarks in one process are worthless, and an earlier draft of these numbers was exactly that. Three reps per arm, reps interleaved across arms so machine drift lands on all of them equally, medians reported.
+
+The `none` row is the pre-S6 parse section for section, produced by the test-only section mask (`internal/x4save/sections.go`), which `TestSectionMaskOffLeavesThePreviousSectionsIntact` pins against the pre-S6 behaviour.
+
+**Real save:**
+
+| measurement | pre-S6 (`none`) | schema v28 (`all`) | delta |
+| --- | ---: | ---: | ---: |
+| ParseMS, median of 3 | 12 021 | **11 893** | −129 ms (−1.07%) |
+| peak RSS | 19.17 MB | **30.33 MB** | **+11.16 MB** |
+| total allocated | 8 947 008 064 B | 8 966 326 424 B | +0.22% |
+| allocations | 196 447 519 | 196 539 510 | +0.05% |
+| live heap after parse | 2.68 MB | 6.27 MB | +3.59 MB |
+
+**Distilled fixture** (1.03 MB gz / 12.0 MB XML):
+
+| measurement | pre-S6 | schema v28 | delta |
+| --- | ---: | ---: | ---: |
+| ParseMS, median of 3 × `-benchtime 10x` | 201.3 ms | **209.3 ms** | +8.0 ms (+4.0%) |
+| peak RSS | 17.99 MB | 20.72 MB | +2.73 MB |
+| total allocated | 125 645 262 B | 133 569 353 B | +6.3% |
+| allocations | 3 230 865 | 3 263 065 | +1.0% |
+
+**Against the §3 ceilings: ParseMS passes on both, peak RSS fails.** 30.33 MB against ≤ 20 MB, +11.16 MB against +5 MB.
+
+### 3.2 The memory gate was replaced, because it was measuring the wrong thing
+
+Peak RSS was the memory gate through S6, and S6 is where it stopped being
+usable. Three faults, all measured:
+
+1. **It fails on unchanged code.** The *pre-S6* parser measures 19.17 MB against
+   a 20 MB ceiling. A ceiling the pre-change code cannot meet is worse than no
+   ceiling: it trains everyone to waive it.
+2. **Its noise is half its allowance.** The `all` arm spans 28.89–31.38 MB
+   across reps. A ±2.5 MB instrument cannot police a +5 MB budget.
+3. **It measures the GC pacer, not the parser.** Peak RSS ≈ live set × pacer
+   multiple, and on a parse pushing 8.9 GB the pacer sits at ~2× live
+   continuously. 3 MB of legitimately retained snapshot and 3 MB of leaked
+   per-element garbage are indistinguishable to it.
+
+`TestRealSaveGolden` now gates on two numbers instead, and demotes peak RSS to a
+loose backstop (+64 MB).
+
+| gate | what it catches | tolerance | baseline (2026-08-19, v29) |
+| --- | --- | --- | --- |
+| **live heap after parse** | **retention** — a section keeping more than it declared | +10% | **6.26 MB** |
+| allocation count / bytes | throughput — a lost `dec.Skip()`, a subtree newly descended | +5% | 196,539,692 / 8.35 GB |
+| peak RSS | backstop only | +64 MB | 30 MB |
+
+**Live heap is the real one, and that is not obvious — the first attempt at this
+gate got it backwards.** The intuition is that a retention regression shows up as
+extra allocation. It does not. A control that retained one interned string per
+element in the token loop was run against both:
+
+| | baseline | with per-element retention | moved |
+| --- | ---: | ---: | ---: |
+| allocations | 196,539,692 | 204,487,876 | **+4.0%** |
+| bytes allocated | 8.35 GB | 8.72 GB | **+4.4%** |
+| **live heap** | **6.26 MB** | **131.64 MB** | **+2002%** |
+| peak RSS | 30 MB | 309 MB | +930% |
+
+**A 21× retention regression moved allocation volume by 4%** — inside a 5%
+tolerance, i.e. invisible. The parse allocates ~196 million times while
+streaming, so anything the walk *keeps* is a rounding error against what it
+*touches*. Allocation volume is a fine throughput gate and a useless retention
+gate, and only measuring it that way makes the difference visible.
+
+Live heap is also the most stable instrument here: 6.26 / 6.26 / 6.27 MB across
+three runs, and 6.27 MB measured independently during S6 — a 0.16% spread, about
+60× smaller than its own tolerance. It is checkable by hand too, which peak RSS
+never was: 17,004 logbook entries at 194 B is 3.3 MB of the 6.26.
+
+Measure it after **two** forced GCs. One can leave the second's work behind, and
+the number wanted is what the snapshot retains, not what happens to be
+uncollected.
+
+**What the numbers say about why.** Time did not move at all — the shipped parse is *faster* than the pre-S6 arm by less than the arm's own run-to-run spread. Allocation count moved 0.05%, so the streaming walk is intact and nothing is retained per `<field>`. The whole of the RSS increase is **retained output**: 3.59 MB more live heap, tripled by the GC pacer, which targets ~2× the live set and is pinned at that target continuously by a parse that pushes 8.9 GB through it.
+
+**Per-section**, one section disabled per arm:
+
+| section | ms | peak RSS |
+| --- | ---: | ---: |
+| logbook | −138 | **+8.79 MB** |
+| stats | +22 | +1.91 MB |
+| missions | −100 | +0.91 MB |
+| licences | +55 | +1.86 MB |
+| inventory | −13 | −0.04 MB |
+| threat | −13 | +1.38 MB |
+| hull | −34 | +0.85 MB |
+| build storage | +28 | +1.94 MB |
+| resource areas | −13 | −0.53 MB |
+
+The **time** column is entirely inside the noise floor (the `all` arm spans 11 851–11 924 ms against itself) and three entries are negative; read it as a ceiling, not as nine measurements. The **RSS** column has exactly one signal in it: `without_logbook` lands at 21.54 MB against `none`'s 19.17, so the logbook is +8.79 MB and all eight other sections together are +2.37 MB. The 0.85–1.94 MB middle rows are noise and must not be quoted individually — they sum to far more than 2.37.
+
+The logbook retains **3.14 MB over 17 004 entries = 194 B/entry**, with strings interned per parse (17 004 entries carry ~800 distinct texts and 5 distinct categories).
+
+`docs/s6-notes.md` §4.2–4.3 carries the full write-up, the two levers priced (GC tuning: +8.4% parse time, rejected; a 5 000-entry cap: 25.29 MB), and the decision.
+
+**Cache round trip**, which changed in v28 (the snapshot travels through the gob stream as JSON so a presence pointer to zero survives — see `snapshotEnvelope`):
+
+| snapshot | entry size | write | read |
+| --- | ---: | ---: | ---: |
+| distilled fixture | 1.49 MB | 3.4 ms | 10.1 ms |
+| real save | 4.41 MB | 8.4 ms | 31.3 ms |
+
+31 ms against an 11 893 ms parse is 0.26%, which is the number that matters: a cache hit exists to avoid the parse.
+
 ## 4. What the parser finds — real save vs distilled fixture
 
 The distilled fixture exists so CI can exercise a real save's *shape* without a real save. It matches on everything except the two axes it deliberately samples.
+
+> **These counts are schema v24, from the 2026-08-10 save.** They are kept because the *ratios* are what the table is for — which sections the distiller samples and which it keeps whole — and those have not changed. The absolute numbers have, in both directions: the schema gained nine sections, and nine days of play grew the player's fleet from 113 ships to 1 040. For a current count list, bless `baselines/parse/<save>.json` (§1) and read it; `docs/s6-notes.md` §4.4 reconciles every v28 section against an independent scan of the same save.
 
 | section | real save | distilled fixture | |
 | --- | ---: | ---: | --- |

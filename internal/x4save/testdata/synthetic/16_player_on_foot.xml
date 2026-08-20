@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The player character as a TOP-LEVEL object, which is what the save holds
+     whenever the player is not sitting in a cockpit: in a spacesuit, walking a
+     station, riding a lift. 05_player_inventory.xml covers the other case (the
+     character docked in a ship, which arrives inside a DECODED subtree), and
+     between them they are the two halves of the walk.
+
+     This half had no fixture at all, and it is the half with the token-loop
+     branches in it: <inventory>, <blueprints> and <research> are read straight
+     off the token stream here, each of them consuming its own subtree. Every
+     such site has to tell the loop (consumed()) or the depth bookkeeping that
+     scopes <log>/<stats>/<missions> to the document root goes permanently off
+     by one — and TestParseDepthIsBalanced can only catch a site some fixture
+     actually reaches. Deleting either consumed() call left the whole suite
+     green before this file existed.
+
+     The second character is the guard: same class, same zone, no owner. An
+     inventory is read only when the enclosing component IS the player and says
+     so explicitly, because 1,084 components in one real save carry an
+     <inventory> and exactly one of them is the player's.
+
+     It carries no <blueprints>, deliberately. The token-loop <blueprints> and
+     <research> branches make no ownership test at all, and giving this
+     bystander a blueprint list would pin that as intended behaviour in a
+     golden. It is not live — one real save holds exactly ONE <blueprints>
+     element and it is the player's — but it is not a rule either, and a
+     fixture should not bless an accident. -->
+<savegame>
+<info>
+<save date="1700000000" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="argon" id="[0x3]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_01_sector001_macro" connection="sector" id="[0x4]">
+<connections>
+<connection connection="objects">
+<component class="player" macro="character_player_pirate_gamestart2_macro" connection="space" name="{1021,1202}" code="GYH-661" owner="player" known="1" id="[0x102]">
+<traits flags="remotecommable|subtitlename">
+<skills boarding="15" engineering="15" management="15" morale="15" piloting="15"/>
+</traits>
+<inventory>
+<!-- No amount= is ONE. The writer never emits amount="1"; it omits it. -->
+<ware ware="weapon_gen_spacesuit_repairlaser_01_mk1"/>
+<ware ware="inv_bandages" amount="46"/>
+</inventory>
+<blueprints>
+<blueprint ware="module_gen_prod_energycells_01"/>
+<blueprint ware="module_gen_stor_container_01"/>
+</blueprints>
+<research>
+<research ware="research_teleportation" method="research"/>
+</research>
+</component>
+</connection>
+<connection connection="objects">
+<!-- Same class, same zone, no owner: not the player, and its inventory must
+     not become the player's. An absent owner is never resolved to the
+     player's — the direction the README's "guess against the player's
+     interest" rule insists on. -->
+<component class="player" macro="character_npc_macro" connection="space" name="Bystander" id="[0x103]">
+<inventory>
+<ware ware="inv_spaceweed" amount="999"/>
+</inventory>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</universe>
+</savegame>

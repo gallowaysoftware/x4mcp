@@ -42,6 +42,50 @@
     "player_assets_seen": false,
     "owned_sectors": null,
     "blueprints_seen": false,
-    "other_counts": {}
+    "other_counts": {},
+    "logbook_seen": false,
+    "stats_seen": false,
+    "missions_seen": false,
+    "licences": [
+      {
+        "faction": "argon",
+        "type": "capitalship"
+      },
+      {
+        "faction": "argon",
+        "type": "generaluseship"
+      },
+      {
+        "faction": "argon",
+        "type": "station_gen_advanced"
+      },
+      {
+        "faction": "teladi",
+        "type": "station_gen_basic"
+      },
+      {
+        "faction": "argon",
+        "type": "police"
+      },
+      {
+        "faction": "argon",
+        "type": "station_gen_intermediate"
+      },
+      {
+        "faction": "teladi",
+        "type": "station_gen_intermediate"
+      }
+    ],
+    "boosters": [
+      {
+        "faction": "argon",
+        "group": "boosters",
+        "type": "tradesubscription",
+        "target": "player",
+        "endtime": 612000
+      }
+    ],
+    "licences_seen": true,
+    "inventory_seen": false
   }
 }

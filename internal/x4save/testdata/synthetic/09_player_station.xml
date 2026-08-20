@@ -3,7 +3,12 @@
      tree: what a production module actually queues (not the overviewgraphs UI
      union, which includes bought inputs), storage cargo aggregated across
      several storage modules, dock sizes split into built vs still-building,
-     and state="construction" propagating to nested docking bays. -->
+     and state="construction" propagating to nested docking bays, plus one
+     damaged module (health lives on modules, never on the station).
+     Beside the station, in the same zone, sits its BUILD STORAGE: the required
+     wares for the running step, what has been delivered, the build wallet, and
+     the two traps — a cargo <ware> with no amount (which is 1, and must not be
+     skipped) and an <insufficient> whose @amount is a timestamp. -->
 <savegame>
 <info>
 <save date="1700000000" name="Fixture Save"/>
@@ -57,6 +62,12 @@
 </connection>
 <connection connection="modules">
 <component class="production" macro="module_gen_prod_refinedmetals_01_macro" connection="station" id="[0x411]">
+<!-- A module <hull> is present only when the module is DAMAGED; the other
+     four BUILT modules here carry none and are at maximum. The graphene
+     module below carries none either and is NOT at maximum — it has not been
+     built — which is why state is read before the absence rule. The station
+     component itself never carries one; its structure is its modules. -->
+<hull value="86400"/>
 <production state="running">
 <queue ware="refinedmetals" amount="1"/>
 </production>
@@ -112,6 +123,80 @@
 <orders>
 <order order="TradeRoutine" default="1" state="started"/>
 </orders>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+<connection connection="buildstorages">
+<!-- The build storage is a SIBLING of the station it is building, not a child
+     of it. The only forward link is buildtasks/inprogress/build/@component,
+     which names [0x400] above. -->
+<component class="buildstorage" macro="buildstorage_gen_base_01_macro" connection="space" code="UCW-564" owner="player" knownto="player" spawntime="503194.972" id="[0x500]">
+<buildtasks>
+<inprogress>
+<build id="[0x501]" type="expand" builder="[0x500]" component="[0x400]" faction="player" time="503574.029">
+<sequence>
+<entry id="[0x502]" index="1" macro="dockarea_arg_m_station_01_macro"/>
+<entry id="[0x503]" index="2" macro="module_gen_prod_refinedmetals_01_macro"/>
+<entry id="[0x504]" index="3" macro="module_gen_prod_graphene_01_macro"/>
+</sequence>
+</build>
+</inprogress>
+</buildtasks>
+<!-- The station-level summary. Its <insufficient>/@amount is a GAME-TIME
+     TIMESTAMP, not a quantity, and it runs ~60 game-seconds behind the
+     processor-level one below. -->
+<build>
+<resources>
+<insufficient>
+<ware ware="claytronics" amount="591771"/>
+</insufficient>
+</resources>
+</build>
+<!-- 1,968 credits against a claytronics deficit: broke, not unsupplied. -->
+<account id="[0x505]" max="1968" amount="1968" own="1"/>
+<connections>
+<connection connection="con_storage01" macro="con_storage01">
+<component class="storage" macro="storage_gen_buildstorage_01_macro" connection="con_storage" id="[0x506]">
+<cargo>
+<ware ware="energycells" amount="46224"/>
+<ware ware="hullparts" amount="74498"/>
+<!-- No amount attribute at all. That is ONE, not zero, and it must never be
+     SKIPPED: on a real site the ware with no amount was precisely the one
+     blocking the build. -->
+<ware ware="claytronics"/>
+</cargo>
+</component>
+</connection>
+<connection connection="con_buildmodule01" macro="con_buildmodule01">
+<component class="buildmodule" macro="buildmodule_gen_stations_01_macro" connection="object" id="[0x507]">
+<!-- Not a job: a buildmodule's <build deployed="1"/> carries no step. -->
+<build deployed="1"/>
+<connections>
+<connection connection="buildprocessorconnection_01">
+<component class="buildprocessor" macro="buildprocessor_gen_01_macro" connection="object" id="[0x508]">
+<build start="591000.581" step="3" steps="3" method="default" constructionvesselrequired="1" type="build" state="waitingforresources" sequenceindex="2" order="[0x501]">
+<resources>
+<ware ware="claytronics" amount="52"/>
+<ware ware="energycells" amount="1647"/>
+<ware ware="hullparts" amount="378"/>
+<insufficient>
+<ware ware="claytronics" amount="591711"/>
+</insufficient>
+</resources>
+<!-- No <nextresources> element: this is the LAST module of the order, not an
+     unknown remainder. -->
+<components>
+<component component="[0x509]"/>
+</components>
+<units>
+<unit macro="ship_gen_xs_buildingdrone_01_a_macro" amount="30"/>
+</units>
+</build>
 </component>
 </connection>
 </connections>

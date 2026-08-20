@@ -82,6 +82,11 @@
         "owner": "teladi"
       }
     ],
-    "other_counts": {}
+    "other_counts": {},
+    "logbook_seen": false,
+    "stats_seen": false,
+    "missions_seen": false,
+    "licences_seen": false,
+    "inventory_seen": false
   }
 }

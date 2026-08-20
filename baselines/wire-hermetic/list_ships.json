@@ -5,13 +5,21 @@
     "content": [
       {
         "type": "text",
-        "text": "{\"ships\":[{\"account\":5492825,\"captain\":\"Yohulis Tumulis Monisessas II\",\"captain_skills\":{\"boarding\":0,\"engineering\":3,\"management\":5,\"morale\":8,\"piloting\":5},\"class\":\"ship_l\",\"code\":\"RTP-162\",\"crew_count\":49,\"faction\":\"Teladi\",\"id\":\"[0xe2fa]\",\"last_order_error\":\"MiningRoutine: No buyers found in allowed sectors.\",\"macro\":\"ship_tel_l_miner_liquid_02_a_macro\",\"order\":\"MiningRoutine\",\"orders\":[{\"default\":true,\"failed\":true,\"order\":\"MiningRoutine\",\"state\":\"started\"}],\"role\":\"Miner (liquid)\",\"sector\":\"cluster_18_sector001_macro\",\"size\":\"L\"},{\"account\":5492825,\"captain\":\"Trosulis Libaras Zuzuamis I\",\"captain_skills\":{\"boarding\":0,\"engineering\":3,\"management\":4,\"morale\":7,\"piloting\":4},\"class\":\"ship_l\",\"code\":\"CLW-609\",\"crew_count\":49,\"faction\":\"Teladi\",\"id\":\"[0xe473]\",\"last_order_error\":\"MiningRoutine: No buyers found in allowed sectors.\",\"macro\":\"ship_tel_l_miner_liquid_02_a_macro\",\"order\":\"MiningRoutine\",\"orders\":[{\"default\":true,\"failed\":true,\"order\":\"MiningRoutine\",\"state\":\"started\"}],\"role\":\"Miner (liquid)\",\"sector\":\"cluster_18_sector001_macro\",\"size\":\"L\"},{\"captain\":\"Rurandis Hirussusis Tertasobas I\",\"captain_skills\":{\"boarding\":0,\"engineering\":3,\"management\":5,\"morale\":10,\"piloting\":9},\"class\":\"ship_l\",\"code\":\"TWM-476\",\"crew_count\":24,\"docked_at\":\"[0xe7a7]\",\"faction\":\"Teladi\",\"id\":\"[0xf9e0]\",\"macro\":\"ship_tel_l_miner_solid_02_a_macro\",\"order\":\"MiningRoutine\",\"orders\":[{\"default\":true,\"order\":\"MiningRoutine\"}],\"role\":\"Miner (solid)\",\"sector\":\"cluster_18_sector001_macro\",\"size\":\"L\"}],\"total_matched\":34}"
+        "text": "{\"ships\":[{\"account\":5492825,\"attack\":{\"attacker\":\"[0x181cedb4]\",\"attacker_ship\":\"[0x181cedb4]\",\"intentional_time\":579256.894,\"method\":\"lowattentionattack\",\"ship_time\":579256.894,\"time\":579256.894},\"captain\":\"Yohulis Tumulis Monisessas II\",\"captain_skills\":{\"boarding\":0,\"engineering\":3,\"management\":5,\"morale\":8,\"piloting\":5},\"class\":\"ship_l\",\"code\":\"RTP-162\",\"crew_count\":49,\"faction\":\"Teladi\",\"id\":\"[0xe2fa]\",\"last_order_error\":\"MiningRoutine: No buyers found in allowed sectors.\",\"macro\":\"ship_tel_l_miner_liquid_02_a_macro\",\"order\":\"MiningRoutine\",\"orders\":[{\"default\":true,\"failed\":true,\"order\":\"MiningRoutine\",\"state\":\"started\"}],\"role\":\"Miner (liquid)\",\"sector\":\"cluster_18_sector001_macro\",\"size\":\"L\",\"spawn_time\":368573.51},{\"account\":5492825,\"attack\":{\"attacker\":\"[0x181cedb4]\",\"attacker_ship\":\"[0x181cedb4]\",\"intentional_time\":580048.275,\"method\":\"lowattentionattack\",\"ship_time\":580048.275,\"time\":580048.275},\"captain\":\"Trosulis Libaras Zuzuamis I\",\"captain_skills\":{\"boarding\":0,\"engineering\":3,\"management\":4,\"morale\":7,\"piloting\":4},\"class\":\"ship_l\",\"code\":\"CLW-609\",\"crew_count\":49,\"faction\":\"Teladi\",\"id\":\"[0xe473]\",\"last_order_error\":\"MiningRoutine: No buyers found in allowed sectors.\",\"macro\":\"ship_tel_l_miner_liquid_02_a_macro\",\"order\":\"MiningRoutine\",\"orders\":[{\"default\":true,\"failed\":true,\"order\":\"MiningRoutine\",\"state\":\"started\"}],\"role\":\"Miner (liquid)\",\"sector\":\"cluster_18_sector001_macro\",\"size\":\"L\",\"spawn_time\":380439.955},{\"attack\":{\"attacker\":\"[0x5e0046ee]\",\"attacker_ship\":\"[0x5e0046ee]\",\"intentional_time\":580506.609,\"method\":\"lowattentionattack\",\"ship_time\":580506.609,\"time\":580506.609},\"captain\":\"Rurandis Hirussusis Tertasobas I\",\"captain_skills\":{\"boarding\":0,\"engineering\":3,\"management\":5,\"morale\":10,\"piloting\":9},\"class\":\"ship_l\",\"code\":\"TWM-476\",\"crew_count\":24,\"docked_at\":\"[0xe7a7]\",\"faction\":\"Teladi\",\"id\":\"[0xf9e0]\",\"macro\":\"ship_tel_l_miner_solid_02_a_macro\",\"order\":\"MiningRoutine\",\"orders\":[{\"default\":true,\"order\":\"MiningRoutine\"}],\"role\":\"Miner (solid)\",\"sector\":\"cluster_18_sector001_macro\",\"size\":\"L\",\"spawn_time\":380439.805}],\"total_matched\":34}"
       }
     ],
     "structuredContent": {
       "ships": [
         {
           "account": 5492825,
+          "attack": {
+            "attacker": "[0x181cedb4]",
+            "attacker_ship": "[0x181cedb4]",
+            "intentional_time": 579256.894,
+            "method": "lowattentionattack",
+            "ship_time": 579256.894,
+            "time": 579256.894
+          },
           "captain": "Yohulis Tumulis Monisessas II",
           "captain_skills": {
             "boarding": 0,
@@ -38,10 +46,19 @@
           ],
           "role": "Miner (liquid)",
           "sector": "cluster_18_sector001_macro",
-          "size": "L"
+          "size": "L",
+          "spawn_time": 368573.51
         },
         {
           "account": 5492825,
+          "attack": {
+            "attacker": "[0x181cedb4]",
+            "attacker_ship": "[0x181cedb4]",
+            "intentional_time": 580048.275,
+            "method": "lowattentionattack",
+            "ship_time": 580048.275,
+            "time": 580048.275
+          },
           "captain": "Trosulis Libaras Zuzuamis I",
           "captain_skills": {
             "boarding": 0,
@@ -68,9 +85,18 @@
           ],
           "role": "Miner (liquid)",
           "sector": "cluster_18_sector001_macro",
-          "size": "L"
+          "size": "L",
+          "spawn_time": 380439.955
         },
         {
+          "attack": {
+            "attacker": "[0x5e0046ee]",
+            "attacker_ship": "[0x5e0046ee]",
+            "intentional_time": 580506.609,
+            "method": "lowattentionattack",
+            "ship_time": 580506.609,
+            "time": 580506.609
+          },
           "captain": "Rurandis Hirussusis Tertasobas I",
           "captain_skills": {
             "boarding": 0,
@@ -95,7 +121,8 @@
           ],
           "role": "Miner (solid)",
           "sector": "cluster_18_sector001_macro",
-          "size": "L"
+          "size": "L",
+          "spawn_time": 380439.805
         }
       ],
       "total_matched": 34

@@ -31,6 +31,88 @@
       "{20203,301}": -13,
       "{20203,601}": 3,
       "{20203,901}": 0
-    }
+    },
+    "logbook": [
+      {
+        "time": 128.116,
+        "category": "tips",
+        "title": "Tip",
+        "text": "To learn about missions and other activities, open the 'Tutorials and Help' menu with H."
+      },
+      {
+        "time": 579.594,
+        "category": "missions",
+        "title": "Escaping the Clutches of the Ministry of Finance",
+        "text": "You managed to escape the prison station, together with the Axiom.",
+        "faction": "{1021,1202}"
+      },
+      {
+        "time": 1248.776,
+        "title": "Reputation gained",
+        "text": "Reason: Trade Completed\nCurrent reputation: 0",
+        "faction": "{20203,901}"
+      },
+      {
+        "time": 3012.788,
+        "title": "Reputation gained: +1",
+        "text": "Reason: Destroyed Enemy\nCurrent reputation: 1",
+        "faction": "{20203,601}"
+      },
+      {
+        "time": 3445.336,
+        "title": "Rewarded for station defence",
+        "faction": "{20203,601}",
+        "component": "[0x1e580]",
+        "money": 50000
+      },
+      {
+        "time": 3454.442,
+        "title": "Reputation gained: +1",
+        "text": "Reason: Mission Completed\nCurrent reputation: 3",
+        "faction": "{20203,601}"
+      },
+      {
+        "time": 9000,
+        "title": "Reputation lost: -2",
+        "text": "Reason: Attacked Faction Ship\nCurrent reputation: -13",
+        "faction": "{20203,301}"
+      },
+      {
+        "time": 8000,
+        "title": "Reputation gained: +1",
+        "text": "Reason: Mission Completed\nCurrent reputation: 7",
+        "faction": "{20203,301}"
+      },
+      {
+        "time": 10500.25,
+        "category": "upkeep",
+        "title": "Ship destroyed",
+        "text": "Your ship  Mineral Hauler was destroyed in Hatikvah's Choice I.",
+        "faction": "{20203,201}",
+        "entity": "Mineral Hauler"
+      },
+      {
+        "time": 11000.5,
+        "title": "Reputation gained: +1",
+        "text": "Reason: Destroyed Enemy\nCurrent reputation: 30",
+        "faction": "{20203,201}"
+      },
+      {
+        "time": 11500,
+        "title": "Reputation gained",
+        "text": "Reason: Unknown\nCurrent reputation: 99"
+      },
+      {
+        "time": 12000,
+        "category": "tips",
+        "title": "Tip",
+        "text": "Illegal items can be sold to black market traders."
+      }
+    ],
+    "logbook_seen": true,
+    "stats_seen": false,
+    "missions_seen": false,
+    "licences_seen": false,
+    "inventory_seen": false
   }
 }

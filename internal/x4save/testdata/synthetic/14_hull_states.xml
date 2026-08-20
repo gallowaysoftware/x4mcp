@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The four ways a <hull> can be absent, present, or lying — probe B §8's
+     decode rule, which is ORDERED and is not a threshold on a number.
+
+     1. state="wreck"        a destroyed ship KEEPS its component for a save or
+                             two and DROPS its <hull>. 2,437 player wrecks in
+                             the corpus, zero carrying the element. Decode that
+                             absence as 100% and the board reports a destroyed
+                             destroyer at full health.
+     2. state="construction" a value here is real, but the denominator is the
+                             FINISHED thing's maximum, so the percentage
+                             understates by design.
+     3. no <hull> at all     at MAXIMUM. 92,816 never-attacked player-ship
+                             observations, not one carrying the element.
+     4. <hull min= /> only   also at maximum: min is a script-set FLOOR, not a
+                             reading. 151 player observations. Decode the
+                             missing value as 0 and an undamaged plot capital
+                             reports 0% hull. -->
+<savegame>
+<info>
+<save date="1700000000" name="Fixture Save"/>
+<game id="X4" version="900" build="611726" time="591711.419" start="x4ep1_gamestart_pirate2" seed="1234567890" guid="00000000-0000-4000-8000-000000000000"/>
+<player name="Test Pilot" location="{20004,5010011}" money="5492825"/>
+</info>
+<universe>
+<component class="galaxy" macro="xu_ep2_universe_macro" id="[0x1]">
+<connections>
+<connection connection="clusters">
+<component class="cluster" macro="cluster_01_macro" connection="galaxy" id="[0x2]">
+<connections>
+<connection connection="sectors">
+<component class="sector" macro="cluster_01_sector001_macro" connection="cluster" code="AAA-001" owner="argon" knownto="player" id="[0x3]">
+<connections>
+<connection connection="zones">
+<component class="zone" macro="zone001_cluster_01_sector001_macro" connection="sector" id="[0x4]">
+<connections>
+<connection connection="ships">
+<!-- 1. destroyed: no <hull> child, and that absence is the opposite of full. -->
+<component class="ship_l" macro="ship_arg_l_destroyer_01_a_macro" connection="space" code="PLY-701" owner="player" name="Lost Cause" state="wreck" spawntime="100000" attacker="[0x9001]" attacktime="591700.5" intentionalattacktime="591700.5" id="[0x700]"/>
+<!-- 2. under construction: the value is real, the denominator is not yet. -->
+<component class="ship_xl" macro="ship_arg_xl_builder_01_a_macro" connection="space" code="PLY-702" owner="player" name="Half Built" state="construction" id="[0x701]">
+<hull value="410000"/>
+</component>
+<!-- 3. undamaged: no <hull>, no attack record, nothing at all. -->
+<component class="ship_s" macro="ship_arg_s_scout_01_a_macro" connection="space" code="PLY-703" owner="player" name="Untouched" id="[0x702]"/>
+<!-- 4. a floor, not a reading: min= with no value=. -->
+<component class="ship_xl" macro="ship_arg_xl_carrier_01_a_macro" connection="space" code="PLY-704" owner="player" name="Plot Capital" id="[0x703]">
+<hull min="25000"/>
+</component>
+<!-- A NON-player ship with a hull: it must not enter the player fleet, and
+     its damage is not the player's business. -->
+<component class="ship_m" macro="ship_par_m_trans_container_01_a_macro" connection="space" code="PAR-705" owner="paranid" knownto="player" id="[0x704]">
+<hull value="900"/>
+</component>
+</connection>
+<connection connection="stations">
+<!-- A player station whose DEFENCE modules carry the damage. The station
+     component itself carries no <hull>: 0 of 77 player-owned in the corpus,
+     because a station is a container and its structure is its modules.
+     One of the damaged modules is a class the exclusion list calls
+     hull-less (a dockingbay); it is counted anyway, in BOTH halves of the
+     fraction, because the list is "not observed" and not "cannot happen".
+
+     Rules 1 and 2 apply to MODULES too, and the station carries one of each:
+     a wrecked defence module and a production module still being built. Both
+     drop out of the damaged/total fraction and are counted on their own,
+     because neither carries a <hull> and folding either into the denominator
+     reads it as "at maximum". -->
+<component class="station" macro="station_gen_default_macro" connection="space" code="PLS-700" owner="player" name="Bastion" id="[0x710]">
+<connections>
+<connection connection="modules">
+<component class="defencemodule" macro="module_gen_defence_claim_01_macro" connection="station" id="[0x711]">
+<hull value="197104"/>
+</component>
+</connection>
+<connection connection="modules">
+<component class="defencemodule" macro="module_gen_defence_claim_01_macro" connection="station" id="[0x712]"/>
+</connection>
+<connection connection="modules">
+<component class="connectionmodule" macro="struct_gen_cross_01_macro" connection="station" id="[0x713]"/>
+</connection>
+<connection connection="modules">
+<component class="dockingbay" macro="dockingbay_gen_m_01_macro" connection="station" id="[0x714]">
+<hull value="4200"/>
+</component>
+</connection>
+<connection connection="modules">
+<!-- Rule 1, on a MODULE. A destroyed module drops its <hull> exactly as a
+     destroyed ship does, so folding it into the denominator reads it as "at
+     maximum" and reports a hole in the station as intact structure. -->
+<component class="defencemodule" macro="module_gen_defence_claim_01_macro" connection="station" state="wreck" id="[0x716]"/>
+</connection>
+<connection connection="modules">
+<!-- Rule 2, on a MODULE, and it moves BOTH halves of the fraction. Scaffolding
+     is not structure: this module does not exist yet, so counting it as
+     undamaged is how a station that is 17-of-18 damaged reports "17 of 498".
+     And it carries a <hull value> — real, but measured against the FINISHED
+     module's maximum, so it understates by design — which is how 38 of one
+     real save's 220 "damaged" modules turned out to be building sites. It
+     belongs in neither half. -->
+<component class="production" macro="module_gen_prod_graphene_01_macro" connection="station" state="construction" id="[0x717]">
+<hull value="12000"/>
+</component>
+</connection>
+<connection connection="docked">
+<!-- A DOCKED SHIP is not station structure. Its hull is its own, and it must
+     not land in the station's module-health fraction. -->
+<component class="ship_s" macro="ship_arg_s_fighter_01_a_macro" connection="dock" code="PLY-706" owner="player" name="Docked Fighter" id="[0x715]">
+<hull value="1200"/>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</connection>
+</connections>
+</component>
+</universe>
+</savegame>

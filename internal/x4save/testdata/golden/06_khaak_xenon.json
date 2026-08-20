@@ -55,6 +55,37 @@
         ]
       }
     ],
-    "other_counts": {}
+    "other_counts": {},
+    "logbook_seen": false,
+    "stats_seen": false,
+    "missions_seen": false,
+    "licences_seen": false,
+    "inventory_seen": false,
+    "threat_components": [
+      {
+        "class": "ship_s",
+        "macro": "ship_kha_s_fighter_02_a_macro",
+        "code": "KHK-101",
+        "owner": "khaak",
+        "knownto": "player",
+        "sector": "cluster_01_sector001_macro"
+      },
+      {
+        "class": "ship_s",
+        "macro": "ship_kha_s_fighter_02_a_macro",
+        "code": "KHK-102",
+        "owner": "khaak",
+        "knownto": "player",
+        "sector": "cluster_01_sector001_macro"
+      },
+      {
+        "class": "ship_m",
+        "macro": "ship_xen_m_fighter_01_a_macro",
+        "code": "XEN-201",
+        "owner": "xenon",
+        "knownto": "player",
+        "sector": "cluster_01_sector001_macro"
+      }
+    ]
   }
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/gob"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -29,16 +30,33 @@ func CacheDir() string {
 }
 
 // schemaVersion is bumped whenever the parser/Snapshot shape changes, so a
-// code change automatically invalidates stale cached snapshots. 27 adds the
-// other three presence flags — Snapshot.PlayerAssetsSeen, Snapshot.GameTimeSeen
-// and Station.Workforce as a pointer — for the reason 26 added MoneySeen: a v26
-// entry has no such field, so every cached save would come back claiming its
-// fleet was never counted and its clock never read, which is the ∅ box on a
-// board that has perfectly good numbers. (25 was the gob header, see
-// cacheHeader: a layout change rather than a parser one, where old entries are
-// unreadable by this build and are removed by name, which is cheaper and safer
-// than decoding one to discover it.)
-const schemaVersion = 27
+// code change automatically invalidates stale cached snapshots. 29 splits
+// Station.ModuleHealth into three populations (built / building / wrecked):
+// a v28 entry counted unbuilt and destroyed modules inside the "modules"
+// denominator, so serving one after this fix reports an inflated total with
+// building=0 — which is indistinguishable from a station carrying no
+// scaffolding at all, and is the same absence-reads-as-a-number failure the
+// fix removes. The constant is the only thing that stops that entry being
+// served, so it moves even though 28 never shipped.
+//
+// 28 was the F3 bump: it added the sections the S5 probes opened up — logbook,
+// stats, mission offers and war groups, licences and boosters, the player's
+// inventory, discovered Kha'ak/Xenon, hull and attack timestamps, build
+// storage, and the 9.x resource areas — plus Sector.Knownto. Every one of them
+// is a field a v27 entry does not have, and several of them decode ABSENCE as
+// a value (a ware with no amount is 1, an area with no yield is full, a ship
+// with no hull is undamaged), so a stale entry would answer those questions
+// with a zero that looks exactly like a reading.
+//
+// 27 added the other three presence flags — Snapshot.PlayerAssetsSeen,
+// Snapshot.GameTimeSeen and Station.Workforce as a pointer — for the reason 26
+// added MoneySeen: a v26 entry has no such field, so every cached save would
+// come back claiming its fleet was never counted and its clock never read,
+// which is the ∅ box on a board that has perfectly good numbers. (25 was the
+// gob header, see cacheHeader: a layout change rather than a parser one, where
+// old entries are unreadable by this build and are removed by name, which is
+// cheaper and safer than decoding one to discover it.)
+const schemaVersion = 29
 
 // SchemaVersion is the parser's current snapshot schema, exported so the
 // watcher can report it (a schema mismatch is a player-visible state, design
@@ -213,11 +231,49 @@ func readCache(file string) (*Snapshot, error) {
 	if err := dec.Decode(&hdr); err != nil {
 		return nil, err
 	}
-	var snap Snapshot
-	if err := dec.Decode(&snap); err != nil {
+	var env snapshotEnvelope
+	if err := dec.Decode(&env); err != nil {
 		return nil, err
 	}
-	return &snap, nil
+	if env.S == nil {
+		return nil, errors.New("cache entry holds no snapshot")
+	}
+	return env.S, nil
+}
+
+// snapshotEnvelope carries the snapshot through the gob stream as JSON, and it
+// exists for one reason: gob CANNOT round-trip this snapshot's presence
+// pointers.
+//
+// gob omits any field equal to its zero value, and for a *T field it encodes
+// the POINTED-TO value — so a pointer to 0 goes out looking exactly like a nil
+// pointer and comes back nil. That erases the only difference the pointer was
+// there to make. It is not hypothetical: BuildStorage.Account is 0 on 16% of
+// player build sites (an <account> with no amount attribute decodes to zero
+// credits, which is the whole "stalled because BROKE, not because unsupplied"
+// signal), and Station.Workforce has had the same hole since v27 — a station
+// with no habitat modules employs nobody, and that real zero came back from
+// every cache hit as "this build could not read it".
+//
+// The alternative was a Seen bool beside every optional number, which is the
+// convention elsewhere in this file (MoneySeen, GameTimeSeen). It was rejected
+// because it fixes the fields someone remembers and leaves the next one broken,
+// silently, in the direction this project keeps getting burned by. JSON round-
+// trips a pointer to zero correctly by construction, for every field, forever.
+//
+// The gob envelope is kept so the header stays readable on its own (see
+// cacheHeader) and GCCache keeps working unchanged.
+type snapshotEnvelope struct{ S *Snapshot }
+
+func (e snapshotEnvelope) GobEncode() ([]byte, error) { return json.Marshal(e.S) }
+
+func (e *snapshotEnvelope) GobDecode(b []byte) error {
+	var s Snapshot
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	e.S = &s
+	return nil
 }
 
 // cacheSavePath is the save an entry was written for, or "" if this build
@@ -244,16 +300,23 @@ func writeCache(file, savePath string, snap *Snapshot) error {
 	if err != nil {
 		return err
 	}
+	// A failed write leaves nothing behind. Caching is best-effort (see the
+	// caller), so a half-written .tmp would be a file nobody ever cleans up and
+	// nothing ever reads — and GCCache's budget counts bytes in this directory.
+	fail := func(err error) error {
+		f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
 	enc := gob.NewEncoder(f)
 	if err := enc.Encode(cacheHeader{SavePath: savePath}); err != nil {
-		f.Close()
-		return err
+		return fail(err)
 	}
-	if err := enc.Encode(snap); err != nil {
-		f.Close()
-		return err
+	if err := enc.Encode(snapshotEnvelope{S: snap}); err != nil {
+		return fail(err)
 	}
 	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, file)

@@ -25,6 +25,90 @@
     "player_assets_seen": false,
     "owned_sectors": null,
     "blueprints_seen": false,
-    "other_counts": {}
+    "other_counts": {},
+    "logbook_seen": false,
+    "stats_seen": false,
+    "mission_offers": [
+      {
+        "id": "634887",
+        "name": "Argon Vs. Xenon",
+        "description": "Volunteers wanted to secure our borders and repel Xenon incursions.",
+        "faction": "argon",
+        "group": "argon_war_xenon",
+        "type": "fight",
+        "level": "trivial"
+      },
+      {
+        "id": "635067",
+        "name": "Holy Order vs. Paranid",
+        "description": "They are weak, and they must be crushed.",
+        "faction": "holyorder",
+        "group": "holyorder_war_paranid",
+        "type": "fight",
+        "level": "trivial"
+      },
+      {
+        "id": "632746",
+        "name": "Split Vs. Argon",
+        "description": "Reinforce borders. Lead attacks on their turf.",
+        "faction": "split",
+        "group": "split_war_argon",
+        "type": "fight",
+        "level": "trivial"
+      },
+      {
+        "id": "11085",
+        "name": "Guerilla Research and Development",
+        "description": "You look like someone resourceful, would you mind helping me out?",
+        "faction": "civilian",
+        "type": "deliver",
+        "level": "medium",
+        "component": "[0x1e1ba]",
+        "reward": 352800
+      },
+      {
+        "id": "627187",
+        "name": "14) Boarding Ships",
+        "description": "Boarding large ships.",
+        "faction": "player",
+        "type": "tutorial",
+        "level": "trivial"
+      }
+    ],
+    "missions": [
+      {
+        "id": "620901",
+        "name": "A Demonstration of Power",
+        "description": "Destroying a station crucial to their operations should do the trick!",
+        "faction": "player",
+        "group": "story_thefan",
+        "type": "plot",
+        "level": "veryhard",
+        "reward_text": "Intimidating the Vigor Syndicate",
+        "active": true,
+        "time": 106666.11
+      },
+      {
+        "id": "628144",
+        "name": "Assign subordinate",
+        "description": "Assign a trade ship to this station to help in the buying of resources.",
+        "faction": "player",
+        "type": "upkeep_subordinates",
+        "time": 114333.854
+      },
+      {
+        "id": "13739",
+        "name": "Laser Tower Deployment",
+        "description": "We seek a contractor to deploy a number of laser towers around a station.",
+        "faction": "split",
+        "type": "drop",
+        "level": "medium",
+        "time": 80785.692,
+        "reward": 352800
+      }
+    ],
+    "missions_seen": true,
+    "licences_seen": false,
+    "inventory_seen": false
   }
 }

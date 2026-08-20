@@ -1,6 +1,6 @@
 {
   "snapshot": {
-    "source_path": "05_player_inventory.xml",
+    "source_path": "16_player_on_foot.xml",
     "source_size": 0,
     "source_mtime": 0,
     "parsed_at": 0,
@@ -20,28 +20,13 @@
     "money_seen": true,
     "game_time_seen": true,
     "relations": null,
-    "ships": [
-      {
-        "id": "[0x100]",
-        "code": "PLY-001",
-        "name": "Kestrel",
-        "class": "ship_s",
-        "macro": "ship_par_s_scout_01_a_macro",
-        "faction": "Paranid",
-        "size": "S",
-        "role": "Scout",
-        "sector": "cluster_01_sector001_macro",
-        "crew_count": 0
-      }
-    ],
+    "ships": null,
     "stations": null,
     "player_assets_seen": true,
     "owned_sectors": null,
     "blueprints": [
       "module_gen_prod_energycells_01",
-      "module_arg_prod_hullparts_01",
-      "module_gen_stor_container_01",
-      "module_gen_dock_m_01"
+      "module_gen_stor_container_01"
     ],
     "blueprints_seen": true,
     "sectors": [
@@ -53,10 +38,7 @@
     ],
     "other_counts": {},
     "research": [
-      "research_teleportation",
-      "research_mod_engine_pre",
-      "research_mod_engine_mk1",
-      "research_mod_shield_mk2"
+      "research_teleportation"
     ],
     "logbook_seen": false,
     "stats_seen": false,
@@ -68,40 +50,8 @@
         "amount": 1
       },
       {
-        "ware": "software_scannerobjectmk3",
-        "amount": 2
-      },
-      {
         "ware": "inv_bandages",
         "amount": 46
-      },
-      {
-        "ware": "inv_crystalbit",
-        "amount": 70
-      },
-      {
-        "ware": "modpart_nividiumcrystallite",
-        "amount": 218
-      },
-      {
-        "ware": "modpart_tuningsoftware",
-        "amount": 226
-      },
-      {
-        "ware": "inv_advancedtargetingmodule",
-        "amount": 119
-      },
-      {
-        "ware": "inv_hallucinogenics",
-        "amount": 172
-      },
-      {
-        "ware": "inv_spaceweed",
-        "amount": 8
-      },
-      {
-        "ware": "paintmod_0218",
-        "amount": 8
       }
     ],
     "inventory_seen": true

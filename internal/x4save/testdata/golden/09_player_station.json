@@ -109,7 +109,20 @@
         ],
         "dock_sizes_pending": [
           "l"
-        ]
+        ],
+        "module_health": {
+          "modules": 5,
+          "damaged": 1,
+          "building": 1,
+          "wrecked": 0,
+          "details": [
+            {
+              "macro": "module_gen_prod_refinedmetals_01_macro",
+              "class": "production",
+              "hull": 86400
+            }
+          ]
+        }
       }
     ],
     "player_assets_seen": true,
@@ -125,6 +138,72 @@
         "player_owned": true
       }
     ],
-    "other_counts": {}
+    "other_counts": {
+      "buildstorage": 1
+    },
+    "logbook_seen": false,
+    "stats_seen": false,
+    "missions_seen": false,
+    "licences_seen": false,
+    "inventory_seen": false,
+    "build_storages": [
+      {
+        "id": "[0x500]",
+        "code": "UCW-564",
+        "macro": "buildstorage_gen_base_01_macro",
+        "owner": "player",
+        "sector": "cluster_01_sector001_macro",
+        "station": "[0x400]",
+        "task_type": "expand",
+        "task_modules": 3,
+        "task_seen": true,
+        "job_seen": true,
+        "state": "waitingforresources",
+        "start": 591000.581,
+        "step": 3,
+        "steps": 3,
+        "sequence_index": 2,
+        "required": [
+          {
+            "ware": "claytronics",
+            "amount": 52
+          },
+          {
+            "ware": "energycells",
+            "amount": 1647
+          },
+          {
+            "ware": "hullparts",
+            "amount": 378
+          }
+        ],
+        "next_seen": false,
+        "delivered": [
+          {
+            "ware": "claytronics",
+            "amount": 1
+          },
+          {
+            "ware": "energycells",
+            "amount": 46224
+          },
+          {
+            "ware": "hullparts",
+            "amount": 74498
+          }
+        ],
+        "deficit": [
+          {
+            "ware": "claytronics",
+            "amount": 51
+          }
+        ],
+        "insufficient": [
+          "claytronics"
+        ],
+        "account": 1968,
+        "account_max": 1968
+      }
+    ]
   }
 }

@@ -145,6 +145,11 @@
       "research_mod_engine_mk1",
       "research_mod_shield_mk3",
       "research_teleportation"
-    ]
+    ],
+    "logbook_seen": false,
+    "stats_seen": false,
+    "missions_seen": false,
+    "licences_seen": false,
+    "inventory_seen": false
   }
 }
