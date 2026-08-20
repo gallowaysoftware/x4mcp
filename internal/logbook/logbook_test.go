@@ -414,11 +414,16 @@ func TestTheEdgeSlotClassKeepsEveryRealSentence(t *testing.T) {
 		{"Open Market Defence Platform I (BNK-694) was destroyed.", Ref{1016, 34}, "Open Market Defence Platform I (BNK-694)"},
 		{"Hatikvah's Choice I Defence Platform II (UWK-732) is under attack.", Ref{1016, 37}, "Hatikvah's Choice I Defence Platform II (UWK-732)"},
 		{"Windfall III The Hoard Defence Platform II (YWU-198) is under attack.", Ref{1016, 37}, "Windfall III The Hoard Defence Platform II (YWU-198)"},
-		// A player-chosen name with '>' in it, and the empty attacker slot the
-		// game really does write.
+		// A player-renamed ship, and the empty attacker slot the game really
+		// does write. The NAME is synthetic — the repo is public and a name the
+		// player typed is not a string the game generated — but its shape is
+		// taken from the archive, where twelve of the corpus's recovered
+		// subjects carry a '>' from a player's route shorthand. That character
+		// is the reason the edge-slot class is a NEGATED class and not a
+		// whitelist of what English entity names happen to contain.
 		{
-			"SW XII->Av Scrap Metal 1 was forced to flee after being attacked by  in Avarice IV. Your ship is at Empty Space in Windfall III The Hoard.",
-			Ref{1016, 33}, "SW XII->Av Scrap Metal 1",
+			"Ore Run A->B 1 was forced to flee after being attacked by  in Avarice IV. Your ship is at Empty Space in Windfall III The Hoard.",
+			Ref{1016, 33}, "Ore Run A->B 1",
 		},
 		{"Jian (MUG-920) in sector Open Market was destroyed by XEN Raiding Party PE (DVE-017).", Ref{1016, 31}, "Jian (MUG-920) in sector Open Market"},
 	} {
