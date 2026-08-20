@@ -2,6 +2,7 @@ package diff
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/pequalsnp/x4mcp/internal/logbook"
@@ -1008,4 +1009,182 @@ func TestTheIdleEscalationNeedsTheSameFailureTwice(t *testing.T) {
 	changed := idle
 	changed.LastOrderError = "SingleSell: no buyer"
 	none(t, Diff(snap(1000, same), snap(2000, changed), opts()), KindIdleWithFailedOrder)
+}
+
+// ---- duplicate registration codes ----
+
+// Two ships sharing a code used to collapse into one map entry, and the differ
+// then reported NO loss when one of them died. A missing red is the worst
+// failure this lane has: a wrong one is dismissible, a missing one is a ship
+// the player finds out about by going to look for it.
+//
+// Measured across all 200 saves: 93,961 ship rows, zero shared codes. So this
+// is latent. The corpus says it has not happened; the format does not say it
+// cannot.
+func TestTwoShipsSharingACodeDoNotSwallowALoss(t *testing.T) {
+	a := ship("[0x1]", "TTC-646", "First", "ship_l")
+	a.SpawnTime = 1000
+	b := ship("[0x2]", "TTC-646", "Second", "ship_l")
+	b.SpawnTime = 5000
+
+	before := snap(1000, a, b)
+	after := snap(2000, a) // b died
+	after.Stats["ships_owned"] = 1
+	after.Logbook = []x4save.LogEntry{log(1500, "Second (TTC-646) was destroyed.")}
+
+	got := Diff(before, after, opts())
+	c := only(t, got, KindShipLost)
+	if c.Subject.Name != "Second" {
+		t.Errorf("the lost ship is %q, want Second — the spawn time tells the two apart", c.Subject.Name)
+	}
+	if c.Detail.Unattributed {
+		t.Error("the spawn times differ, so the attribution is not a guess")
+	}
+
+	// Positive control: the map-keyed index, which is what shipped, still
+	// swallows it. If this stops being true the test above proves nothing.
+	if n := codeKeyedMissing(before, after); n != 0 {
+		t.Fatalf("the positive control stopped reproducing the bug it guards: a map keyed by code "+
+			"reported %d missing ships, and the bug is that it reports 0", n)
+	}
+}
+
+// codeKeyedMissing is the map-keyed index this differ shipped with, kept ONLY as
+// the positive control above: map[code]Ship keeps the last writer, so two ships
+// under one code are one entry and neither can go missing.
+func codeKeyedMissing(prev, next *x4save.Snapshot) int {
+	index := func(ships []x4save.Ship) map[string]x4save.Ship {
+		m := map[string]x4save.Ship{}
+		for _, s := range ships {
+			m[ShipKey(s)] = s
+		}
+		return m
+	}
+	p, n := index(prev.Ships), index(next.Ships)
+	missing := 0
+	for k := range p {
+		if _, ok := n[k]; !ok {
+			missing++
+		}
+	}
+	return missing
+}
+
+// The naive fix is asymmetric, and asymmetry turns one missed loss into two
+// invented ones.
+//
+// Disambiguating INSIDE the per-snapshot index means the side that happens to
+// hold the duplicate gets extended keys and the other side does not: prev holds
+// "TTC-646@1000"/"TTC-646@5000" while next holds plain "TTC-646", nothing
+// matches, and a differ that reported nothing now reports both ships gone AND
+// the survivor as new. The codes therefore come from the PAIR.
+func TestTheDuplicateCodeSetIsComputedOverThePairNotPerSnapshot(t *testing.T) {
+	a := ship("[0x1]", "TTC-646", "First", "ship_l")
+	a.SpawnTime = 1000
+	b := ship("[0x2]", "TTC-646", "Second", "ship_l")
+	b.SpawnTime = 5000
+
+	// The duplicate exists only in prev; next has one ship with that code.
+	amb := ambiguousShipCodes([]x4save.Ship{a, b}, []x4save.Ship{a})
+	if !amb["TTC-646"] {
+		t.Fatal("a code duplicated on either side of the pair is ambiguous for the whole pair")
+	}
+	if shipPairKey(a, amb) == ShipKey(a) {
+		t.Error("the surviving ship kept the plain key while its twin got an extended one")
+	}
+	// Both sides of the pair key the SAME ship the same way. That is the
+	// property the naive fix does not have.
+	if shipPairKey(a, amb) != shipPairKey(a, ambiguousShipCodes([]x4save.Ship{a}, []x4save.Ship{a, b})) {
+		t.Error("the key depended on which side of the pair the duplicate was on")
+	}
+
+	// And a code nobody duplicates is untouched: the extended key is not a tax
+	// on the 93,961 ship rows that never needed it.
+	lone := ship("[0x9]", "ZBD-609", "Alone", "ship_m")
+	if shipPairKey(lone, amb) != ShipKey(lone) {
+		t.Errorf("an unambiguous ship was keyed %q rather than %q", shipPairKey(lone, amb), ShipKey(lone))
+	}
+
+	// End to end: one loss, not two, and no invented arrival.
+	before := snap(1000, a, b)
+	after := snap(2000, a)
+	after.Stats["ships_owned"] = 1
+	got := Diff(before, after, opts())
+	if n := len(got.Changes); n != 1 {
+		t.Fatalf("one of two ships left the fleet and the differ produced %d changes: %v", n, kinds(got))
+	}
+	if c := only(t, got, KindShipGone); c.Subject.Name != "Second" {
+		t.Errorf("the gone ship is %q, want Second", c.Subject.Name)
+	}
+}
+
+// When the spawn times are equal too — which is the case SpawnTime == 0 makes
+// real, on the one player XL in this archive that carries none — nothing in the
+// file tells the two hulls apart. The count is still right, and the change SAYS
+// the hull is a guess rather than quietly asserting one.
+func TestIndistinguishableShipsStillReportTheLossAndAdmitTheGuess(t *testing.T) {
+	a := ship("[0x1]", "UDN-009", "Twin A", "ship_xl")
+	b := ship("[0x2]", "UDN-009", "Twin B", "ship_xl")
+	a.SpawnTime, b.SpawnTime = 0, 0 // the parser found no spawn time for either
+
+	before := snap(1000, a, b)
+	after := snap(2000, a)
+	after.Stats["ships_owned"] = 1
+
+	got := Diff(before, after, opts())
+	c := only(t, got, KindShipGone)
+	if !c.Detail.Unattributed {
+		t.Error("two hulls share a code AND a spawn time; the subject is a guess and the change must say so")
+	}
+	var said bool
+	for _, e := range c.Evidence {
+		if strings.Contains(e.Detail, "cannot be attributed") {
+			said = true
+		}
+	}
+	if !said {
+		t.Errorf("the evidence does not disclose the ambiguity: %+v", c.Evidence)
+	}
+
+	// Both still there: no loss invented.
+	if got := Diff(before, snap(2000, a, b), opts()); len(got.Changes) != 0 {
+		t.Errorf("nothing left the fleet and the differ produced %v", kinds(got))
+	}
+
+	// Both gone: two losses, not one.
+	bothGone := snap(2000)
+	bothGone.Stats["ships_owned"] = 0
+	n := 0
+	for _, c := range Diff(before, bothGone, opts()).Changes {
+		if c.Kind == KindShipGone {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("two identical ships vanished and the differ reported %d", n)
+	}
+}
+
+// The duplicate machinery must not disturb the ordinary fleet, and must be
+// deterministic when it does engage: the lane feeds a dedupe key, and a pairing
+// that reshuffles between runs re-alerts between runs.
+func TestDuplicateHandlingIsDeterministic(t *testing.T) {
+	a := ship("[0x1]", "UDN-009", "Twin A", "ship_xl")
+	b := ship("[0x2]", "UDN-009", "Twin B", "ship_xl")
+	a.SpawnTime, b.SpawnTime = 0, 0
+	c := ship("[0x3]", "ZBD-609", "Ordinary", "ship_m")
+
+	before := snap(1000, a, b, c)
+	after := snap(2000, b, c) // one of the twins is gone
+	after.Stats["ships_owned"] = 2
+
+	first := Diff(before, after, opts())
+	for i := 0; i < 20; i++ {
+		if got := Diff(before, after, opts()); !reflect.DeepEqual(got, first) {
+			t.Fatalf("run %d disagreed with run 1", i+2)
+		}
+	}
+	if n := len(first.Changes); n != 1 {
+		t.Fatalf("want one change, got %d: %v", n, kinds(first))
+	}
 }

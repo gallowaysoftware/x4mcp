@@ -13,11 +13,13 @@
 //     reports a rename as one ship destroyed and one ship acquired. That much
 //     tech-design §6 says. What §6 got wrong is the other half: it says to key
 //     on the entity id, and the corpus says the entity id does not survive a
-//     game restart. Across the one restart boundary in the archive,
-//     **1,038 of 1,040 player ship ids changed while 3 codes did** — X4
-//     renumbers `[0x…]` handles when it reloads a save. An id-keyed differ
-//     reports the player's entire fleet as lost the first morning they come
-//     back to the game.
+//     game restart. Measured across ALL 199 consecutive pairs rather than the
+//     one break the first version of this comment described: a restart happens
+//     **22 times in 9.61 real days**, and at those 22 breaks **0.0–0.5% of
+//     component ids survive against 95–100% of registration codes** — X4
+//     renumbers `[0x…]` handles every time it reloads a save. An id-keyed
+//     differ does not report the fleet lost once; it reports it lost 22 times
+//     in nine days. (docs/s7-rules.md §5.1.)
 //
 //     So: Code is the key, SpawnTime hardens it against code reuse, and the
 //     component id is used only WITHIN one snapshot, where it is exactly what
@@ -39,6 +41,7 @@ package diff
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/pequalsnp/x4mcp/internal/logbook"
@@ -171,6 +174,14 @@ type Detail struct {
 	// ship_lost / ship_gone
 	Disposition string `json:"disposition,omitempty"` // wreck / absent / absent_with_credit
 	DockedAt    string `json:"docked_at,omitempty"`   // the carrier or station it was on last
+	// Unattributed marks a change whose COUNT is right and whose SUBJECT is a
+	// guess: two ships shared a registration code and a spawn time, so nothing
+	// in the save tells them apart. It is set rather than the change being
+	// dropped, because a loss nobody is told about is worse than a loss
+	// attributed to the wrong one of two identical hulls — and it is set rather
+	// than the change being emitted silently, because the player deserves to
+	// know which of those they are reading.
+	Unattributed bool `json:"unattributed,omitempty"`
 
 	// idle
 	Order          string  `json:"order,omitempty"`
@@ -385,6 +396,10 @@ func Diff(prev, next *x4save.Snapshot, opts Options) Result {
 	}
 
 	d := &differ{prev: prev, next: next, opts: opts}
+	// Computed ONCE, over the pair, before anything is keyed — see
+	// ambiguousShipCodes. Both snapshots must be indexed the same way or the
+	// cure is worse than the disease.
+	d.ambiguous = ambiguousShipCodes(prev.Ships, next.Ships)
 	d.shipNames = shipNameCounts(next.Ships)
 	d.stationNames = stationNameCounts(next.Stations)
 	d.stationName = map[string]string{}
@@ -427,7 +442,76 @@ type differ struct {
 	// place a raw id is a legitimate key: BuildStorage.Station points at a
 	// station id IN THE SAME SNAPSHOT, where ids mean exactly what they say.
 	stationName map[string]string
+	// ambiguous is the set of registration codes that do not identify one ship
+	// in this pair. See ambiguousShipCodes.
+	ambiguous map[string]bool
 }
+
+// ambiguousShipCodes returns the registration codes that MORE THAN ONE ship
+// carries, in either snapshot of the pair.
+//
+// # The bug this exists to close
+//
+// indexShips keyed a map by code, so two ships sharing one collapsed into a
+// single entry — and then the differ reported NO loss when one of them died.
+// A missing red is the worst failure this product has: a wrong one is an
+// annoyance the player can dismiss, a missing one is a ship they find out about
+// when they go looking for it.
+//
+// Measured over all 200 saves in the archive: 93,961 ship rows, **zero** codes
+// shared by two ships, zero codeless ships and zero ship/station code
+// collisions. So this is latent, not live. The corpus says it has not happened;
+// the file format does not say it cannot, and "has not happened in one
+// playthrough" is not a guarantee to hang a silent failure on.
+//
+// # Why it is computed here, over the PAIR
+//
+// The obvious fix — disambiguate inside indexShips by appending SpawnTime — is
+// wrong, and wrong in the direction that matters. indexShips sees one snapshot,
+// so it disambiguates whichever side happens to hold the duplicate: the ship
+// keyed "TTC-646" in prev becomes "TTC-646@3200" in next, matches nothing, and
+// one MISSED loss becomes two SPURIOUS ones. Measured when it was tried.
+//
+// The codes therefore come from both snapshots at once and the same key
+// function is applied to both. A code that is duplicated anywhere in the pair
+// is duplicated for the whole pair, and prev and next stay comparable.
+func ambiguousShipCodes(prev, next []x4save.Ship) map[string]bool {
+	out := map[string]bool{}
+	for _, ships := range [][]x4save.Ship{prev, next} {
+		seen := map[string]bool{}
+		for _, s := range ships {
+			if s.Code == "" {
+				continue
+			}
+			if seen[s.Code] {
+				out[s.Code] = true
+			}
+			seen[s.Code] = true
+		}
+	}
+	return out
+}
+
+// shipPairKey is ShipKey plus whatever the pair needs to tell two ships with
+// the same code apart.
+//
+// SpawnTime is what tells them apart, and it is the field Ship.SpawnTime's own
+// doc comment says "hardens Code as a cross-save identity". Where it is absent
+// — measured: exactly one ship in this archive, the player's XL UDN-009, in
+// 173 of 200 saves — the key still collapses, and ships() falls back to
+// comparing COUNTS so that the loss is reported even when the identity cannot
+// be. What must not happen is inventing a distinction out of the component id,
+// which is renumbered on every load and would report the ship gone at every
+// restart.
+func shipPairKey(s x4save.Ship, ambiguous map[string]bool) string {
+	k := ShipKey(s)
+	if s.Code == "" || !ambiguous[s.Code] {
+		return k
+	}
+	return k + "@" + strconv.FormatFloat(s.SpawnTime, 'f', -1, 64)
+}
+
+func (d *differ) shipKey(s x4save.Ship) string { return shipPairKey(s, d.ambiguous) }
 
 func (d *differ) add(c Change) {
 	if c.GameTime == 0 {
@@ -463,8 +547,8 @@ func subjectOfStation(s x4save.Station) Subject {
 // The middle case is the one the corroboration policy was written for and the
 // last is the one the "sold is not destroyed" rule was written for.
 func (d *differ) ships() {
-	prevShips := indexShips(d.prev.Ships)
-	nextShips := indexShips(d.next.Ships)
+	prevShips := d.indexShips(d.prev.Ships)
+	nextShips := d.indexShips(d.next.Ships)
 
 	// Collect first, judge after. The stats block's ships_owned is a FLEET
 	// number, and attaching it to each individual disappearance as if it
@@ -473,23 +557,37 @@ func (d *differ) ships() {
 	// other four are something else. So the stats signal is only handed out
 	// when the count it reports can actually cover the disappearances.
 	type gone struct {
-		was       x4save.Ship
-		stillHere bool
-		now       x4save.Ship
+		was          x4save.Ship
+		stillHere    bool
+		now          x4save.Ship
+		unattributed bool
 	}
 	var missing []gone
 	for _, key := range sortedKeys(prevShips) {
-		was := prevShips[key]
-		now, stillHere := nextShips[key]
-		if stillHere && !sameShip(was, now) {
-			// Same code, different spawn time: the code came back on a
-			// different hull. The old ship is gone and the new one is new.
-			stillHere = false
+		wasList := prevShips[key]
+		nowList := nextShips[key]
+		// One entry per key is the whole fleet, every time, in every save of
+		// the archive. More than one means two ships share a code AND share a
+		// spawn time, at which point nothing in the file tells them apart — so
+		// the comparison becomes a COUNT, which still reports the right number
+		// of losses and admits it cannot say which hull.
+		unattributed := len(wasList) > 1 || len(nowList) > 1
+		for i, was := range wasList {
+			var now x4save.Ship
+			stillHere := i < len(nowList)
+			if stillHere {
+				now = nowList[i]
+			}
+			if stillHere && !sameShip(was, now) {
+				// Same code, different spawn time: the code came back on a
+				// different hull. The old ship is gone and the new one is new.
+				stillHere = false
+			}
+			if stillHere && now.HullState() != x4save.HullDestroyed {
+				continue
+			}
+			missing = append(missing, gone{was: was, stillHere: stillHere, now: now, unattributed: unattributed})
 		}
-		if stillHere && now.HullState() != x4save.HullDestroyed {
-			continue
-		}
-		missing = append(missing, gone{was: was, stillHere: stillHere, now: now})
 	}
 	if len(missing) == 0 {
 		return
@@ -522,6 +620,14 @@ func (d *differ) ships() {
 				"ships_owned fell by %d, enough to cover all %d disappearances in this pair",
 				-shipsOwnedDelta, len(missing))})
 		}
+		if g.unattributed {
+			// The count is right and the hull is a guess. Say so IN the change,
+			// because "one of these two identical ships is gone" is a true
+			// statement and "this one is gone" is not.
+			ev = append(ev, Signal{Source: SrcFleet, Detail: fmt.Sprintf(
+				"another ship shares registration code %q with the same spawn time; "+
+					"the loss is counted but cannot be attributed to one hull", was.Code)})
+		}
 
 		kind := KindShipGone
 		disposition := "absent"
@@ -533,7 +639,7 @@ func (d *differ) ships() {
 		}
 		d.add(Change{
 			Kind: kind, Subject: sub, GameTime: gameTime,
-			Detail:   Detail{Disposition: disposition, DockedAt: was.DockedAt},
+			Detail:   Detail{Disposition: disposition, DockedAt: was.DockedAt, Unattributed: g.unattributed},
 			Evidence: ev,
 		})
 	}
@@ -550,12 +656,12 @@ func (d *differ) ships() {
 // attacks in twenty.
 func (d *differ) attacks() {
 	fired := map[string]bool{}
-	prevShips := indexShips(d.prev.Ships)
+	prevShips := d.indexShips(d.prev.Ships)
 	for _, now := range d.next.Ships {
 		if now.Attack == nil || now.Attack.IntentionalTime <= 0 {
 			continue
 		}
-		was, existed := prevShips[ShipKey(now)]
+		was, existed := lookupShip(prevShips, d.shipKey(now))
 		if existed && !sameShip(was, now) {
 			existed = false
 		}
@@ -697,12 +803,12 @@ func hullValue(s x4save.Ship) (float64, bool) {
 // ---- idle ----
 
 func (d *differ) idle() {
-	prevShips := indexShips(d.prev.Ships)
+	prevShips := d.indexShips(d.prev.Ships)
 	for _, now := range d.next.Ships {
 		if !d.isIdle(now) {
 			continue
 		}
-		was, existed := prevShips[ShipKey(now)]
+		was, existed := lookupShip(prevShips, d.shipKey(now))
 		if existed && !sameShip(was, now) {
 			existed = false
 		}
@@ -1015,10 +1121,14 @@ func ownedSectors(s *x4save.Snapshot) []string {
 
 // ShipKey is a ship's cross-save identity.
 //
-// Measured on the archive: 1,040 ships, zero without a code, zero sharing one.
-// The component id, by contrast, is regenerated on load. An empty code falls
-// back to the id, which is honest rather than correct — such a ship can be
-// tracked within a session and not across one — and there were none.
+// Measured over all 200 saves in the archive: 93,961 ship rows, **zero without
+// a code, zero sharing one, and zero ship/station code collisions**. The
+// component id, by contrast, is regenerated on load. An empty code falls back
+// to the id, which is honest rather than correct — such a ship can be tracked
+// within a session and not across one — and there were none.
+//
+// Where two ships DO share a code, this key is not enough on its own; see
+// ambiguousShipCodes and shipPairKey, which extend it for the pair.
 func ShipKey(s x4save.Ship) string {
 	if s.Code != "" {
 		return s.Code
@@ -1035,6 +1145,14 @@ func ShipKey(s x4save.Ship) string {
 // 1,037 of 1,037 ships across the restart boundary and contradicted none, so a
 // disagreement means a different ship, not a moved clock. Zero on either side
 // is "not recorded" and cannot refute anything.
+//
+// That last sentence has a measured cost, and it belongs here rather than in a
+// footnote: **SpawnTime is absent on one ship** — the player's XL UDN-009, in
+// 173 of the archive's 200 saves — so for that hull this guard is INERT and the
+// code alone is the identity. "1,037 of 1,037 agreed" was measured only over
+// the ships that carry a spawn time. The same absence is why shipPairKey cannot
+// always separate two ships sharing a code, and why ships() falls back to
+// comparing counts when it cannot.
 func sameShip(a, b x4save.Ship) bool {
 	if a.SpawnTime == 0 || b.SpawnTime == 0 {
 		return true
@@ -1065,12 +1183,40 @@ func BuildKey(b x4save.BuildStorage) string {
 	return "id:" + b.ID
 }
 
-func indexShips(ships []x4save.Ship) map[string]x4save.Ship {
-	m := make(map[string]x4save.Ship, len(ships))
+// indexShips groups a snapshot's fleet by its cross-save key.
+//
+// It returns a SLICE per key rather than a ship, and that is the whole of the
+// duplicate-code fix: a map[string]Ship silently keeps the last writer, so two
+// ships sharing a key became one entry and the loss of either was reported as
+// nothing at all. The slice cannot swallow anything — a key holding two ships
+// says so, and ships() compares counts.
+//
+// The slice is ordered by component id, which is arbitrary but DETERMINISTIC:
+// two runs over the same pair produce the same pairing, so the lane does not
+// re-alert on a reshuffle.
+func (d *differ) indexShips(ships []x4save.Ship) map[string][]x4save.Ship {
+	m := make(map[string][]x4save.Ship, len(ships))
 	for _, s := range ships {
-		m[ShipKey(s)] = s
+		k := d.shipKey(s)
+		m[k] = append(m[k], s)
+	}
+	for _, v := range m {
+		if len(v) > 1 {
+			sort.Slice(v, func(i, j int) bool { return v[i].ID < v[j].ID })
+		}
 	}
 	return m
+}
+
+// lookupShip answers "the ship under this key in that snapshot", and refuses
+// when the key holds more than one. A caller that cannot name the ship must not
+// be handed one of two candidates.
+func lookupShip(ix map[string][]x4save.Ship, key string) (x4save.Ship, bool) {
+	v := ix[key]
+	if len(v) != 1 {
+		return x4save.Ship{}, false
+	}
+	return v[0], true
 }
 
 func indexBuild(bs []x4save.BuildStorage) map[string]x4save.BuildStorage {
